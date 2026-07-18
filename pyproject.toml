@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "app-support"
+version = "0.1.0"
+requires-python = ">=3.10"
+# Standard library only, on purpose. This package is installed into every app's
+# venv, so a dependency here becomes a dependency everywhere.
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
+
+# Consumers install this editable from a local path (see README); it is never
+# published, so it must not appear in their own [project.dependencies] — pip
+# would go looking for it on PyPI.
+[tool.setuptools.packages.find]
+include = ["app_support*"]
+
+[tool.pytest.ini_options]
+addopts = "-p no:cacheprovider"
+testpaths = ["tests"]
