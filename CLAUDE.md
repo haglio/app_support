@@ -12,7 +12,7 @@ This repo has no venv of its own. Use any consumer's — all have this package
 installed editable:
 
 ```bash
-"C:/path/to/suite-root/projects/fun_time/.venv/Scripts/python.exe" -m pytest tests/
+"C:/path/to/fun_time/.venv/Scripts/python.exe" -m pytest tests/
 ```
 
 ## Installing
