@@ -5,9 +5,11 @@ name: merge gate (full suite)
 # main only when this is green -- so a red tree can never land. Also runs on PRs
 # for early feedback and on push to main as a visible post-merge backstop.
 #
-# app_support is standard-library-only, so this is a plain ubuntu install + test.
-# The editable install MUST use compat mode or tests/test_install.py fails: the
-# repo dir shares the package's name and would otherwise win as a namespace shadow.
+# Runs on windows-latest: app_support wraps Windows-only subprocess behaviour
+# (STARTUPINFO / SW_HIDE) and its tests exercise it, so an ubuntu runner reports
+# 2 failures for attributes that don't exist off-Windows. The editable install
+# MUST use compat mode or tests/test_install.py fails -- the repo dir shares the
+# package's name and would otherwise win as a namespace shadow.
 
 on:
   pull_request:
@@ -22,7 +24,7 @@ concurrency:
 
 jobs:
   full-suite:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
