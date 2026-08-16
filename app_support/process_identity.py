@@ -69,6 +69,13 @@ STAMP_FIELD = "AppSupportSource"
 
 _ROLE_RE = re.compile(r"^[A-Za-z]+$")
 
+# Where a CamelCase role breaks into words.  A capital starts a word only when
+# the character before it was lower-case, or when it heads a capitalised word
+# after a run of capitals -- so an acronym stays whole.  Breaking at every
+# capital turned "GenauVR" into "Genau V R", which then no longer matched the
+# app's own name and got that name pasted in front of it as well.
+_WORD_BREAK_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
+
 
 def exe_prefix(app_name: str) -> str:
     """The file-name prefix every copy for *app_name* carries.
@@ -284,7 +291,7 @@ class ProcessNamer:
         case for an app with one window -- leaves the app name standing alone
         rather than saying it twice.
         """
-        words = re.sub(r"(?<!^)(?=[A-Z])", " ", role)
+        words = _WORD_BREAK_RE.sub(" ", role)
         if words.casefold() == self.app_name.casefold():
             return self.app_name
         return f"{self.app_name} – {words}"

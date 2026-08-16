@@ -82,6 +82,13 @@ class TestNaming:
         # Most apps have one window and one role, named after themselves.
         assert ProcessNamer("Highdeas").description("Highdeas") == "Highdeas"
 
+    def test_an_acronym_in_a_role_stays_whole(self):
+        # Breaking at every capital spelled "GenauVR" out as "Genau V R", which
+        # then no longer matched the app's own name -- so the row read
+        # "Genau VR - Genau V R" instead of just "Genau VR".
+        assert ProcessNamer("Genau VR").description("GenauVR") == "Genau VR"
+        assert ProcessNamer("Fun Time").description("RFBWindow") == "Fun Time – RFB Window"
+
 
 class TestBuildIconResources:
     def test_reindexes_the_directory_onto_resource_ids(self, tmp_path: Path):
