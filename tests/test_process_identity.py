@@ -82,6 +82,14 @@ class TestNaming:
         # Most apps have one window and one role, named after themselves.
         assert ProcessNamer("Highdeas").description("Highdeas") == "Highdeas"
 
+    def test_a_lone_app_whose_name_is_two_words_run_together(self):
+        # The role has to be one word to be a file name; the app name does not.
+        # Comparing the split role against the app name made PromptCrafter's own
+        # role a different thing from PromptCrafter: "PromptCrafter - Prompt
+        # Crafter".
+        assert ProcessNamer("PromptCrafter").description("PromptCrafter") == "PromptCrafter"
+        assert ProcessNamer("Genau VR").description("GenauVR") == "Genau VR"
+
     def test_an_acronym_in_a_role_stays_whole(self):
         # Breaking at every capital spelled "GenauVR" out as "Genau V R", which
         # then no longer matched the app's own name -- so the row read

@@ -77,6 +77,11 @@ _ROLE_RE = re.compile(r"^[A-Za-z]+$")
 _WORD_BREAK_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 
 
+def _squash(text: str) -> str:
+    """*text* with everything but letters and digits taken out, folded for case."""
+    return re.sub(r"[^A-Za-z0-9]", "", text).casefold()
+
+
 def exe_prefix(app_name: str) -> str:
     """The file-name prefix every copy for *app_name* carries.
 
@@ -291,10 +296,14 @@ class ProcessNamer:
         case for an app with one window -- leaves the app name standing alone
         rather than saying it twice.
         """
-        words = _WORD_BREAK_RE.sub(" ", role)
-        if words.casefold() == self.app_name.casefold():
+        # Compared with the spacing taken out of both, because the role had to
+        # be one word to be a file name while the app name did not: comparing
+        # the SPLIT role against the app name said PromptCrafter's own role was
+        # a different thing from PromptCrafter, and the row read "PromptCrafter
+        # - Prompt Crafter".
+        if _squash(role) == _squash(self.app_name):
             return self.app_name
-        return f"{self.app_name} – {words}"
+        return f"{self.app_name} – {_WORD_BREAK_RE.sub(' ', role)}"
 
     @property
     def process_name_pattern(self) -> str:
