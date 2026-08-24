@@ -22,5 +22,8 @@ dev = [
 include = ["app_support*"]
 
 [tool.pytest.ini_options]
-addopts = "-p no:cacheprovider"
+# The second plugin is the content guard's enforcement check, which this repo
+# adopts the same way every consumer will: one line, and the tracked tree is
+# scanned on every run.
+addopts = "-p no:cacheprovider -p app_support.sanitize.pytest_plugin"
 testpaths = ["tests"]
