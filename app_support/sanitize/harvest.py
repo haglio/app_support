@@ -1,32 +1,42 @@
-"""Learn the blocklist from the media library, instead of remembering it by hand.
+"""Learn the blocklist off the machine, instead of remembering it by hand.
 
     python -m app_support.sanitize.harvest            # this checkout's list
     python -m app_support.sanitize.harvest --sync     # ...and every sibling's
     python -m app_support.sanitize.harvest --dry-run  # counts only, write nothing
     python -m app_support.sanitize.harvest --if-stale 12 --detach --sync   # startup
 
-The guard can only refuse a term it has been told about, which leaves
-one hole it cannot close on its own: a performer name nobody has ever added
-passes the hook, the suite and CI alike. That is not hypothetical -- it is how
-every value that reached a public ``main`` got there, and each one of them was
-a folder name or a filename fragment sitting in the library the whole time.
+The guard can only refuse a term it has been told about, which leaves one hole it
+cannot close on its own: a name nobody has ever added passes the hook, the suite
+and CI alike. That is not hypothetical -- it is how every value that reached a
+public ``main`` got there, and each one of them was a folder name or a filename
+fragment sitting in a directory tree on this machine the whole time.
 
-So harvest them. A value can only be copied into a fixture if it exists in the
-library, and if it exists in the library this can find it first. That turns the
-unknown-name case into the known-term case the guard already enforces at commit
-time.
+So harvest them. A value can only be copied into a fixture if it exists in that
+tree, and if it exists there this can find it first. That turns the unknown-name
+case into the known-term case the guard already enforces at commit time.
 
-Where to look comes from ``sanitize/library_roots.local.txt`` -- git-ignored,
-one path per line, because the paths describe the machine and the folder names
-under them are the very thing being kept out of the repo. With no such file
-there is nothing to harvest and this exits quietly.
+Everything that would make this module know what it is reading lives outside it,
+in git-ignored files beside the blocklist -- because the words describe the
+machine, and a committed copy of them would be the catalogue the guard exists to
+keep out of the repo:
+
+* ``library_roots.local.txt`` -- one directory to walk per line.
+* ``harvest_excluded.local.txt`` -- ordinary words a name-shaped run is not worth
+  blocking for. Without them the harvest would put the tree's own filing
+  vocabulary onto a list that syncs to every checkout and fails all of them.
+* ``harvest_suffixes.local.txt`` -- the file suffixes whose stems are worth
+  reading a name off. Reading everything would harvest prose.
+
+With any of the three missing there is nothing this can safely do, and it says so
+and exits quietly. What stays here is only the shape of a name: two or more
+capitalised words joined the way a filename joins them.
 
 A list is only as good as its last run, so the run should not depend on anyone
 remembering it. ``--if-stale HOURS`` returns immediately unless the last harvest
 is older than that, and ``--detach`` hands the work to a background process and
 returns at once -- together they make this safe to fire from anything that
-starts, however often it starts, without a 50-second walk of the library in
-front of it.
+starts, however often it starts, without a 50-second walk of the tree in front
+of it.
 
 Nothing here ever prints a harvested value. Counts only, the same rule the guard
 follows for its own excerpts.
@@ -38,46 +48,20 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Collection
 
 from app_support.sanitize.guard import blocklist_path, load_blocklist, scan_files
 
 ROOTS_NAME = "library_roots.local.txt"
 STAMP_NAME = "harvest_stamp.local.txt"
-MEDIA_SUFFIXES = {".mp4", ".mkv", ".mov", ".avi", ".wmv", ".m4v", ".webm", ".funscript"}
-# Deep enough for `<root>/2D/non_AI/<bucket>/<stage>/<file>`, shallow enough that
-# a stray archive folder does not turn into an all-night walk.
+EXCLUDED_NAME = "harvest_excluded.local.txt"
+SUFFIXES_NAME = "harvest_suffixes.local.txt"
+# Deep enough for a few levels of filing above the files themselves, shallow
+# enough that a stray archive folder does not turn into an all-night walk.
 MAX_DEPTH = 6
 
-# Structure, not content. These name the shape of the library, appear in every
-# public README already, and would fail innocent commits everywhere.
-STRUCTURAL = {
-    "ai", "non ai", "nonai", "2d", "3d", "vr", "videos", "video", "images",
-    "metadata", "scripts", "torrents", "projects", "other", "misc", "archive",
-    "unsorted", "processed", "originals", "clips", "scenes", "compilations",
-    "done", "outbox", "inbox", "trash", "temp", "tmp", "new", "old", "backup",
-    "good to go", "do not need work", "could use work", "clips to upscale",
-    "needs work", "to upscale", "retired", "favorites", "favourites",
-}
-# Pipeline and encoder vocabulary that rides along in filenames.
-TECHNICAL = {
-    "topaz", "iris", "apo", "apf", "proteus", "artemis", "gaia", "chronos",
-    "upscaled", "enhanced", "interpolated", "encode", "encoded", "remux",
-    "hevc", "h264", "h265", "av1", "aac", "opus", "mp3", "1080p", "720p",
-    "2160p", "4k", "8k", "60fps", "30fps", "sdr", "hdr", "pov", "scene",
-    "part", "vol", "final", "draft", "copy", "trim", "trimmed", "cut",
-}
-# Placeholders the fixtures deliberately use. None of them should ever be in the
-# library, but blocking one would fail every repo at once, so they are named.
-FABRICATED = {
-    "jane doe", "john roe", "mary roe", "richard roe", "ada roe", "lee poe",
-    "bea long", "amy long", "example studio", "nora quill", "ann bly",
-    "iris fenn", "marlow sterne", "bryn vance", "corin waverly", "delia moss",
-    "alpha", "beta", "gamma", "larkin",
-}
-EXCLUDED = STRUCTURAL | TECHNICAL | FABRICATED
-
 # Two or more capitalized words joined the way a filename joins them: the shape
-# a performer credit takes, and the shape every leak so far has had.
+# a credit takes, and the shape every leak so far has had.
 _CAPPED = r"[A-Z][A-Za-z']{2,}"
 _NAME = re.compile(rf"\b({_CAPPED}(?:[ _.-]+{_CAPPED})+)")
 _SPLIT = re.compile(r"[\s_.-]+")
@@ -93,9 +77,9 @@ def normalize(raw: str) -> str:
     return " ".join(_SPLIT.split(raw.strip())).strip().lower()
 
 
-def _is_useful(term: str) -> bool:
+def _is_useful(term: str, excluded: Collection[str]) -> bool:
     words = term.split()
-    if term in EXCLUDED or any(w in EXCLUDED for w in words):
+    if term in excluded or any(w in excluded for w in words):
         return False
     if len(words) >= 2:
         return all(len(w) >= 3 for w in words)
@@ -104,16 +88,22 @@ def _is_useful(term: str) -> bool:
     return len(term) >= 6 and term.isalpha()
 
 
-def candidates_from(name: str, *, whole_name_counts: bool) -> set[str]:
+def candidates_from(
+    name: str, *, whole_name_counts: bool, excluded: Collection[str],
+) -> set[str]:
     """Terms worth blocking from one file stem or directory name.
 
-    *whole_name_counts* is for directories: a bucket folder is named after one
-    person and nothing else, so its own name is the term. A filename is a whole
-    credit line, so only the name-shaped runs inside it are.
+    *whole_name_counts* is for directories: a folder at the bottom of the filing
+    is named after one person and nothing else, so its own name is the term. A
+    filename is a whole credit line, so only the name-shaped runs inside it are.
 
     From each run of capitalized words we keep the leading pair -- the credit,
-    in ``Performer - Title`` -- and the whole run only while it is still short
-    enough to be a name rather than a sentence.
+    in ``Name - Title`` -- and the whole run only while it is still short enough
+    to be a name rather than a sentence.
+
+    *excluded* is the machine's own list of ordinary words: one of them anywhere
+    in a run disqualifies the run, because a term already in everyday use fails
+    innocent commits everywhere the moment it lands.
     """
     found: set[str] = set()
     credit = _CREDIT_BREAK.split(name)[0]
@@ -125,11 +115,22 @@ def candidates_from(name: str, *, whole_name_counts: bool) -> set[str]:
                 found.add(" ".join(words))
     if whole_name_counts:
         found.add(normalize(name))
-    return {t for t in found if _is_useful(t)}
+    return {t for t in found if _is_useful(t, excluded)}
 
 
-def harvest(roots: list[Path], *, max_depth: int = MAX_DEPTH) -> set[str]:
-    """Every name-shaped term under *roots*, from folder names and media stems."""
+def harvest(
+    roots: list[Path],
+    *,
+    excluded: Collection[str],
+    suffixes: Collection[str],
+    max_depth: int = MAX_DEPTH,
+) -> set[str]:
+    """Every name-shaped term under *roots*.
+
+    From folder names, and from the stems of files whose suffix is one of
+    *suffixes* -- reading every file's name instead would harvest whatever else
+    happens to be filed there.
+    """
     found: set[str] = set()
     for root in roots:
         if not root.is_dir():
@@ -140,9 +141,11 @@ def harvest(roots: list[Path], *, max_depth: int = MAX_DEPTH) -> set[str]:
                 continue
             try:
                 if path.is_dir():
-                    found |= candidates_from(path.name, whole_name_counts=True)
-                elif path.suffix.lower() in MEDIA_SUFFIXES:
-                    found |= candidates_from(path.stem, whole_name_counts=False)
+                    found |= candidates_from(
+                        path.name, whole_name_counts=True, excluded=excluded)
+                elif path.suffix.lower() in suffixes:
+                    found |= candidates_from(
+                        path.stem, whole_name_counts=False, excluded=excluded)
             except OSError:
                 continue
     return found
@@ -151,8 +154,8 @@ def harvest(roots: list[Path], *, max_depth: int = MAX_DEPTH) -> set[str]:
 def already_in_code(candidates: set[str], repos: list[Path]) -> set[str]:
     """Candidates that already appear in tracked, published code.
 
-    This is the safety valve, and it does the work no word list could. A library
-    folder called ``outputs`` or ``frames`` is a real folder name, but adding it
+    This is the safety valve, and it does the work no word list could. A folder
+    called ``outputs`` or ``frames`` is a real folder name, but adding it
     would fail thousands of innocent lines the moment it landed -- and a term
     that is already sitting in a public repo is, by definition, not a secret.
     Every tracked tree is clean when this runs, so anything it finds is a
@@ -199,7 +202,7 @@ def hours_since_harvest(repo: Path) -> float | None:
 def detach(argv: list[str]) -> None:
     """Re-run this script in the background and return immediately.
 
-    A harvest walks the whole library and takes the best part of a minute. That
+    A harvest walks the whole tree and takes the best part of a minute. That
     is fine in the background and unacceptable in front of anything a person is
     waiting on, so the callers that fire this on startup never wait for it. The
     child is fully detached: it outlives the session that started it, and its
@@ -218,7 +221,7 @@ def detach(argv: list[str]) -> None:
 
 
 def read_roots(repo: Path) -> list[Path]:
-    """Library roots to walk, from the git-ignored overlay beside the blocklist."""
+    """Roots to walk, from the git-ignored overlay beside the blocklist."""
     listing = blocklist_path(repo).parent / ROOTS_NAME
     if not listing.exists():
         return []
@@ -227,6 +230,40 @@ def read_roots(repo: Path) -> list[Path]:
         for line in listing.read_text(encoding="utf-8").splitlines()
         if line.strip() and not line.startswith("#")
     ]
+
+
+def read_excluded(repo: Path) -> set[str] | None:
+    """Ordinary words a harvested run is not worth blocking for, or None.
+
+    None means the file is not there at all, which is a different answer from an
+    empty list: an empty list is somebody deciding nothing needs excluding, and a
+    missing file is a machine that was never set up. Reading the second as the
+    first would put the words the tree is filed under onto a blocklist that syncs
+    to every checkout at once, and turn all of them red.
+
+    Entries are normalised the way a candidate is, so an entry written with
+    capitals or dashes still matches.
+    """
+    listing = blocklist_path(repo).parent / EXCLUDED_NAME
+    if not listing.exists():
+        return None
+    return {normalize(term) for term in load_blocklist(listing)}
+
+
+def read_suffixes(repo: Path) -> set[str] | None:
+    """File suffixes whose stems are worth reading a name off, or None if unset.
+
+    A leading dot is optional in the file and always present in the answer, since
+    ``Path.suffix`` carries one -- an entry without it would match nothing, and
+    the failure would be a harvest that quietly reads fewer files.
+    """
+    listing = blocklist_path(repo).parent / SUFFIXES_NAME
+    if not listing.exists():
+        return None
+    return {
+        ("" if raw.startswith(".") else ".") + raw.lower()
+        for raw in load_blocklist(listing)
+    }
 
 
 def merge(existing: list[str], harvested: set[str]) -> tuple[list[str], int]:
@@ -305,14 +342,28 @@ def main(argv: list[str]) -> int:
         capture_output=True, text=True, check=True,
     ).stdout.strip())
 
+    overlay = blocklist_path(repo).parent
     roots = read_roots(repo)
     if not roots:
         print(f"no {ROOTS_NAME} beside the blocklist -- nothing to harvest.")
-        print("Write one path per line into "
-              f"{blocklist_path(repo).parent / ROOTS_NAME} to enable it.")
+        print(f"Write one path per line into {overlay / ROOTS_NAME} to enable it.")
         return 0
 
-    # Both checks come before any work: a startup caller fires this every time
+    # Refusing to walk beats walking half-informed. Without the exclusions the
+    # words the tree is filed under would land on a list that syncs to every
+    # checkout; without the suffixes every file's name would be read as a name.
+    excluded = read_excluded(repo)
+    suffixes = read_suffixes(repo)
+    absent = [name for name, got in
+              ((EXCLUDED_NAME, excluded), (SUFFIXES_NAME, suffixes)) if got is None]
+    if absent:
+        print(f"no {' or '.join(absent)} beside the blocklist -- "
+              "nothing safe to harvest.")
+        for name in absent:
+            print(f"Write one entry per line into {overlay / name}.")
+        return 0
+
+    # These checks come before any work: a startup caller fires this every time
     # it starts, and must pay nothing on the runs that have nothing to do.
     threshold = _stale_hours(argv)
     if threshold is not None:
@@ -329,7 +380,7 @@ def main(argv: list[str]) -> int:
         print(f"{len(missing)} of {len(roots)} configured roots are not "
               "reachable right now; harvesting the rest.", file=sys.stderr)
 
-    harvested = harvest(roots)
+    harvested = harvest(roots, excluded=excluded, suffixes=suffixes)
     # The primary, not this checkout: run from a worktree, `repo` has no
     # blocklist and shares its tracked files with the primary anyway.
     checkouts = [primary_of(repo), *siblings_of(repo)]
@@ -337,7 +388,7 @@ def main(argv: list[str]) -> int:
     keep = harvested - collisions
     current = load_blocklist(blocklist_path(repo))
     merged, added = merge(current, keep)
-    print(f"library yielded {len(harvested)} terms; "
+    print(f"the walk yielded {len(harvested)} terms; "
           f"{len(collisions)} dropped as ordinary vocabulary already in code; "
           f"{added} new, list now {len(merged)}.")
 
