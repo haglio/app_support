@@ -1,16 +1,17 @@
 """Pre-publication content guard.
 
-Scans text for terms that must never reach a public commit — explicit
-vocabulary, media filenames, provider/site names, personal identifiers. The
-term list is deliberately *not* committed: a checked-in blocklist would itself
-be a catalogue of the words we are trying to keep out of the public repo.
+Scans text for terms that must never reach a public commit — whatever the
+machine's own list names: private vocabulary, filename fragments, provider and
+site names, personal identifiers. The term list is deliberately *not* committed:
+a checked-in blocklist would itself be a catalogue of the words we are trying to
+keep out of the public repo.
 Instead the real list lives in a git-ignored overlay (``blocklist.local.txt``)
 and only a tame ``blocklist.example.txt`` ships in the tree to document the
 format.
 
-The module is dependency-free and importable without the app, so the git hooks
-in ``tools/githooks/`` and the unit suite can both call it cheaply — run it as
-``python -m tools.sanitize_guard --staged`` or ``--message FILE``. Excerpts are
+The module is dependency-free and importable without the app, so a repo's git
+hooks and its unit suite can both call it cheaply — run it as
+``python -m app_support.sanitize --staged`` or ``--message FILE``. Excerpts are
 fully redacted (every matched term replaced with ``***``) so the guard's own
 output never reproduces the content it is guarding against.
 """
@@ -182,7 +183,7 @@ def scan_files(
 
 
 # --------------------------------------------------------------------------
-# Command line, for the git hooks in tools/githooks/.
+# Command line, for each repo's git hooks.
 #
 # A hook catches a term while it is still staged, which is the only point at
 # which the fix is free. The unit suite catches the same term afterwards, and by
@@ -266,7 +267,3 @@ def main(argv: Sequence[str] | None = None) -> int:
         file=sys.stderr,
     )
     return 1
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

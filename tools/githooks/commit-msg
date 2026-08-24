@@ -25,4 +25,4 @@ fi
 
 message=$1
 cd "$repo"
-exec "$python" -m tools.sanitize_guard --message "$message"
+exec "$python" -m app_support.sanitize --message "$message"

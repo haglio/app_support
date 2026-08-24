@@ -29,4 +29,4 @@ fi
 [ -n "$python" ] || exit 0
 
 cd "$repo"
-exec "$python" -m tools.sanitize_guard --staged
+exec "$python" -m app_support.sanitize --staged
