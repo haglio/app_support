@@ -49,7 +49,7 @@ class TestFindViolations:
         the matcher allowed only whitespace between a term's words.
         """
         for slug in ("two-word", "two_word", "two.word", "twoword"):
-            assert find_violations(f"clip-{slug}-scene-a.mp4", ["two word"]), slug
+            assert find_violations(f"item-{slug}-part-a.dat", ["two word"]), slug
 
     def test_matches_an_inflected_form(self):
         """`badterm` on the list did not catch `badterms` in prose: the trailing
