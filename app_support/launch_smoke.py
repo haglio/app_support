@@ -141,12 +141,26 @@ def launch_imports(package: str, launch_files: Iterable[Path]) -> list[str]:
     return statements
 
 
+# Every assertion below carries its whole diagnostic in the message, and hides
+# its own frame. Living outside pytest means pytest's assertion rewriting never
+# rewrites these -- a bare `assert x == 0` here would fail with no explanation at
+# all, and the report would point into this file rather than at the repo's test
+# that called it.
+
+
+def _replay_report(result) -> str:
+    return (f"exit {result.returncode}\n"
+            f"--- stderr ---\n{result.stderr}\n--- stdout ---\n{result.stdout}")
+
+
 def assert_every_import_resolves(replay: Replay, statements: list[str]) -> None:
     """Failing here means that shortcut does nothing: the launcher has no
     console, so the traceback from a failed import goes nowhere at all."""
+    __tracebackhide__ = True
     result = replay(statements)
 
-    assert result.returncode == 0, result.stderr
+    assert result.returncode == 0, (
+        f"the launch's own imports do not resolve:\n{_replay_report(result)}")
 
 
 def assert_the_walk_reached(statements: Sequence[str], modules: Iterable[str]) -> None:
@@ -157,9 +171,12 @@ def assert_the_walk_reached(statements: Sequence[str], modules: Iterable[str]) -
     tree -- would otherwise sail through every other check here, because there is
     nothing left to fail on.
     """
+    __tracebackhide__ = True
     found = "\n".join(statements)
     for module in modules:
-        assert module in found, f"the launch imports {module}; the walk missed it"
+        assert module in found, (
+            f"the launch imports {module}; the walk missed it. "
+            f"The walk found {len(statements)} statements.")
 
 
 def assert_an_unresolvable_import_is_caught(
@@ -171,9 +188,13 @@ def assert_an_unresolvable_import_is_caught(
     *through_module* is any module the launch really imports; a symbol that
     cannot exist is asked of it, and the replay has to fail on exactly that.
     """
+    __tracebackhide__ = True
     result = replay([*statements, f"from {through_module} import NoSuchSymbol"])
 
     assert result.returncode != 0, (
-        "a symbol that cannot exist imported cleanly, so this replay proves nothing"
-    )
-    assert "NoSuchSymbol" in result.stderr, result.stderr
+        "a symbol that cannot exist imported cleanly, so this replay proves "
+        f"nothing and every check built on it is decorative:\n{_replay_report(result)}")
+    assert "NoSuchSymbol" in result.stderr, (
+        f"the replay failed, but not on the planted symbol -- so what it proves "
+        f"is that the replay is broken, not that it is watching:\n"
+        f"{_replay_report(result)}")

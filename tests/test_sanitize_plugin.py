@@ -95,6 +95,42 @@ class TestTheGuardPlugin:
 
         assert self._pytest(repo).returncode == 0
 
+    def test_the_guard_itself_never_reaches_for_pytest(self):
+        """The git hooks run `python -m app_support.sanitize` on whatever
+        interpreter they find, which is routinely a bare one with no pytest in
+        it. An import of pytest anywhere under `app_support.sanitize` would stop
+        every commit in every repo that installed these hooks, and the plugin
+        module sitting in the same package is exactly how that gets in.
+        """
+        probe = (
+            "import sys, app_support.sanitize, app_support.sanitize.harvest\n"
+            "print(sorted(m for m in sys.modules if m.startswith('pytest')"
+            " or m.startswith('_pytest')))\n"
+        )
+        done = subprocess.run(
+            [sys.executable, "-c", probe],
+            cwd=APP_SUPPORT, env={**os.environ, "PYTHONPATH": str(APP_SUPPORT)},
+            capture_output=True, text=True,
+        )
+
+        assert done.returncode == 0, done.stderr
+        assert done.stdout.strip() == "[]", done.stdout
+
+    def test_nothing_this_package_ships_can_smuggle_in_a_conftest(self):
+        """pytest loads every conftest.py on the path up from a collected file,
+        and this one is collected from inside an installed package. Measured: a
+        conftest beside the shipped module, and one at the site-packages root
+        above it, both execute inside the consumer's session -- so one added
+        here would run arbitrary setup in ten other repos' suites, which is not
+        a thing this package may be able to do by accident.
+        """
+        here = APP_SUPPORT / "app_support" / "sanitize" / "test_tracked_tree.py"
+        chain = [d for d in here.parents if APP_SUPPORT in (d, *d.parents)]
+
+        smuggled = [d / "conftest.py" for d in chain if (d / "conftest.py").exists()]
+
+        assert smuggled == [], f"these would load in every consumer's suite: {smuggled}"
+
     def test_without_the_plugin_line_nothing_is_contributed(self, tmp_path: Path):
         """The other half of the control: the check arrives *because* a repo
         asked for it. If it turned up anyway, adopting it in stage two would be
