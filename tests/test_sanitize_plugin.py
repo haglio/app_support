@@ -178,6 +178,27 @@ class TestTheGuardPlugin:
         assert done.returncode == 0, done.stderr
         assert done.stdout.strip() == "[]", done.stdout
 
+    def test_this_repo_root_offers_a_consumer_only_the_one_name(self):
+        """Collecting the shipped file puts this repo's root at the front of the
+        consumer's `sys.path` -- measured, under an editable install; under a
+        wheel it is site-packages instead. Whatever top-level names that
+        directory publishes are then offered to ten other suites ahead of their
+        own, and `tools` and `tests` are names every one of them uses.
+
+        It publishes only `app_support` today because nothing else beside it
+        carries an `__init__.py`, so the rest are namespace portions and lose to
+        a real package of the same name. That is load-bearing and invisible, so
+        it is pinned here: the day this repo grows a `tests/__init__.py` is the
+        day ten suites import the wrong `tests`.
+        """
+        published = sorted(
+            entry.name for entry in APP_SUPPORT.iterdir()
+            if (entry.is_dir() and (entry / "__init__.py").exists())
+            or (entry.suffix == ".py" and entry.is_file())
+        )
+
+        assert published == ["app_support"], published
+
     def test_nothing_this_package_ships_can_smuggle_in_a_conftest(self):
         """pytest loads every conftest.py on the path up from a collected file,
         and this one is collected from inside an installed package. Measured: a

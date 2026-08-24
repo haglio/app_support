@@ -21,14 +21,23 @@ from __future__ import annotations
 from pathlib import Path
 
 # Appended to the session's arguments rather than collected off disk: the file
-# lives in site-packages, nowhere near the tree pytest walks. It sits inside a
-# package all the way up, so pytest imports it under its dotted name and leaves
-# `sys.path` alone -- a loose module would put this directory on the front of it
-# and shadow whatever the consumer calls its own top-level modules.
+# lives wherever this package was installed, nowhere near the tree pytest walks.
 #
-# One consequence: this package must never grow a `conftest.py` anywhere above
-# the shipped file, because pytest loads every conftest on the path up from a
-# collected one and would run it inside every consumer's session.
+# Two things follow, and both reach into the consumer's session.
+#
+# Collecting a file puts the root of the package holding it at the FRONT of
+# `sys.path` -- measured: this package's own repo root under an editable install,
+# site-packages under a wheel. So every top-level name that directory publishes
+# is offered to the consumer ahead of its own. Today it publishes exactly one,
+# `app_support`, because nothing else beside it is a package; a directory without
+# an `__init__.py` is only a namespace portion and loses to a real package of the
+# same name. `tests/test_sanitize_plugin.py` holds that true, since the day this
+# repo grows a `tests/__init__.py` is the day ten other suites import the wrong
+# `tests`.
+#
+# And pytest loads every conftest on the path up from a collected file, so a
+# `conftest.py` added anywhere above this one would run inside every consumer's
+# session. Also held true by a test.
 _SHIPPED_TESTS = str(Path(__file__).resolve().parent / "test_tracked_tree.py")
 
 
