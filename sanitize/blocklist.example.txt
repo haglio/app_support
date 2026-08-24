@@ -9,8 +9,8 @@
 # Format: one term per line. Blank lines and '#' comments are ignored. Matching
 # is case-insensitive, on word boundaries (so "cat" won't fire inside "concatenate"),
 # with flexible internal whitespace (so "two words" catches "two   words").
-# List explicit vocabulary, media filenames/fragments, provider & site names,
-# and personal identifiers.
+# List whatever must not reach a public commit: private vocabulary, filename
+# fragments, provider and site names, personal identifiers.
 
 example-forbidden-term
 another example phrase
