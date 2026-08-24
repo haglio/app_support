@@ -84,6 +84,14 @@ package and "cannot run" means "not installed in the interpreter this hook
 found" — a checkout that has silently stopped being guarded. So there is no
 `exit 0` in either hook: if the import fails, the commit fails.
 
+**Each of the three needs this package reachable from a different interpreter,
+and that is the whole of what adopting them costs.** The hooks use the first
+`.venv` they find or else a bare `python` off `PATH`; the plugin uses whatever
+runs the suite, and a `-p` it cannot import is a hard pytest failure with no
+tests run, not a soft one. So the check worth making before a repo takes any of
+them is `<that interpreter> -c "import app_support.sanitize"` — a repo with no
+venv, or one whose CI never installs this package, needs that settled first.
+
 **Nothing this package reads is committed.** Every list lives in git-ignored
 `sanitize/*.local.txt` files, because the lists describe the machine and a
 committed copy of one would be the catalogue the guard exists to keep out:
