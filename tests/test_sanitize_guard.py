@@ -177,17 +177,23 @@ class TestHookEntryPoint:
             dest = repo / rel
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_bytes((here / rel).read_bytes())
+            # Copying a file does not copy its mode, and git skips a hook it
+            # cannot execute — with a warning, and a commit that succeeds. Off
+            # Windows that silently turned every case below into a test of
+            # nothing.
+            dest.chmod(0o755)
         _git(repo, "init", "-b", "main")
         _git(repo, "config", "user.email", "guard@example.test")
         _git(repo, "config", "user.name", "Guard Test")
         _git(repo, "config", "core.hooksPath", "tools/githooks")
         return repo
 
-    def _commit(self, repo: Path, message: str = "seed"):
+    def _commit(self, repo: Path, message: str = "seed", *, pythonpath: Path | None = None):
         # The hook runs whatever interpreter it finds, and this throwaway repo
         # has no venv — so hand it the guard on PYTHONPATH, standing in for the
         # installed package a real checkout's venv carries.
-        env = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1])}
+        here = Path(__file__).resolve().parents[1]
+        env = {**os.environ, "PYTHONPATH": str(pythonpath or here)}
         return subprocess.run(
             ["git", "-C", str(repo), "commit", "-m", message],
             capture_output=True, text=True, env=env,
@@ -233,6 +239,54 @@ class TestHookEntryPoint:
         (repo / "notes.md").write_text(f"this has {self.TERM} in it\n", encoding="utf-8")
         _git(repo, "add", ".")
         assert self._commit(repo).returncode == 0
+
+    def _shadow(self, tmp_path: Path) -> Path:
+        """A path entry where ``app_support`` resolves to something that is not
+        the guard, so the hook's import fails on any machine and any interpreter.
+
+        Standing in for the case this hook exists to make loud: the package is
+        not installed in whatever interpreter the hook found. Faking it beats
+        hoping the ambient python happens not to have it.
+        """
+        shadow = tmp_path / "shadow"
+        shadow.mkdir()
+        (shadow / "app_support.py").write_text("", encoding="utf-8")
+        return shadow
+
+    def test_a_guard_it_cannot_import_refuses_the_commit(self, tmp_path: Path):
+        """The contract the move to an installed package created. A hook that
+        exited 0 when the import failed would leave a checkout that has silently
+        stopped being guarded looking exactly like one that is — and that is the
+        state every leak so far was committed from.
+        """
+        repo = self._repo(tmp_path, f"{self.TERM}\n")
+        (repo / "notes.md").write_text("perfectly clean\n", encoding="utf-8")
+        _git(repo, "add", ".")
+
+        done = self._commit(repo, pythonpath=self._shadow(tmp_path))
+
+        assert done.returncode != 0
+        assert "app_support" in done.stderr
+
+    def test_a_guard_it_cannot_import_refuses_the_message_too(self, tmp_path: Path):
+        """Both hooks or neither: a commit-msg hook that waved the message
+        through would leave the half of the surface terms actually land in.
+        """
+        repo = self._repo(tmp_path, f"{self.TERM}\n")
+        (repo / "notes.md").write_text("perfectly clean\n", encoding="utf-8")
+        _git(repo, "add", ".")
+        shadow = self._shadow(tmp_path)
+        # Past the pre-commit hook, so the refusal under test is the message one.
+        _git(repo, "config", "core.hooksPath", "tools/githooks-msg-only")
+        (repo / "tools" / "githooks-msg-only").mkdir()
+        hook = repo / "tools" / "githooks-msg-only" / "commit-msg"
+        hook.write_bytes((repo / "tools" / "githooks" / "commit-msg").read_bytes())
+        hook.chmod(0o755)
+
+        done = self._commit(repo, pythonpath=shadow)
+
+        assert done.returncode != 0
+        assert "app_support" in done.stderr
 
 
 def test_no_blocklisted_terms_in_the_tracked_tree():
