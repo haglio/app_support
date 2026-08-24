@@ -134,6 +134,24 @@ class TestTheGuardPlugin:
         assert done.returncode == 0
         assert "1 passed" in done.stdout
 
+    def test_a_source_tree_with_no_git_at_all_still_runs_green(self, tmp_path: Path):
+        """There is nothing to enforce against without a checkout to ask, and
+        the check has to say so by passing rather than by raising. A source
+        archive and a stripped CI checkout both arrive this way, and a plugin
+        that took either of them down would be removed from every repo by
+        lunchtime.
+        """
+        repo = tmp_path / "unpacked"
+        (repo / "tests").mkdir(parents=True)
+        (repo / "pyproject.toml").write_text(PYPROJECT, encoding="utf-8")
+        (repo / "tests" / "test_local.py").write_text(
+            "def test_local():\n    assert True\n", encoding="utf-8")
+
+        done = self._pytest(repo)
+
+        assert done.returncode == 0, done.stdout
+        assert "2 passed" in done.stdout
+
     def test_an_untracked_file_is_not_the_repos_problem(self, tmp_path: Path):
         """Only what is published can leak. A scratch file beside the checkout
         is not going anywhere, and failing on it would make the check
