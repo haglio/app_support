@@ -10,7 +10,7 @@ from pathlib import Path
 
 import subprocess
 
-from tools.harvest_blocklist import (
+from app_support.sanitize.harvest import (
     EXCLUDED,
     _stale_hours,
     already_in_code,

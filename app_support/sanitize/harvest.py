@@ -1,11 +1,11 @@
 """Learn the blocklist from the media library, instead of remembering it by hand.
 
-    python tools/harvest_blocklist.py            # this checkout's list
-    python tools/harvest_blocklist.py --sync     # ...and every sibling's
-    python tools/harvest_blocklist.py --dry-run  # counts only, write nothing
-    python tools/harvest_blocklist.py --if-stale 12 --detach --sync   # startup
+    python -m app_support.sanitize.harvest            # this checkout's list
+    python -m app_support.sanitize.harvest --sync     # ...and every sibling's
+    python -m app_support.sanitize.harvest --dry-run  # counts only, write nothing
+    python -m app_support.sanitize.harvest --if-stale 12 --detach --sync   # startup
 
-``sanitize_guard`` can only refuse a term it has been told about, which leaves
+The guard can only refuse a term it has been told about, which leaves
 one hole it cannot close on its own: a performer name nobody has ever added
 passes the hook, the suite and CI alike. That is not hypothetical -- it is how
 every value that reached a public ``main`` got there, and each one of them was
@@ -39,9 +39,7 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from app_support.sanitize import blocklist_path, load_blocklist  # noqa: E402
+from app_support.sanitize.guard import blocklist_path, load_blocklist, scan_files
 
 ROOTS_NAME = "library_roots.local.txt"
 STAMP_NAME = "harvest_stamp.local.txt"
@@ -163,8 +161,6 @@ def already_in_code(candidates: set[str], repos: list[Path]) -> set[str]:
     One pass over each tree with all candidates at once, since the alternative is
     hundreds of passes over the same files.
     """
-    from app_support.sanitize import scan_files
-
     terms = sorted(candidates)
     if not terms:
         return set()
@@ -214,7 +210,7 @@ def detach(argv: list[str]) -> None:
     if sys.platform == "win32":  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
         flags = 0x00000008 | 0x00000200
     subprocess.Popen(
-        [sys.executable, str(Path(__file__).resolve()),
+        [sys.executable, "-m", "app_support.sanitize.harvest",
          *[a for a in argv if a != "--detach"]],
         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL, creationflags=flags, close_fds=True,
@@ -249,8 +245,8 @@ HEADER = """\
 # inflections real text uses -- write terms in prose form.
 #
 # Kept identical across every Haglio repo, so a term learned anywhere is
-# enforced everywhere. Add to it with tools/harvest_blocklist.py --sync, which
-# reads the library named in library_roots.local.txt.
+# enforced everywhere. Add to it with `python -m app_support.sanitize.harvest
+# --sync`, which reads the roots named in library_roots.local.txt.
 """
 
 
