@@ -362,6 +362,11 @@ class TestTheCommandLine:
         home, kin = tmp_path / "home", tmp_path / "kin"
         for repo in (home, kin):
             (repo / "sanitize").mkdir(parents=True)
+            # Ignored exactly as in the real repos, and the fixture depends on
+            # it: a committed blocklist is copied into a worktree, and the
+            # worktree then answers with its own instead of the primary's.
+            (repo / ".gitignore").write_text(
+                "sanitize/*.local.txt\n", encoding="utf-8")
             (repo / "sanitize" / "blocklist.local.txt").write_text(
                 "keptterm\n", encoding="utf-8")
             _git(repo, "init", "-b", "main")
@@ -414,6 +419,30 @@ class TestTheCommandLine:
         assert "nothing to harvest" in capsys.readouterr().out
         assert self._terms(home) == ["keptterm"]
         assert not stamp_path(home).exists()
+
+    def test_a_run_from_a_worktree_writes_the_primary_it_belongs_to(
+        self, tmp_path: Path, monkeypatch, capsys,
+    ):
+        """Where all the work happens, and the only case that tells the two
+        apart. A worktree has no blocklist of its own -- it is git-ignored, so it
+        exists only where it was written -- and writing the merged list into the
+        worktree would leave the real one untouched and the harvest invisible.
+        """
+        home, _kin, _ = self._family(tmp_path)
+        tree = home / ".claude" / "worktrees" / "wt"
+        tree.parent.mkdir(parents=True)
+        _git(home, "worktree", "add", str(tree), "-b", "side")
+        monkeypatch.chdir(tree)
+
+        assert harvest_main([]) == 0
+
+        assert "petra vance" in self._terms(home)
+        assert not (tree / "sanitize").exists()
+        # And it says so by the primary's name. The write lands there either
+        # way, since resolving the blocklist already crosses from a worktree to
+        # the checkout that holds it -- the report is the only place the two can
+        # be told apart, and it is what tells a person which lists were touched.
+        assert "written to: home" in capsys.readouterr().out
 
     def test_sync_writes_every_sibling_that_keeps_a_list(
         self, tmp_path: Path, monkeypatch, capsys,

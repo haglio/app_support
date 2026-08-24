@@ -47,6 +47,16 @@ class TestFindViolations:
         found = find_violations("clean\nclean\nhas badterm\nclean", ["badterm"])
         assert [v.line for v in found] == [3]
 
+    def test_violations_come_back_in_the_order_a_reader_would_want_them(self):
+        """Matching runs term by term, so the raw order is grouped by term and
+        scattered by line. Only the first twenty are ever reported, so an
+        unsorted list would show a reader whichever twenty happened to match
+        first rather than the ones at the top of the file.
+        """
+        found = find_violations("has beta\nclean\nhas alpha\n", ["alpha", "beta"])
+
+        assert [(v.line, v.term) for v in found] == [(1, "beta"), (3, "alpha")]
+
     def test_matches_a_multi_word_term_joined_the_way_a_filename_joins_it(self):
         """The list is written in prose; the leak arrives as a filename. Real
         names sat on a public `main` in exactly these shapes, unflagged, because
