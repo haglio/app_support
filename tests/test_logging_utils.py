@@ -138,9 +138,6 @@ class TestEnableFaulthandler:
             assert log_file.parent.is_dir()
             assert not handle.closed
         finally:
-            import faulthandler
-
-            faulthandler.disable()
             handle.close()
 
     def test_appends_rather_than_truncating(self, tmp_path: Path):
@@ -154,9 +151,6 @@ class TestEnableFaulthandler:
             handle.write("later\n")
             handle.flush()
         finally:
-            import faulthandler
-
-            faulthandler.disable()
             handle.close()
 
         assert log_file.read_text(encoding="utf-8") == "earlier crash\nlater\n"
