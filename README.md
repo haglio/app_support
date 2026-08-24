@@ -8,7 +8,8 @@ byte-identical copy of the same four things:
 
 - **`logging_utils`** — a rotating file logger, `sys`/`threading` exception hooks
   that survive an unhandled crash, and a faulthandler for the native ones.
-- **`threading_utils`** — `start_daemon_thread`.
+- **`threading_utils`** — `start_daemon_thread`, and `wait_until` for
+  synchronising on the event itself rather than on a fixed nap.
 - **`cli`** — `preparse_config_path`, the throwaway parser that reads `--config`
   before the real parser exists.
 - **`subprocess_utils`** — `hidden_subprocess_kwargs`, so shelling out to ffprobe
