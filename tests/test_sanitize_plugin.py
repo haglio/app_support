@@ -261,6 +261,24 @@ class TestTheGuardPlugin:
 
         assert smuggled == [], f"these would load in every consumer's suite: {smuggled}"
 
+    def test_this_package_declares_no_pytest_entry_point(self):
+        """What makes the line above the *only* way in.
+
+        A `pytest11` entry point would load this plugin in every venv holding
+        this package, which is most of them — so the check would arrive in ten
+        repos at once, whether or not they asked, and stage two's rollout would
+        be unmeasurable. Reproduced while reviewing this branch: with a
+        fabricated dist-info declaring `[pytest11]`, a repo naming no plugin
+        loads it anyway and goes red on a planted term.
+
+        Nothing else can catch this. A repo that does not name the plugin is
+        green either way today, because without an entry point there is no code
+        path to run — so the declaration itself is the thing to watch.
+        """
+        pyproject = (APP_SUPPORT / "pyproject.toml").read_text(encoding="utf-8")
+
+        assert "pytest11" not in pyproject
+
     def test_without_the_plugin_line_nothing_is_contributed(self, tmp_path: Path):
         """The other half of the control: the check arrives *because* a repo
         asked for it. If it turned up anyway, adopting it in stage two would be
