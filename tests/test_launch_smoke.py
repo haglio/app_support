@@ -84,6 +84,18 @@ class TestWhatTheWalkLeavesOut:
         """)
         assert got == ["from typing import TYPE_CHECKING"]
 
+    def test_skips_a_type_checking_body_written_through_the_module(self, tmp_path: Path):
+        """`if typing.TYPE_CHECKING:` is the same statement spelled the other
+        way, and a launcher that writes it that way must not have those imports
+        insisted on -- it would be a red smoke test for an app that launches.
+        """
+        got = _one_file(tmp_path, """
+            import typing
+            if typing.TYPE_CHECKING:
+                from pkg.heavy import Thing
+        """)
+        assert got == ["import typing"]
+
     def test_skips_an_import_the_module_already_tolerates_missing(self, tmp_path: Path):
         """The launch survives it, so insisting on it would fail a run that the
         real launcher would have completed.
@@ -92,6 +104,20 @@ class TestWhatTheWalkLeavesOut:
             try:
                 from pkg.optional import Extra
             except ImportError:
+                Extra = None
+        """)
+        assert got == []
+
+    def test_a_tolerated_import_still_counts_when_caught_among_others(self, tmp_path: Path):
+        """`except (ImportError, OSError):` tolerates the missing module just as
+        squarely as the single-name form. Reading only the single form would
+        replay an import the launch already survives, and fail a launcher that
+        works.
+        """
+        got = _one_file(tmp_path, """
+            try:
+                from pkg.optional import Extra
+            except (OSError, ImportError):
                 Extra = None
         """)
         assert got == []
@@ -216,10 +242,14 @@ class TestTheAssertionsGoRed:
     def test_a_negative_control_that_reported_success_fails_the_assertion(self):
         """If the replay reported success even with a symbol that cannot exist,
         every assertion built on it would pass for the same empty reason.
+
+        The stderr says the right thing, so only the exit code can be what
+        rejects this -- otherwise the case is killed by the other assertion and
+        the one it is written for goes unpinned.
         """
         with pytest.raises(AssertionError):
             assert_an_unresolvable_import_is_caught(
-                self._reports(0), ["import json"], "pkg.window")
+                self._reports(0, "NoSuchSymbol"), ["import json"], "pkg.window")
 
     def test_a_negative_control_failing_for_some_other_reason_fails(self):
         """Non-zero is not enough: the replay has to fail *on the symbol that
