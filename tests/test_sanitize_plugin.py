@@ -49,10 +49,10 @@ class TestTheGuardPlugin:
         _git(repo, "commit", "-m", "seed", "--no-verify")
         return repo
 
-    def _pytest(self, repo: Path) -> subprocess.CompletedProcess:
+    def _pytest(self, repo: Path, *args: str) -> subprocess.CompletedProcess:
         env = {**os.environ, "PYTHONPATH": str(APP_SUPPORT)}
         return subprocess.run(
-            [sys.executable, "-m", "pytest", "-q"],
+            [sys.executable, "-m", "pytest", "-q", *args],
             cwd=repo, env=env, capture_output=True, text=True,
         )
 
@@ -94,6 +94,48 @@ class TestTheGuardPlugin:
         (repo / "scratch.md").write_text(f"this has {TERM} in it\n", encoding="utf-8")
 
         assert self._pytest(repo).returncode == 0
+
+    def test_a_directory_run_is_still_a_run_of_the_whole_tree(self, tmp_path: Path):
+        """`pytest tests/` is the command this family's own instructions give,
+        and it has narrowed nothing -- so it enforces, exactly as a bare run
+        does.
+        """
+        repo = self._repo(
+            tmp_path, blocklist=f"{TERM}\n", tracked=f"this has {TERM} in it\n")
+        (repo / "tests").mkdir()
+        (repo / "tests" / "test_local.py").write_text(
+            "def test_local():\n    assert True\n", encoding="utf-8")
+
+        assert self._pytest(repo, "tests").returncode != 0
+
+    def test_a_run_that_names_one_file_leaves_the_tree_alone(self, tmp_path: Path):
+        """Narrowed on purpose. Enforcing here would put a whole-tree scan in
+        front of a one-test run, and would land the guard in the middle of any
+        test that shells out to pytest against a chosen file and counts what
+        came back -- which four repos in this family do.
+        """
+        repo = self._repo(
+            tmp_path, blocklist=f"{TERM}\n", tracked=f"this has {TERM} in it\n")
+        (repo / "tests").mkdir()
+        target = repo / "tests" / "test_local.py"
+        target.write_text("def test_local():\n    assert True\n", encoding="utf-8")
+
+        done = self._pytest(repo, str(target))
+
+        assert done.returncode == 0, done.stdout
+        assert "1 passed" in done.stdout
+
+    def test_a_run_that_names_one_test_leaves_the_tree_alone(self, tmp_path: Path):
+        repo = self._repo(
+            tmp_path, blocklist=f"{TERM}\n", tracked=f"this has {TERM} in it\n")
+        (repo / "tests").mkdir()
+        target = repo / "tests" / "test_local.py"
+        target.write_text("def test_local():\n    assert True\n", encoding="utf-8")
+
+        done = self._pytest(repo, f"{target}::test_local")
+
+        assert done.returncode == 0, done.stdout
+        assert "1 passed" in done.stdout
 
     def test_the_guard_itself_never_reaches_for_pytest(self):
         """The git hooks run `python -m app_support.sanitize` on whatever
