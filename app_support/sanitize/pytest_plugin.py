@@ -25,6 +25,14 @@ from pathlib import Path
 # package all the way up, so pytest imports it under its dotted name and leaves
 # `sys.path` alone -- a loose module would put this directory on the front of it
 # and shadow whatever the consumer calls its own top-level modules.
+#
+# Two consequences of appending, both deliberate. A focused run (`pytest
+# tests/test_one.py`) scans the tracked tree too, which costs a second and is the
+# safe direction to be wrong in: the alternative -- deciding from the shape of
+# the invocation whether to enforce -- gives a content guard a way to be silently
+# absent, which is the one thing it must never be. And this package must never
+# grow a root `conftest.py`, since pytest would load it for every consumer that
+# collects this file.
 _SHIPPED_TESTS = str(Path(__file__).resolve().parent / "test_tracked_tree.py")
 
 

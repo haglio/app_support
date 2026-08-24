@@ -21,6 +21,8 @@ for candidate in \
 do
     if [ -x "$candidate" ]; then python="$candidate"; break; fi
 done
+# An unresolved name is itself the loud failure: the exec below fails and the
+# commit stops, rather than a branch here deciding to let it through.
 python=${python:-$(command -v python3 || command -v python || echo python3)}
 
 message=$1

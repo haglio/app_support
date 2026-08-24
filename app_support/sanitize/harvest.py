@@ -349,9 +349,21 @@ def main(argv: list[str]) -> int:
         print(f"Write one path per line into {overlay / ROOTS_NAME} to enable it.")
         return 0
 
+    # Both checks come before any work: a startup caller fires this every time
+    # it starts, and must pay nothing on the runs that have nothing to do.
+    threshold = _stale_hours(argv)
+    if threshold is not None:
+        age = hours_since_harvest(repo)
+        if age is not None and age < threshold:
+            print(f"harvested {age:.1f}h ago, under the {threshold:g}h "
+                  "threshold -- nothing to do.")
+            return 0
+
     # Refusing to walk beats walking half-informed. Without the exclusions the
     # words the tree is filed under would land on a list that syncs to every
     # checkout; without the suffixes every file's name would be read as a name.
+    # Before `--detach` and not after: a detached child's output goes to three
+    # DEVNULLs, so this is the last point at which anyone can be told.
     excluded = read_excluded(repo)
     suffixes = read_suffixes(repo)
     absent = [name for name, got in
@@ -363,15 +375,6 @@ def main(argv: list[str]) -> int:
             print(f"Write one entry per line into {overlay / name}.")
         return 0
 
-    # These checks come before any work: a startup caller fires this every time
-    # it starts, and must pay nothing on the runs that have nothing to do.
-    threshold = _stale_hours(argv)
-    if threshold is not None:
-        age = hours_since_harvest(repo)
-        if age is not None and age < threshold:
-            print(f"harvested {age:.1f}h ago, under the {threshold:g}h "
-                  "threshold -- nothing to do.")
-            return 0
     if "--detach" in argv:
         detach(argv)
         return 0
