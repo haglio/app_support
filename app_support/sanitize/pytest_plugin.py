@@ -26,16 +26,30 @@ from pathlib import Path
 # `sys.path` alone -- a loose module would put this directory on the front of it
 # and shadow whatever the consumer calls its own top-level modules.
 #
-# Two consequences of appending, both deliberate. A focused run (`pytest
-# tests/test_one.py`) scans the tracked tree too, which costs a second and is the
-# safe direction to be wrong in: the alternative -- deciding from the shape of
-# the invocation whether to enforce -- gives a content guard a way to be silently
-# absent, which is the one thing it must never be. And this package must never
-# grow a root `conftest.py`, since pytest would load it for every consumer that
-# collects this file.
+# One consequence: this package must never grow a `conftest.py` anywhere above
+# the shipped file, because pytest loads every conftest on the path up from a
+# collected one and would run it inside every consumer's session.
 _SHIPPED_TESTS = str(Path(__file__).resolve().parent / "test_tracked_tree.py")
 
 
+def _is_a_run_of_whole_trees(args: list[str]) -> bool:
+    """Whether this session is running trees rather than chosen tests.
+
+    A run of whole trees is one nobody has narrowed: a bare ``pytest``, whose
+    arguments come from ``testpaths`` or the invocation directory, or one naming
+    directories. Those are what CI runs -- every repo in this family runs a bare
+    ``python -m pytest -q`` -- and they are where the guard belongs.
+
+    A run that names a file or a node id has been narrowed on purpose, and
+    enforcing there costs more than it protects. It puts a whole-tree scan in
+    front of a one-test run, and it lands the guard in the middle of any test
+    that shells out to pytest against a chosen file and counts what came back --
+    which four repos in this family do, and which is how this rule was found.
+    """
+    return bool(args) and all(Path(arg.split("::")[0]).is_dir() for arg in args)
+
+
 def pytest_configure(config) -> None:
-    if _SHIPPED_TESTS not in config.args:
-        config.args.append(_SHIPPED_TESTS)
+    if _SHIPPED_TESTS in config.args or not _is_a_run_of_whole_trees(config.args):
+        return
+    config.args.append(_SHIPPED_TESTS)
