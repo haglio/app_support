@@ -27,6 +27,10 @@ class TestFindViolations:
 
     def test_word_boundary_prevents_substring_false_positive(self):
         assert find_violations("a concatenated list", ["cat"]) == []
+        # A term at the *end* of a longer word, which only the left-hand
+        # boundary refuses -- every other case here is caught by the right one,
+        # so without this the left guard could be deleted and nothing would say.
+        assert find_violations("a bobcat here", ["cat"]) == []
 
     def test_matches_a_multi_word_term_across_flexible_whitespace(self):
         assert find_violations("a two   word phrase", ["two word"])
@@ -67,7 +71,14 @@ class TestFindViolations:
         assert find_violations("a category error", ["cat"]) == []
 
     def test_punctuated_term_matches_literally(self):
+        """Literally, not as a pattern. Without escaping, the `.` in a term is a
+        wildcard that fires on text the term does not name, and a term carrying a
+        bracket or a paren stops being a term at all -- it raises, and takes
+        every commit in the repo down with it.
+        """
         assert find_violations("go to site.example now", ["site.example"])
+        assert find_violations("go to siteXexample now", ["site.example"]) == []
+        assert find_violations("the (parenthesised) name", ["(parenthesised)"])
 
     def test_reports_the_line_number(self):
         found = find_violations("clean\nclean\nbadterm here", ["badterm"])
@@ -253,6 +264,21 @@ class TestHookEntryPoint:
         (shadow / "app_support.py").write_text("", encoding="utf-8")
         return shadow
 
+    def _only(self, repo: Path, hook_name: str) -> None:
+        """Point the repo at a hooks directory holding just one of the two.
+
+        Both hooks run on a commit and either can refuse it, so a case about one
+        of them has to be the only one installed — otherwise the other's refusal
+        answers for it, and the hook actually under test could be `exit 0`
+        throughout and nothing would say so.
+        """
+        alone = repo / "tools" / f"githooks-{hook_name}-only"
+        alone.mkdir()
+        hook = alone / hook_name
+        hook.write_bytes((repo / "tools" / "githooks" / hook_name).read_bytes())
+        hook.chmod(0o755)
+        _git(repo, "config", "core.hooksPath", str(alone.relative_to(repo)))
+
     def test_a_guard_it_cannot_import_refuses_the_commit(self, tmp_path: Path):
         """The contract the move to an installed package created. A hook that
         exited 0 when the import failed would leave a checkout that has silently
@@ -262,6 +288,7 @@ class TestHookEntryPoint:
         repo = self._repo(tmp_path, f"{self.TERM}\n")
         (repo / "notes.md").write_text("perfectly clean\n", encoding="utf-8")
         _git(repo, "add", ".")
+        self._only(repo, "pre-commit")
 
         done = self._commit(repo, pythonpath=self._shadow(tmp_path))
 
@@ -275,15 +302,9 @@ class TestHookEntryPoint:
         repo = self._repo(tmp_path, f"{self.TERM}\n")
         (repo / "notes.md").write_text("perfectly clean\n", encoding="utf-8")
         _git(repo, "add", ".")
-        shadow = self._shadow(tmp_path)
-        # Past the pre-commit hook, so the refusal under test is the message one.
-        _git(repo, "config", "core.hooksPath", "tools/githooks-msg-only")
-        (repo / "tools" / "githooks-msg-only").mkdir()
-        hook = repo / "tools" / "githooks-msg-only" / "commit-msg"
-        hook.write_bytes((repo / "tools" / "githooks" / "commit-msg").read_bytes())
-        hook.chmod(0o755)
+        self._only(repo, "commit-msg")
 
-        done = self._commit(repo, pythonpath=shadow)
+        done = self._commit(repo, pythonpath=self._shadow(tmp_path))
 
         assert done.returncode != 0
         assert "app_support" in done.stderr

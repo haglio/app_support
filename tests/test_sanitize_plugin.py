@@ -16,6 +16,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from app_support.sanitize import pytest_plugin
+
 APP_SUPPORT = Path(__file__).resolve().parents[1]
 TERM = "plantedterm"
 
@@ -27,6 +29,51 @@ addopts = "-p no:cacheprovider -p app_support.sanitize.pytest_plugin"
 
 def _git(cwd: Path, *args: str) -> None:
     subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True)
+
+
+class TestWhichRunsAreEnforced:
+    """The rule itself, without a subprocess in the way.
+
+    The end-to-end cases below prove the rule reaches a real session; these
+    prove which way each shape of argument is decided, including the ones a real
+    session cannot easily be talked into producing.
+    """
+
+    class _Config:
+        def __init__(self, args):
+            self.args = list(args)
+
+    def test_no_arguments_of_its_own_is_a_whole_tree(self):
+        """pytest fills these in from `testpaths` or the invocation directory,
+        as absolute paths, before any plugin is configured -- so an empty list
+        never actually reaches here, and a directory is what does.
+        """
+        assert pytest_plugin.is_a_run_of_whole_trees([str(APP_SUPPORT / "tests")])
+
+    def test_several_directories_are_still_whole_trees(self):
+        assert pytest_plugin.is_a_run_of_whole_trees(
+            [str(APP_SUPPORT / "tests"), str(APP_SUPPORT / "app_support")])
+
+    def test_one_named_file_among_directories_narrows_the_whole_run(self):
+        assert not pytest_plugin.is_a_run_of_whole_trees(
+            [str(APP_SUPPORT / "tests"), str(APP_SUPPORT / "tests" / "test_cli.py")])
+
+    def test_a_node_id_is_not_a_tree(self):
+        assert not pytest_plugin.is_a_run_of_whole_trees(
+            [f"{APP_SUPPORT / 'tests' / 'test_cli.py'}::test_one"])
+
+    def test_nothing_at_all_is_not_a_tree(self):
+        """Nothing to enforce against, and appending to it would invent a run."""
+        assert not pytest_plugin.is_a_run_of_whole_trees([])
+
+    def test_the_check_is_added_once_however_often_this_is_configured(self):
+        """Two copies would collect the same check twice."""
+        config = self._Config([str(APP_SUPPORT / "tests")])
+
+        pytest_plugin.pytest_configure(config)
+        pytest_plugin.pytest_configure(config)
+
+        assert len(config.args) == 2, config.args
 
 
 class TestTheGuardPlugin:

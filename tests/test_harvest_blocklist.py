@@ -11,6 +11,10 @@ from pathlib import Path
 
 import subprocess
 
+import pytest
+
+from app_support.sanitize import harvest as harvest_module
+from app_support.sanitize.guard import load_blocklist
 from app_support.sanitize.harvest import (
     _stale_hours,
     already_in_code,
@@ -63,6 +67,20 @@ class TestCandidatesFrom:
             excluded=EXCLUDED,
         )
         assert got == {"petra vance"}
+
+    def test_the_credit_is_read_off_the_dash_not_off_the_first_two_words(self):
+        """A name longer than two words is why the leading region is split at
+        the dash at all. Without the split the run stops being a name somewhere
+        inside the title, and the third word of the credit is lost -- which the
+        two-word case cannot show, because its leading pair is the whole credit
+        either way.
+        """
+        got = candidates_from(
+            "Ann Lee Kim - Some Long Title",
+            whole_name_counts=False,
+            excluded=EXCLUDED,
+        )
+        assert got == {"ann lee", "ann lee kim"}
 
     def test_finds_a_name_however_the_filename_joins_it(self):
         for stem in ("Petra-Vance-part-a-fine", "Petra_Vance_540-abcd1234",
@@ -130,8 +148,7 @@ class TestHarvest:
         base = root / "archive" / "inner" / "other"
         (base / "hargrove" / "0 assorted").mkdir(parents=True)
         (base / "hargrove" / "0 assorted" / "Petra Vance - A Long Title.dat").touch()
-        (base / "hargrove" / "0 assorted" / "notes.txt").write_text(
-            "Marisol Quint should not be found here", encoding="utf-8")
+        (base / "hargrove" / "0 assorted" / "Marisol Quint - Notes.txt").touch()
         (base / "Tallis-Brand-part-a.blob").touch()
         return root
 
@@ -140,11 +157,17 @@ class TestHarvest:
         assert {"hargrove", "petra vance", "tallis brand"} <= found
 
     def test_reads_a_name_only_off_the_suffixes_it_was_given(self, tmp_path: Path):
-        """Only names *in the tree's own naming* count. Reading arbitrary text
-        files would harvest prose and block half the English language.
+        """The whole reason the suffix list exists. Reading every file's name
+        would harvest whatever else is filed there and put ordinary words on a
+        list that syncs to every checkout -- so the same name is invisible under
+        one suffix list and found under another, and nothing else changes.
         """
-        found = harvest([self._tree(tmp_path)], excluded=EXCLUDED, suffixes=SUFFIXES)
-        assert "marisol quint" not in found
+        tree = self._tree(tmp_path)
+
+        assert "marisol quint" not in harvest(
+            [tree], excluded=EXCLUDED, suffixes=SUFFIXES)
+        assert "marisol quint" in harvest(
+            [tree], excluded=EXCLUDED, suffixes={*SUFFIXES, ".txt"})
 
     def test_a_root_that_is_not_there_is_skipped_not_fatal(self, tmp_path: Path):
         assert harvest([tmp_path / "gone", self._tree(tmp_path)],
@@ -318,6 +341,180 @@ class TestVocabulary:
         assert "harvest_excluded.local.txt" in printed
         assert "harvest_suffixes.local.txt" in printed
         assert blocklist.read_text(encoding="utf-8") == "kept\n"
+
+
+class TestTheCommandLine:
+    """The flags, driven end to end against a real family of checkouts.
+
+    This is the surface something else already depends on: a session start fires
+    `--if-stale 12 --detach --sync` and never waits for it, so every one of these
+    decisions is silent in production. A run that ignored `--dry-run`, dropped
+    `--sync`, walked instead of detaching, wrote into the wrong checkout or
+    stamped a run that died partway would look exactly like a run that worked.
+    """
+
+    def _family(self, tmp_path: Path) -> tuple[Path, Path, Path]:
+        """A primary checkout, one sibling that keeps a blocklist, and a tree."""
+        tree = tmp_path / "tree" / "archive"
+        (tree / "hargrove").mkdir(parents=True)
+        (tree / "hargrove" / "Petra Vance - A Title.dat").touch()
+
+        home, kin = tmp_path / "home", tmp_path / "kin"
+        for repo in (home, kin):
+            (repo / "sanitize").mkdir(parents=True)
+            (repo / "sanitize" / "blocklist.local.txt").write_text(
+                "keptterm\n", encoding="utf-8")
+            _git(repo, "init", "-b", "main")
+            _git(repo, "config", "user.email", "h@e.test")
+            _git(repo, "config", "user.name", "H")
+            (repo / "code.py").write_text("x = 1\n", encoding="utf-8")
+            _git(repo, "add", ".")
+            _git(repo, "commit", "-m", "seed", "--no-verify")
+        overlay = home / "sanitize"
+        (overlay / "library_roots.local.txt").write_text(
+            f"{tmp_path / 'tree'}\n", encoding="utf-8")
+        (overlay / "harvest_excluded.local.txt").write_text(
+            "archive\n", encoding="utf-8")
+        (overlay / "harvest_suffixes.local.txt").write_text(".dat\n", encoding="utf-8")
+        return home, kin, tmp_path / "tree"
+
+    def _terms(self, repo: Path) -> list[str]:
+        return load_blocklist(repo / "sanitize" / "blocklist.local.txt")
+
+    def test_a_plain_run_writes_the_primary_and_stamps_it(
+        self, tmp_path: Path, monkeypatch, capsys,
+    ):
+        home, kin, _ = self._family(tmp_path)
+        monkeypatch.chdir(home)
+
+        assert harvest_main([]) == 0
+
+        assert "petra vance" in self._terms(home)
+        assert "keptterm" in self._terms(home)  # what was there is kept
+        assert self._terms(kin) == ["keptterm"]  # untouched without --sync
+        assert stamp_path(home).exists()
+        # The file explains itself: it is git-ignored and machine-local, so the
+        # header is the only thing that ever tells a reader what it is.
+        written = (home / "sanitize" / "blocklist.local.txt").read_text(encoding="utf-8")
+        assert written.startswith("#")
+
+    def test_no_roots_configured_is_a_quiet_nothing_to_do(
+        self, tmp_path: Path, monkeypatch, capsys,
+    ):
+        """A checkout that never set the tool up has nothing to walk, and says so
+        without failing: a session start fires this and must not be taken down by
+        a machine that simply does not harvest.
+        """
+        home, _kin, _ = self._family(tmp_path)
+        (home / "sanitize" / "library_roots.local.txt").unlink()
+        monkeypatch.chdir(home)
+
+        assert harvest_main(["--sync"]) == 0
+
+        assert "nothing to harvest" in capsys.readouterr().out
+        assert self._terms(home) == ["keptterm"]
+        assert not stamp_path(home).exists()
+
+    def test_sync_writes_every_sibling_that_keeps_a_list(
+        self, tmp_path: Path, monkeypatch, capsys,
+    ):
+        home, kin, _ = self._family(tmp_path)
+        monkeypatch.chdir(home)
+
+        assert harvest_main(["--sync"]) == 0
+
+        assert "petra vance" in self._terms(kin)
+        assert "keptterm" in self._terms(kin)
+
+    def test_dry_run_reports_the_counts_and_writes_nothing(
+        self, tmp_path: Path, monkeypatch, capsys,
+    ):
+        home, _kin, _ = self._family(tmp_path)
+        before = (home / "sanitize" / "blocklist.local.txt").read_bytes()
+        monkeypatch.chdir(home)
+
+        assert harvest_main(["--dry-run", "--sync"]) == 0
+
+        assert "2 new" in capsys.readouterr().out
+        assert (home / "sanitize" / "blocklist.local.txt").read_bytes() == before
+        assert not stamp_path(home).exists()
+
+    def test_a_fresh_stamp_stops_the_run_before_it_walks(
+        self, tmp_path: Path, monkeypatch, capsys,
+    ):
+        home, _kin, _ = self._family(tmp_path)
+        stamp_path(home).write_text("", encoding="utf-8")
+        monkeypatch.chdir(home)
+
+        assert harvest_main(["--if-stale", "12", "--sync"]) == 0
+
+        assert "nothing to do" in capsys.readouterr().out
+        assert self._terms(home) == ["keptterm"]
+
+    def test_an_old_stamp_lets_the_run_through(
+        self, tmp_path: Path, monkeypatch, capsys,
+    ):
+        import os
+        import time
+
+        home, _kin, _ = self._family(tmp_path)
+        stamp = stamp_path(home)
+        stamp.write_text("", encoding="utf-8")
+        long_ago = time.time() - 30 * 3600
+        os.utime(stamp, (long_ago, long_ago))
+        monkeypatch.chdir(home)
+
+        assert harvest_main(["--if-stale", "12"]) == 0
+
+        assert "petra vance" in self._terms(home)
+
+    def test_detach_hands_the_work_over_and_returns_before_walking(
+        self, tmp_path: Path, monkeypatch, capsys,
+    ):
+        """The shape a session start fires: it must return before the walk, or
+        the person starting the session waits the best part of a minute for it.
+        """
+        home, _kin, _ = self._family(tmp_path)
+        handed: list[list[str]] = []
+        monkeypatch.setattr(harvest_module, "detach", handed.append)
+        monkeypatch.chdir(home)
+
+        assert harvest_main(["--if-stale", "12", "--detach", "--sync"]) == 0
+
+        assert handed == [["--if-stale", "12", "--detach", "--sync"]]
+        assert self._terms(home) == ["keptterm"]  # the parent walked nothing
+
+    def test_the_detached_child_runs_the_module_and_is_not_told_to_detach_again(
+        self, monkeypatch,
+    ):
+        """A child that kept the flag would hand the work on again, forever."""
+        started: list[list[str]] = []
+        monkeypatch.setattr(
+            harvest_module.subprocess, "Popen",
+            lambda command, **kwargs: started.append(list(command)))
+
+        harvest_module.detach(["--if-stale", "12", "--detach", "--sync"])
+
+        assert len(started) == 1, started
+        assert started[0][1:] == [
+            "-m", "app_support.sanitize.harvest", "--if-stale", "12", "--sync"]
+
+    def test_a_walk_that_died_partway_is_not_stamped_as_this_windows_run(
+        self, tmp_path: Path, monkeypatch, capsys,
+    ):
+        """Otherwise `--if-stale` reads a half-finished harvest as a finished one
+        and skips the retry for the whole window.
+        """
+        home, _kin, _ = self._family(tmp_path)
+        monkeypatch.setattr(
+            harvest_module, "harvest",
+            lambda *a, **k: (_ for _ in ()).throw(OSError("the tree went away")))
+        monkeypatch.chdir(home)
+
+        with pytest.raises(OSError):
+            harvest_main([])
+
+        assert not stamp_path(home).exists()
 
 
 class TestStaleness:
