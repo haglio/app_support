@@ -49,11 +49,13 @@ class TestTheGuardPlugin:
         _git(repo, "commit", "-m", "seed", "--no-verify")
         return repo
 
-    def _pytest(self, repo: Path, *args: str) -> subprocess.CompletedProcess:
+    def _pytest(
+        self, repo: Path, *args: str, cwd: Path | None = None,
+    ) -> subprocess.CompletedProcess:
         env = {**os.environ, "PYTHONPATH": str(APP_SUPPORT)}
         return subprocess.run(
             [sys.executable, "-m", "pytest", "-q", *args],
-            cwd=repo, env=env, capture_output=True, text=True,
+            cwd=cwd or repo, env=env, capture_output=True, text=True,
         )
 
     def test_a_planted_term_in_a_tracked_file_fails_the_run(self, tmp_path: Path):
@@ -107,6 +109,24 @@ class TestTheGuardPlugin:
             "def test_local():\n    assert True\n", encoding="utf-8")
 
         assert self._pytest(repo, "tests").returncode != 0
+
+    def test_a_run_started_from_a_subdirectory_still_enforces(self, tmp_path: Path):
+        """`testpaths` is relative to the root directory, not to wherever pytest
+        was typed. Judging it against the working directory alone made this look
+        like a narrowed run and skipped the guard -- silently, which is the one
+        failure this check exists not to have.
+        """
+        repo = self._repo(
+            tmp_path, blocklist=f"{TERM}\n", tracked=f"this has {TERM} in it\n")
+        (repo / "pyproject.toml").write_text(
+            PYPROJECT + 'testpaths = ["tests"]\n', encoding="utf-8")
+        (repo / "tests").mkdir()
+        (repo / "tests" / "test_local.py").write_text(
+            "def test_local():\n    assert True\n", encoding="utf-8")
+
+        done = self._pytest(repo, cwd=repo / "tests")
+
+        assert done.returncode != 0, done.stdout
 
     def test_a_run_that_names_one_file_leaves_the_tree_alone(self, tmp_path: Path):
         """Narrowed on purpose. Enforcing here would put a whole-tree scan in

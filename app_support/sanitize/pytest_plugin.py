@@ -32,7 +32,21 @@ from pathlib import Path
 _SHIPPED_TESTS = str(Path(__file__).resolve().parent / "test_tracked_tree.py")
 
 
-def _is_a_run_of_whole_trees(args: list[str]) -> bool:
+def _names_a_whole_tree(arg: str, rootpath: Path) -> bool:
+    """Whether one session argument is a directory rather than a chosen test.
+
+    Resolved against the working directory *and* the root directory, because the
+    two kinds of argument are anchored differently: one typed on the command line
+    is relative to where it was typed, while one that came from ``testpaths`` is
+    relative to the root. Checking only the first made ``cd tests && pytest``
+    look like a narrowed run and skip the guard -- silently, which is the one
+    failure this whole check exists to not have.
+    """
+    target = arg.split("::")[0]
+    return Path(target).is_dir() or (rootpath / target).is_dir()
+
+
+def _is_a_run_of_whole_trees(args: list[str], rootpath: Path) -> bool:
     """Whether this session is running trees rather than chosen tests.
 
     A run of whole trees is one nobody has narrowed: a bare ``pytest``, whose
@@ -46,10 +60,12 @@ def _is_a_run_of_whole_trees(args: list[str]) -> bool:
     that shells out to pytest against a chosen file and counts what came back --
     which four repos in this family do, and which is how this rule was found.
     """
-    return bool(args) and all(Path(arg.split("::")[0]).is_dir() for arg in args)
+    return bool(args) and all(_names_a_whole_tree(arg, rootpath) for arg in args)
 
 
 def pytest_configure(config) -> None:
-    if _SHIPPED_TESTS in config.args or not _is_a_run_of_whole_trees(config.args):
+    if _SHIPPED_TESTS in config.args:
+        return
+    if not _is_a_run_of_whole_trees(config.args, Path(config.rootpath)):
         return
     config.args.append(_SHIPPED_TESTS)
