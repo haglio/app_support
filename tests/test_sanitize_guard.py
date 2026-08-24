@@ -5,10 +5,11 @@ blocklist is git-ignored, and these tests must themselves stay publishable.
 """
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
-from tools.sanitize_guard import (
+from app_support.sanitize import (
     blocklist_path,
     find_violations,
     load_blocklist,
@@ -157,11 +158,7 @@ class TestHookEntryPoint:
     ``main()`` returns 1 — it is that git refuses the commit.
     """
 
-    # A nonce, because the fixture repo stages a copy of the guard's own source
-    # and that source spells `badterm` in its docstrings — using `badterm` here
-    # would make every case fail (or pass) on the guard file rather than on the
-    # fixture under test.
-    TERM = "nonceterm"
+    TERM = "nonceterm"  # invented, like every fixture value here
 
     def _repo(self, tmp_path: Path, terms: str | None) -> Path:
         repo = tmp_path / "repo"
@@ -176,8 +173,7 @@ class TestHookEntryPoint:
             (repo / "sanitize" / "blocklist.local.txt").write_text(
                 terms, encoding="utf-8")
         here = Path(__file__).resolve().parent.parent
-        for rel in ("tools/__init__.py", "tools/sanitize_guard.py",
-                    "tools/githooks/pre-commit", "tools/githooks/commit-msg"):
+        for rel in ("tools/githooks/pre-commit", "tools/githooks/commit-msg"):
             dest = repo / rel
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_bytes((here / rel).read_bytes())
@@ -188,9 +184,13 @@ class TestHookEntryPoint:
         return repo
 
     def _commit(self, repo: Path, message: str = "seed"):
+        # The hook runs whatever interpreter it finds, and this throwaway repo
+        # has no venv — so hand it the guard on PYTHONPATH, standing in for the
+        # installed package a real checkout's venv carries.
+        env = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1])}
         return subprocess.run(
             ["git", "-C", str(repo), "commit", "-m", message],
-            capture_output=True, text=True,
+            capture_output=True, text=True, env=env,
         )
 
     def test_the_hook_refuses_a_staged_banned_term(self, tmp_path: Path):

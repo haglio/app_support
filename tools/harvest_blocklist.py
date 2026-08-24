@@ -41,7 +41,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from tools.sanitize_guard import blocklist_path, load_blocklist  # noqa: E402
+from app_support.sanitize import blocklist_path, load_blocklist  # noqa: E402
 
 ROOTS_NAME = "library_roots.local.txt"
 STAMP_NAME = "harvest_stamp.local.txt"
@@ -163,7 +163,7 @@ def already_in_code(candidates: set[str], repos: list[Path]) -> set[str]:
     One pass over each tree with all candidates at once, since the alternative is
     hundreds of passes over the same files.
     """
-    from tools.sanitize_guard import scan_files
+    from app_support.sanitize import scan_files
 
     terms = sorted(candidates)
     if not terms:
