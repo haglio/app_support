@@ -122,24 +122,27 @@ class TestTheGuardPlugin:
 
         assert self._pytest(repo).returncode == 0
 
-    def test_a_checkout_with_no_blocklist_has_nothing_to_enforce(self, tmp_path: Path):
+    def test_a_checkout_with_no_blocklist_says_so_instead_of_passing(self, tmp_path: Path):
         """A public clone and a fresh CI checkout both arrive without the
-        git-ignored overlay, and must run green rather than red -- deliberately
-        a no-op and not a skip, so the run stays clean either way.
+        git-ignored overlay. Neither can be taken down over it -- the exit code
+        stays 0 -- but neither may report a pass either: that is what made this
+        check a silent no-op on every merge queue in the family, reading exactly
+        like a tree that had been scanned.
         """
         repo = self._repo(tmp_path, blocklist=None, tracked=f"this has {TERM} in it\n")
 
         done = self._pytest(repo)
 
         assert done.returncode == 0
-        assert "1 passed" in done.stdout
+        assert "1 passed" not in done.stdout
+        assert "1 skipped" in done.stdout
+        assert "NOT scanned" in done.stdout
 
-    def test_a_source_tree_with_no_git_at_all_still_runs_green(self, tmp_path: Path):
-        """There is nothing to enforce against without a checkout to ask, and
-        the check has to say so by passing rather than by raising. A source
-        archive and a stripped CI checkout both arrive this way, and a plugin
-        that took either of them down would be removed from every repo by
-        lunchtime.
+    def test_a_source_tree_with_no_git_at_all_says_so_too(self, tmp_path: Path):
+        """There is nothing to enforce against without a checkout to ask. A
+        source archive and a stripped CI checkout both arrive this way, and a
+        plugin that took either of them down would be removed from every repo by
+        lunchtime -- so it says what it could not do and lets the run finish.
         """
         repo = tmp_path / "unpacked"
         (repo / "tests").mkdir(parents=True)
@@ -150,7 +153,20 @@ class TestTheGuardPlugin:
         done = self._pytest(repo)
 
         assert done.returncode == 0, done.stdout
-        assert "2 passed" in done.stdout
+        assert "1 passed, 1 skipped" in done.stdout
+        assert "NOT scanned" in done.stdout
+
+    def test_the_reason_reaches_a_log_that_was_not_asked_for_skip_reasons(self, tmp_path: Path):
+        """`pytest -q` prints skip reasons only under `-rs`, and the family's
+        gates all run a bare `-q`. The warnings summary needs no flag, so the
+        reason travels with the skip.
+        """
+        repo = self._repo(tmp_path, blocklist=None, tracked="perfectly clean\n")
+
+        done = self._pytest(repo)
+
+        assert "warnings summary" in done.stdout
+        assert "SANITIZE GUARD UNARMED" in done.stdout
 
     def test_an_untracked_file_is_not_the_repos_problem(self, tmp_path: Path):
         """Only what is published can leak. A scratch file beside the checkout
