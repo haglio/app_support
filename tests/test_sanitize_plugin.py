@@ -269,7 +269,7 @@ class TestTheGuardPlugin:
         module sitting in the same package is exactly how that gets in.
         """
         probe = (
-            "import sys, app_support.sanitize, app_support.sanitize.harvest\n"
+            "import sys, app_support.sanitize\n"
             "print(sorted(m for m in sys.modules if m.startswith('pytest')"
             " or m.startswith('_pytest')))\n"
         )

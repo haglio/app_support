@@ -1,12 +1,10 @@
-"""The pre-publication content guard, and the harvester that feeds it.
+"""The pre-publication content guard.
 
 Published from here so eleven checkouts share one copy instead of eleven. The
-guard refuses a blocklisted term while it is still staged; the harvester learns
-new terms off the machine rather than waiting for someone to remember them.
+guard refuses a blocklisted term while it is still staged.
 
 Nothing here knows what any of those terms *are*. Every list this package reads
-— the blocklist, the directory roots to walk, the vocabulary that decides which
-harvested terms are worth keeping — lives in git-ignored ``sanitize/*.local.txt``
+— the blocklist above all — lives in git-ignored ``sanitize/*.local.txt``
 files beside each checkout, because the lists describe the machine and a
 committed copy of one would be the catalogue it exists to keep out of the repo.
 
