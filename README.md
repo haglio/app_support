@@ -17,8 +17,8 @@ byte-identical copy of the same four things:
 
 Two more things every repo in the family needs, and used to keep its own copy of:
 
-- **`sanitize`** — the pre-publication content guard and the harvester that feeds
-  it, plus the pytest plugin that enforces a clean tracked tree. See below.
+- **`sanitize`** — the pre-publication content guard, plus the pytest plugin
+  that enforces a clean tracked tree. See below.
 - **`launch_smoke`** — reads everything a launcher's entry point imports off its
   AST so a test can replay it in a fresh interpreter. A windowed launch has no
   console, so an import that fails inside one leaves the icon doing nothing and
@@ -64,7 +64,7 @@ is ever reinstalled the other way.
 ## The content guard
 
 `app_support.sanitize` refuses to let a blocklisted term reach a public commit.
-Three ways in, and a repo can take any of them:
+Two ways in, and a repo can take either:
 
 ```bash
 # 1. the git hooks, which catch a term while the fix is still free
@@ -73,9 +73,6 @@ python tools/githooks/install.py
 # 2. the suite, which catches it afterwards -- one line in pyproject.toml
 #    [tool.pytest.ini_options]
 #    addopts = "-p app_support.sanitize.pytest_plugin"
-
-# 3. the harvester, which learns terms rather than waiting to be told
-python -m app_support.sanitize.harvest --if-stale 12 --detach --sync
 ```
 
 **The hooks fail loudly.** While the guard was a file in each repo it ran off any
@@ -84,10 +81,10 @@ package and "cannot run" means "not installed in the interpreter this hook
 found" — a checkout that has silently stopped being guarded. So there is no
 `exit 0` in either hook: if the import fails, the commit fails.
 
-**Each of the three needs this package reachable from a different interpreter,
-and that is the whole of what adopting them costs.** The hooks use the first
-`.venv` they find or else a bare `python` off `PATH`; the plugin uses whatever
-runs the suite, and a `-p` it cannot import is a hard pytest failure with no
+**Each needs this package reachable from a different interpreter, and that is
+the whole of what adopting them costs.** The hooks use the first `.venv` they
+find or else a bare `python` off `PATH`; the plugin uses whatever runs the
+suite, and a `-p` it cannot import is a hard pytest failure with no
 tests run, not a soft one. So the check worth making before a repo takes any of
 them is `<that interpreter> -c "import app_support.sanitize"` — a repo with no
 venv, or one whose CI never installs this package, needs that settled first.
@@ -99,16 +96,9 @@ committed copy of one would be the catalogue the guard exists to keep out:
 | File | Holds |
 | --- | --- |
 | `blocklist.local.txt` | the terms to refuse (`blocklist.example.txt` documents the format) |
-| `library_roots.local.txt` | one directory per line for the harvester to walk |
-| `harvest_excluded.local.txt` | ordinary words a harvested name is not worth blocking for |
-| `harvest_suffixes.local.txt` | the file suffixes whose stems are worth reading a name off |
-| `harvest_stamp.local.txt` | written by the harvester; when it last finished |
 
 A checkout with no blocklist enforces nothing and commits normally — that is what
-a public clone and a fresh CI checkout both look like. A harvest with roots but
-no vocabulary declines and says which file it wants, rather than walking
-half-informed and putting a machine's own filing words onto a list that syncs to
-every checkout.
+a public clone and a fresh CI checkout both look like.
 
 ## Tests
 
