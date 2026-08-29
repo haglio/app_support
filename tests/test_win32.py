@@ -20,6 +20,7 @@ from app_support.win32 import (
     mutex_name,
     set_app_user_model_id,
     set_shortcut_app_user_model_id,
+    show_error_popup,
     try_acquire_mutex,
 )
 
@@ -287,3 +288,49 @@ class TestIsMutexHeld:
                              kernel32=lambda: kernel32) is False
         assert kernel32.CreateMutexW.calls == []
         assert kernel32.CloseHandle.calls == []
+
+
+# The four flags, from the documentation rather than from the module under test.
+MB_OK = 0x0
+MB_ICONERROR = 0x10
+MB_SETFOREGROUND = 0x00010000
+MB_TOPMOST = 0x00040000
+
+
+class TestShowErrorPopup:
+    def test_the_box_comes_up_in_front_of_whatever_is_there(self):
+        # The reason the whole helper exists. A process launched hidden from a
+        # shortcut has no claim on the foreground, so without SETFOREGROUND and
+        # TOPMOST the dialog opens *behind* what the user is looking at -- which
+        # reads as having crashed with no explanation. Two of the four copies
+        # this replaces omit TOPMOST, which is the flag their own docstring
+        # calls the point.
+        user32 = _FakeDll(MessageBoxW=_FakeFunction(1))
+
+        show_error_popup("Example App", "The scene file could not be read.",
+                         user32=lambda: user32)
+
+        (_, _, _, flags), = user32.MessageBoxW.calls
+        assert flags == MB_OK | MB_ICONERROR | MB_SETFOREGROUND | MB_TOPMOST
+
+    def test_the_message_goes_in_the_body_and_the_title_on_the_bar(self):
+        # MessageBoxW takes the body first and the caption second, which is the
+        # opposite order to the one this is called in.
+        user32 = _FakeDll(MessageBoxW=_FakeFunction(1))
+
+        show_error_popup("Example App", "The scene file could not be read.",
+                         user32=lambda: user32)
+
+        (hwnd, body, caption, _), = user32.MessageBoxW.calls
+        assert hwnd is None
+        assert body == "The scene file could not be read."
+        assert caption == "Example App"
+
+    def test_a_dialog_that_will_not_open_is_not_raised_over(self):
+        # Alone in this module, and deliberately: this is the last thing a dying
+        # process does, and an exception thrown from the error reporter replaces
+        # the error nobody has been shown yet with one nobody will see either.
+        user32 = _FakeDll(MessageBoxW=_FakeFunction(0))
+
+        assert show_error_popup("Example App", "The scene file could not be read.",
+                                user32=lambda: user32) is None

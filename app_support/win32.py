@@ -15,8 +15,14 @@ family ends up doing and had all grown its own spelling of:
     so clicking the pin starts a process Windows treats as a different
     application, and a second taskbar button opens beside the pin it was
     launched from.  Nothing but COM can write that property.
+  * **asking whether it is the only instance**, through a named mutex -- and
+    holding the handle that is the answer, because Windows lets the mutex go
+    when the last handle to it closes.
+  * **putting an error where the user will see it**, for a process that was
+    launched hidden and has no console and no window to put one in.
 
-Every call raises ``OSError`` when Windows refuses, and none of them decide what
+Every call raises ``OSError`` when Windows refuses -- ``show_error_popup``
+excepted, which says why at its own docstring -- and none of them decide what
 that means: an app that cannot group its taskbar button is still an app that
 runs, while an app that cannot claim its single-instance mutex must not.  Each
 caller keeps the ``try``/``except`` that says which of those it is.
@@ -58,6 +64,10 @@ def _ole32():
 
 def _kernel32():
     return _load("kernel32")
+
+
+def _user32():
+    return _load("user32")
 
 
 def _last_error() -> int:
@@ -357,3 +367,37 @@ def is_mutex_held(name: str, *, kernel32=_kernel32) -> bool:
         return False
     close(handle)
     return True
+
+
+# --- Putting an error where the user will actually see it -------------------
+
+_MB_OK = 0x0
+_MB_ICONERROR = 0x10
+_MB_SETFOREGROUND = 0x00010000
+_MB_TOPMOST = 0x00040000
+
+
+def show_error_popup(title: str, message: str, *, user32=_user32) -> None:
+    """Put *message* on the screen under *title*, in front of everything.
+
+    For the process that has nowhere else to say it: launched hidden from a
+    shortcut, no console to print to, no window of its own yet.  Such a process
+    has no claim on the foreground, so a plain message box opens *behind*
+    whatever the user is looking at -- and a hidden process that exits having
+    shown nothing is indistinguishable from one that crashed.
+    ``MB_SETFOREGROUND`` and ``MB_TOPMOST`` are what make the dialog the thing
+    the user sees; they are the whole reason to reach for this rather than for
+    ``MessageBoxW`` directly.
+
+    Alone in this module it raises nothing.  It is the last thing a dying
+    process does, and an exception thrown from the error reporter would replace
+    an error nobody has been shown yet with one nobody will see either.
+
+    It is also the name a test suite gags.  One unguarded call blocks on a human
+    for as long as the run lasts, so there has to be a name to patch that does
+    not resolve a Windows-only dotted path to reach.
+    """
+    show = _declare(user32(), "MessageBoxW", ctypes.c_int,
+                    wintypes.HWND, wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.UINT)
+    show(None, message, title,
+         _MB_OK | _MB_ICONERROR | _MB_SETFOREGROUND | _MB_TOPMOST)
