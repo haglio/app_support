@@ -357,14 +357,6 @@ class TestProcessNamePattern:
         for name in ("notepad.exe", "mypythonw.exe", "FunTimeOther.exe", "Genau-Nau.exe"):
             assert not re.match(pattern, name), name
 
-    def test_recognizes_its_own_copies_by_name(self):
-        namer = ProcessNamer("Fun Time")
-        assert namer.owns_exe_name("FunTime-Dashboard.exe")
-        assert namer.owns_exe_name("funtime-dashboard.exe")
-        assert not namer.owns_exe_name("FunTimeSetup.msi")
-        assert not namer.owns_exe_name("pythonw.exe")
-        assert not namer.owns_exe_name("Genau-Nau.exe")
-
 
 def _has_resource(exe: Path, *, kind: int, name: int) -> bool:
     k32 = ctypes.WinDLL("kernel32", use_last_error=True)

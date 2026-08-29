@@ -323,11 +323,6 @@ class ProcessNamer:
         return (r"^pythonw?\.exe$|^py\.exe$|^"
                 + re.escape(self.prefix) + r"[A-Za-z]+\.exe$")
 
-    def owns_exe_name(self, name: str) -> bool:
-        """Whether an image name is one of the copies this namer makes."""
-        return (name.casefold().startswith(self.prefix.casefold())
-                and name.casefold().endswith(".exe"))
-
     # --- making them ---
 
     def named_exe(self, python_exe: str | Path, role: str) -> str:
