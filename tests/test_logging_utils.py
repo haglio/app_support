@@ -109,6 +109,28 @@ class TestInstallExceptionLogging:
         content = log_file.read_text(encoding="utf-8")
         assert "KeyboardInterrupt" not in content
 
+    def test_an_exception_that_kills_a_thread_reaches_the_log(self, tmp_path: Path):
+        """The thread half of the hook, driven the way it fires in production:
+        a worker dies, and the log must say what killed it and which thread it
+        was — a hook that swallowed the exception would leave both hooks
+        "installed" and every crash silent.
+        """
+        log_file = tmp_path / "exc.log"
+        logger = configure_logging("test.exc.threadcrash", log_file)
+        install_exception_logging(logger)
+
+        def die():
+            raise RuntimeError("boom in worker")
+
+        worker = threading.Thread(target=die, name="worker-under-test")
+        worker.start()
+        worker.join()
+        for h in logger.handlers:
+            h.flush()
+        content = log_file.read_text(encoding="utf-8")
+        assert "boom in worker" in content
+        assert "thread:worker-under-test" in content
+
     def test_sys_excepthook_logs_other_exceptions(self, tmp_path: Path):
         log_file = tmp_path / "exc.log"
         logger = configure_logging("test.exc.other", log_file)
