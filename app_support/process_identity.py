@@ -118,8 +118,7 @@ def _node(key: str, value: bytes, *, value_length: int, wtype: int) -> bytes:
     return struct.pack("<H", len(body)) + body[2:]
 
 
-def build_version_info(fields: dict[str, str], *, lang: int = _LANG_EN_US,
-                       codepage: int = _CODEPAGE_UNICODE) -> bytes:
+def build_version_info(fields: dict[str, str]) -> bytes:
     """A whole VS_VERSIONINFO carrying *fields*.
 
     Built rather than patched: the strings an app wants are longer than the ones
@@ -130,9 +129,11 @@ def build_version_info(fields: dict[str, str], *, lang: int = _LANG_EN_US,
         _pad4(_node(key, _wstr(value), value_length=len(value) + 1, wtype=1))
         for key, value in fields.items()
     )
-    string_table = _pad4(_node(f"{lang:04X}{codepage:04X}", strings, value_length=0, wtype=1))
+    string_table = _pad4(_node(f"{_LANG_EN_US:04X}{_CODEPAGE_UNICODE:04X}", strings,
+                               value_length=0, wtype=1))
     string_file_info = _pad4(_node("StringFileInfo", string_table, value_length=0, wtype=1))
-    translation = _node("Translation", struct.pack("<HH", lang, codepage), value_length=4, wtype=0)
+    translation = _node("Translation", struct.pack("<HH", _LANG_EN_US, _CODEPAGE_UNICODE),
+                        value_length=4, wtype=0)
     var_file_info = _pad4(_node("VarFileInfo", _pad4(translation), value_length=0, wtype=1))
 
     fixed = struct.pack(
@@ -231,8 +232,7 @@ def stamp_identity(exe: Path, *, fields: dict[str, str], icon: bytes | None) -> 
         raise OSError(f"EndUpdateResource failed ({ctypes.get_last_error()})")
 
 
-def read_version_field(exe: Path, field: str, *, lang: int = _LANG_EN_US,
-                       codepage: int = _CODEPAGE_UNICODE) -> str | None:
+def read_version_field(exe: Path, field: str) -> str | None:
     """Read one string out of *exe*'s version resource, or None if it has none."""
     version_dll = ctypes.WinDLL("version", use_last_error=True)
     version_dll.GetFileVersionInfoSizeW.argtypes = [wintypes.LPCWSTR, wintypes.LPDWORD]
@@ -249,7 +249,7 @@ def read_version_field(exe: Path, field: str, *, lang: int = _LANG_EN_US,
         return None
     value = wintypes.LPVOID()
     length = wintypes.UINT()
-    query = f"\\StringFileInfo\\{lang:04X}{codepage:04X}\\{field}"
+    query = f"\\StringFileInfo\\{_LANG_EN_US:04X}{_CODEPAGE_UNICODE:04X}\\{field}"
     if not version_dll.VerQueryValueW(block, query, ctypes.byref(value), ctypes.byref(length)):
         return None
     if not length.value:
