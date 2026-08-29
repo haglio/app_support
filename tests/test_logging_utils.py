@@ -1,6 +1,7 @@
 """Tests for app_support.logging_utils."""
 from __future__ import annotations
 
+import faulthandler
 import logging
 import logging.handlers
 import sys
@@ -159,6 +160,22 @@ class TestEnableFaulthandler:
         try:
             assert log_file.parent.is_dir()
             assert not handle.closed
+        finally:
+            handle.close()
+
+    def test_arms_faulthandler_not_just_the_file(self, tmp_path: Path):
+        """Registering with faulthandler is the function's namesake effect; an
+        open handle in the right directory with nothing armed on it would
+        swallow the very crash it exists to record. pytest arms faulthandler
+        for its own reporting, so it is switched off first — otherwise this
+        would pass without the function doing anything.
+        """
+        faulthandler.disable()
+        log_file = tmp_path / "fault.log"
+
+        handle = enable_faulthandler(log_file)
+        try:
+            assert faulthandler.is_enabled()
         finally:
             handle.close()
 
