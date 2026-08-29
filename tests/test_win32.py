@@ -9,14 +9,21 @@ those cases say so where they stop.
 from __future__ import annotations
 
 import ctypes
+import uuid
 
 import pytest
 
-from app_support.win32 import set_app_user_model_id
+from app_support.win32 import (
+    _PKEY_AppUserModel_ID,
+    set_app_user_model_id,
+    set_shortcut_app_user_model_id,
+)
 
 # One real failure code, as Windows hands it over: a signed 32-bit value whose
 # documentation is filed under the unsigned spelling of the same bits.
 E_INVALIDARG = -2147024809  # 0x80070057
+RPC_E_CHANGED_MODE = -2147417850  # 0x80010106
+S_FALSE = 1
 
 
 class _FakeFunction:
@@ -78,3 +85,82 @@ class TestSetAppUserModelId:
 
         assert "SetCurrentProcessExplicitAppUserModelID" in str(raised.value)
         assert "0x80070057" in str(raised.value)
+
+
+def _guid_to_uuid(guid) -> uuid.UUID:
+    """Read a ``GUID`` struct back out as a UUID.
+
+    Round-tripping is the point: restating the four fields the way the module
+    packs them would pass however they were packed.
+    """
+    return uuid.UUID(fields=(
+        guid.Data1, guid.Data2, guid.Data3,
+        guid.Data4[0], guid.Data4[1],
+        int.from_bytes(bytes(guid.Data4[2:8]), "big"),
+    ))
+
+
+class TestTheShortcutProperty:
+    def test_it_is_the_property_the_taskbar_reads(self):
+        # The one failure in this module with no HRESULT behind it: a wrong
+        # property key writes a real value into the shortcut, reports success,
+        # and leaves the second taskbar button this whole module exists to
+        # prevent. The key is System.AppUserModel.ID, documented as
+        # {9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3}, 5.
+        assert _guid_to_uuid(_PKEY_AppUserModel_ID.fmtid) == uuid.UUID(
+            "9f4c2855-9f79-4b39-a8d0-e1d42de1d5f3")
+        assert _PKEY_AppUserModel_ID.pid == 5
+
+
+class _FakeOle32:
+    """ole32 as far as the stamper reaches into it.
+
+    The apartment pair, and the one COM call that can refuse before any vtable
+    is walked -- which is as far as a fake can go.  Past ``CoCreateInstance``
+    the code is reading function pointers out of an object Windows built, and
+    only the windows-latest gate can say whether it reads them right.
+    """
+
+    def __init__(self, *, init: int = 0, create: int = E_INVALIDARG) -> None:
+        self.CoInitializeEx = _FakeFunction(init)
+        self.CoUninitialize = _FakeFunction(None)
+        self.CoCreateInstance = _FakeFunction(create)
+
+
+class TestSetShortcutAppUserModelId:
+    def test_an_apartment_it_never_opened_is_not_given_back(self):
+        # RPC_E_CHANGED_MODE means somebody else put this thread in the other
+        # concurrency model and holds the reference. Uninitialising anyway
+        # decrements their count and can close the apartment under them.
+        ole32 = _FakeOle32(init=RPC_E_CHANGED_MODE)
+
+        with pytest.raises(OSError) as raised:
+            set_shortcut_app_user_model_id("C:/pins/Example.lnk", "Example.App",
+                                           ole32=lambda: ole32)
+
+        assert ole32.CoUninitialize.calls == []
+        assert ole32.CoCreateInstance.calls == []
+        assert "CoInitializeEx" in str(raised.value)
+        assert "0x80010106" in str(raised.value)
+
+    def test_an_apartment_it_opened_is_given_back_even_when_the_stamp_fails(self):
+        ole32 = _FakeOle32(init=0, create=E_INVALIDARG)
+
+        with pytest.raises(OSError) as raised:
+            set_shortcut_app_user_model_id("C:/pins/Example.lnk", "Example.App",
+                                           ole32=lambda: ole32)
+
+        assert len(ole32.CoUninitialize.calls) == 1
+        assert "CoCreateInstance" in str(raised.value)
+
+    def test_an_apartment_the_thread_already_had_is_still_given_back(self):
+        # S_FALSE: this thread was already initialised in the same model. It is
+        # a success, and it still took a reference this thread owes back.
+        ole32 = _FakeOle32(init=S_FALSE, create=E_INVALIDARG)
+
+        with pytest.raises(OSError):
+            set_shortcut_app_user_model_id("C:/pins/Example.lnk", "Example.App",
+                                           ole32=lambda: ole32)
+
+        assert len(ole32.CoCreateInstance.calls) == 1
+        assert len(ole32.CoUninitialize.calls) == 1
