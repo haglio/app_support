@@ -30,8 +30,10 @@ keyword-only seam a test hands a fake to and no consumer ever passes.
 from __future__ import annotations
 
 import ctypes
+import hashlib
 import uuid
 from ctypes import wintypes
+from pathlib import Path
 
 
 def _load(name: str):
@@ -52,6 +54,20 @@ def _shell32():
 
 def _ole32():
     return _load("ole32")
+
+
+def _kernel32():
+    return _load("kernel32")
+
+
+def _last_error() -> int:
+    """The error code the last call through a ``use_last_error`` handle set.
+
+    Read through a seam of its own because it is not a call on any DLL, and
+    because ``ctypes.get_last_error`` is another of the names that exists only
+    on Windows.
+    """
+    return ctypes.get_last_error()
 
 
 def _declare(dll, name: str, restype, *argtypes):
@@ -262,3 +278,82 @@ def _set_lnk_aumid(lnk_path: str, app_id: str, com) -> None:
             _release(persist_file)
     finally:
         _release(shell_link.value)
+
+
+# --- May I run?  A named mutex, and the handle that answers ------------------
+
+_ERROR_ALREADY_EXISTS = 183
+_SYNCHRONIZE = 0x00100000
+
+
+def mutex_name(base: str, identity: str | Path) -> str:
+    """The mutex name for *base* and *identity*.
+
+    *identity* is whatever makes one session different from another -- a config
+    path, a profile directory.  The same identity always gives the same name, so
+    one identity blocks its own duplicates while a session started on another
+    runs beside it untroubled.
+
+    The digest is not a hash of anything secret; it is here because a mutex name
+    is a flat namespace shared with every other process on the machine, and a
+    path cannot go in one (``\\`` is the namespace separator).  What matters is
+    that it never changes: a name spelled differently does not refuse a second
+    launch, it lets it through beside the first.
+    """
+    suffix = hashlib.md5(str(identity).encode()).hexdigest()[:12]
+    return f"{base}.{suffix}"
+
+
+def try_acquire_mutex(name: str, *, kernel32=_kernel32, last_error=_last_error) -> int | None:
+    """Claim *name*, and hand back the handle that holds it -- or ``None``.
+
+    **The caller must keep the handle for as long as it means to hold the
+    mutex.**  Windows releases a named mutex when the last handle to it closes,
+    and a handle nothing refers to is closed by the interpreter at its leisure:
+    a guard whose handle was dropped stops guarding some time later, silently,
+    and the second instance it exists to refuse then starts.  That is the shape
+    of the defect this replaces, which is why the handle is the return value
+    rather than a ``bool`` -- a caller can ignore a return, but it has to go out
+    of its way to.
+
+    ``None`` means "do not run": either another process holds the mutex, or
+    Windows would not make one.  Those are not the same thing, and one of the
+    copies this replaces starts anyway on the second -- the caller that cares
+    about the difference should ask before it decides.
+    """
+    dll = kernel32()
+    create = _declare(dll, "CreateMutexW", ctypes.c_void_p,
+                      ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR)
+    close = _declare(dll, "CloseHandle", wintypes.BOOL, ctypes.c_void_p)
+
+    handle = create(None, False, name)
+    if not handle:
+        return None
+    if last_error() == _ERROR_ALREADY_EXISTS:
+        # The handle is real and refers to somebody else's mutex. Letting it go
+        # is not optional: held to exit, it keeps the mutex alive past the death
+        # of the process that owns it.
+        close(handle)
+        return None
+    return handle
+
+
+def is_mutex_held(name: str, *, kernel32=_kernel32) -> bool:
+    """Report whether some process is holding *name*.
+
+    Opens rather than creates, so probing a free name cannot leave a mutex
+    behind -- a created-then-closed handle would, for those few microseconds,
+    make an instance starting alongside believe another one was already up.
+    ``SYNCHRONIZE`` is asked for because it is the least this can ask for and
+    still be told whether the name exists.
+    """
+    dll = kernel32()
+    open_mutex = _declare(dll, "OpenMutexW", ctypes.c_void_p,
+                          wintypes.DWORD, wintypes.BOOL, wintypes.LPCWSTR)
+    close = _declare(dll, "CloseHandle", wintypes.BOOL, ctypes.c_void_p)
+
+    handle = open_mutex(_SYNCHRONIZE, False, name)
+    if not handle:
+        return False
+    close(handle)
+    return True

@@ -9,14 +9,18 @@ those cases say so where they stop.
 from __future__ import annotations
 
 import ctypes
+import pathlib
 import uuid
 
 import pytest
 
 from app_support.win32 import (
     _PKEY_AppUserModel_ID,
+    is_mutex_held,
+    mutex_name,
     set_app_user_model_id,
     set_shortcut_app_user_model_id,
+    try_acquire_mutex,
 )
 
 # One real failure code, as Windows hands it over: a signed 32-bit value whose
@@ -24,6 +28,8 @@ from app_support.win32 import (
 E_INVALIDARG = -2147024809  # 0x80070057
 RPC_E_CHANGED_MODE = -2147417850  # 0x80010106
 S_FALSE = 1
+ERROR_ALREADY_EXISTS = 183
+SYNCHRONIZE = 0x00100000
 
 
 class _FakeFunction:
@@ -164,3 +170,120 @@ class TestSetShortcutAppUserModelId:
 
         assert len(ole32.CoCreateInstance.calls) == 1
         assert len(ole32.CoUninitialize.calls) == 1
+
+
+class TestMutexName:
+    def test_the_name_is_the_base_and_a_digest_of_the_identity(self):
+        # Pinned to the digit, because the name is a promise to a process that
+        # is already running: a different spelling of it does not refuse the
+        # second launch, it lets it through beside the first.
+        assert mutex_name("Global\\ExampleApp", "C:/Example App/example_config.json") \
+            == "Global\\ExampleApp.dce3a7c5ad9e"
+
+    def test_a_different_identity_gets_a_different_mutex(self):
+        # What buys a suite its own instances: a run on its own temp config is
+        # a different session and must not be refused by the live one.
+        first = mutex_name("Global\\ExampleApp", "C:/Example App/example_config.json")
+        second = mutex_name("Global\\ExampleApp", "C:/Example App/other_config.json")
+
+        assert first != second
+        assert second == "Global\\ExampleApp.55654890faf8"
+
+    def test_an_identity_that_is_a_path_spells_the_same_name_twice(self):
+        # The callers hand this a Path as often as a string.
+        config = pathlib.Path("C:/Example App/example_config.json")
+
+        assert mutex_name("Global\\ExampleApp", config) \
+            == mutex_name("Global\\ExampleApp", config)
+
+
+class _FakeKernel32:
+    """kernel32 as far as the mutex guard reaches into it."""
+
+    def __init__(self, *, handle: int = 0, opened: int = 0) -> None:
+        self.CreateMutexW = _FakeFunction(handle)
+        self.OpenMutexW = _FakeFunction(opened)
+        self.CloseHandle = _FakeFunction(1)
+
+
+# A handle wider than the 32 bits an undeclared ctypes return would carry it
+# back in. Windows hands out low values most of the time, which is why the
+# three copies this replaces got away with saying nothing.
+WIDE_HANDLE = 0x0000_0002_0000_00A4
+
+
+class TestTryAcquireMutex:
+    def test_the_handle_comes_back_so_the_caller_can_hold_it(self):
+        # Returning a bool instead is a live defect in one of the three copies
+        # this replaces: the handle it made goes out of scope, and a guard whose
+        # handle has been closed stops guarding.
+        kernel32 = _FakeKernel32(handle=WIDE_HANDLE)
+
+        held = try_acquire_mutex("Global\\ExampleApp.dce3a7c5ad9e",
+                                 kernel32=lambda: kernel32, last_error=lambda: 0)
+
+        assert held == WIDE_HANDLE
+        assert kernel32.CreateMutexW.calls == [
+            (None, False, "Global\\ExampleApp.dce3a7c5ad9e")]
+
+    def test_the_handle_is_not_closed_behind_the_caller(self):
+        kernel32 = _FakeKernel32(handle=WIDE_HANDLE)
+
+        try_acquire_mutex("Global\\ExampleApp.dce3a7c5ad9e",
+                          kernel32=lambda: kernel32, last_error=lambda: 0)
+
+        assert kernel32.CloseHandle.calls == []
+
+    def test_the_handle_is_declared_wide_enough_to_come_back_whole(self):
+        # An undeclared ctypes return is c_int: a 64-bit handle arrives
+        # truncated, CloseHandle then fails to close it, and a handle whose low
+        # 32 bits are zero reads as "another instance holds it".
+        kernel32 = _FakeKernel32(handle=WIDE_HANDLE)
+
+        try_acquire_mutex("Global\\ExampleApp.dce3a7c5ad9e",
+                          kernel32=lambda: kernel32, last_error=lambda: 0)
+
+        assert kernel32.CreateMutexW.restype is ctypes.c_void_p
+
+    def test_a_mutex_someone_else_holds_is_given_back_rather_than_leaked(self):
+        # CreateMutexW succeeds either way; ERROR_ALREADY_EXISTS is the only
+        # thing that tells the two apart, which is why the handle is opened
+        # with use_last_error.
+        kernel32 = _FakeKernel32(handle=WIDE_HANDLE)
+
+        held = try_acquire_mutex("Global\\ExampleApp.dce3a7c5ad9e",
+                                 kernel32=lambda: kernel32,
+                                 last_error=lambda: ERROR_ALREADY_EXISTS)
+
+        assert held is None
+        assert kernel32.CloseHandle.calls == [(WIDE_HANDLE,)]
+
+    def test_a_refusal_to_make_the_mutex_at_all_is_not_a_second_instance(self):
+        kernel32 = _FakeKernel32(handle=0)
+
+        assert try_acquire_mutex("Global\\ExampleApp.dce3a7c5ad9e",
+                                 kernel32=lambda: kernel32, last_error=lambda: 0) is None
+        assert kernel32.CloseHandle.calls == []
+
+
+class TestIsMutexHeld:
+    def test_a_held_mutex_is_opened_and_let_go_again(self):
+        # Opening rather than creating is the point: a created-then-closed
+        # handle would, for those few microseconds, make a starting instance
+        # believe another one was already up.
+        kernel32 = _FakeKernel32(opened=WIDE_HANDLE)
+
+        assert is_mutex_held("Global\\ExampleApp.dce3a7c5ad9e",
+                             kernel32=lambda: kernel32) is True
+        assert kernel32.OpenMutexW.calls == [
+            (SYNCHRONIZE, False, "Global\\ExampleApp.dce3a7c5ad9e")]
+        assert kernel32.CreateMutexW.calls == []
+        assert kernel32.CloseHandle.calls == [(WIDE_HANDLE,)]
+
+    def test_a_free_name_is_left_exactly_as_it_was_found(self):
+        kernel32 = _FakeKernel32(opened=0)
+
+        assert is_mutex_held("Global\\ExampleApp.dce3a7c5ad9e",
+                             kernel32=lambda: kernel32) is False
+        assert kernel32.CreateMutexW.calls == []
+        assert kernel32.CloseHandle.calls == []
