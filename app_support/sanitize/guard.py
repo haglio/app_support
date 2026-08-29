@@ -163,7 +163,7 @@ def scan_files(
     paths: Iterable[Path],
     terms: Iterable[str],
     *,
-    root: Path | None = None,
+    root: Path,
 ) -> list[Violation]:
     """Scan each readable text file for blocklisted terms.
 
@@ -177,7 +177,7 @@ def scan_files(
             text = path.read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
             continue
-        display = str(path.relative_to(root)) if root else str(path)
+        display = str(path.relative_to(root))
         out.extend(find_violations(text, terms, path=display))
     return out
 
@@ -226,13 +226,13 @@ def _staged_violations(repo: Path, terms: Sequence[str]) -> list[Violation]:
     return out
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main() -> int:
     """``--staged`` for pre-commit, ``--message FILE`` for commit-msg.
 
     Exits 0 when there is no blocklist to enforce, so a public clone and a
     checkout without the overlay both commit normally.
     """
-    args = list(sys.argv[1:] if argv is None else argv)
+    args = sys.argv[1:]
     try:
         repo = _repo_root()
     except (OSError, subprocess.SubprocessError):
