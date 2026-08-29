@@ -41,14 +41,18 @@ class _FakeFunction:
     part.
     """
 
-    def __init__(self, result: object = 0) -> None:
+    def __init__(self, result: object = 0, *, name: str = "", log: list | None = None) -> None:
         self.result = result
         self.argtypes: object = None
         self.restype: object = None
         self.calls: list[tuple] = []
+        self._name = name
+        self._log = log
 
     def __call__(self, *args):
         self.calls.append(args)
+        if self._log is not None:
+            self._log.append(self._name)
         return self.result
 
 
@@ -201,10 +205,11 @@ class TestMutexName:
 class _FakeKernel32:
     """kernel32 as far as the mutex guard reaches into it."""
 
-    def __init__(self, *, handle: int = 0, opened: int = 0) -> None:
-        self.CreateMutexW = _FakeFunction(handle)
-        self.OpenMutexW = _FakeFunction(opened)
-        self.CloseHandle = _FakeFunction(1)
+    def __init__(self, *, handle: int = 0, opened: int = 0,
+                 log: list | None = None) -> None:
+        self.CreateMutexW = _FakeFunction(handle, name="CreateMutexW", log=log)
+        self.OpenMutexW = _FakeFunction(opened, name="OpenMutexW", log=log)
+        self.CloseHandle = _FakeFunction(1, name="CloseHandle", log=log)
 
 
 # A handle wider than the 32 bits an undeclared ctypes return would carry it
@@ -258,6 +263,24 @@ class TestTryAcquireMutex:
 
         assert held is None
         assert kernel32.CloseHandle.calls == [(WIDE_HANDLE,)]
+
+    def test_nothing_runs_between_the_claim_and_the_answer_to_it(self):
+        # ERROR_ALREADY_EXISTS is the only thing that tells "I made this mutex"
+        # from "I opened somebody else's", and it survives exactly as long as
+        # the next call through this handle. use_last_error keeps Python's own
+        # runtime out of that gap; keeping this module's other Win32 calls out
+        # of it is this module's own job. Declaring a prototype in the gap is
+        # safe and this does not claim otherwise -- a lookup writes the thread's
+        # error code, never the private one ctypes saved for us -- but a second
+        # call does clobber it, and one is a plausible edit away.
+        log: list[str] = []
+        kernel32 = _FakeKernel32(handle=WIDE_HANDLE, log=log)
+
+        try_acquire_mutex("Global\\ExampleApp.dce3a7c5ad9e",
+                          kernel32=lambda: kernel32,
+                          last_error=lambda: log.append("read the error") or 0)
+
+        assert log == ["CreateMutexW", "read the error"]
 
     def test_a_refusal_to_make_the_mutex_at_all_is_not_a_second_instance(self):
         kernel32 = _FakeKernel32(handle=0)
