@@ -268,10 +268,16 @@ class ProcessNamer:
     (``Fun Time – Audio Companion``).
     """
 
-    def __init__(self, app_name: str, icon: str | Path | None = None) -> None:
+    def __init__(self, app_name: str, icon: str | Path | None = None, *,
+                 stamp=stamp_identity, read_field=read_version_field) -> None:
+        # *stamp* and *read_field* are the two calls that need a real PE and a
+        # real Win32; injectable so the keep/refresh/discard decisions are
+        # testable on any platform, with the defaults every consumer gets.
         self.app_name = app_name
         self.prefix = exe_prefix(app_name)
         self.icon = Path(icon) if icon is not None else None
+        self._stamp = stamp
+        self._read_field = read_field
 
     # --- what things are called ---
 
@@ -357,7 +363,7 @@ class ProcessNamer:
             # success and handed the launcher a directory to run.  copyfile
             # refuses it instead.
             shutil.copyfile(source, target)
-            stamp_identity(target, icon=icon, fields={
+            self._stamp(target, icon=icon, fields={
                 "CompanyName": self.app_name,
                 "FileDescription": description,
                 "InternalName": target.stem,
@@ -416,7 +422,7 @@ class ProcessNamer:
         if not copy.is_file():
             return False
         try:
-            return read_version_field(copy, STAMP_FIELD) == stamp
+            return self._read_field(copy, STAMP_FIELD) == stamp
         except OSError:
             return False
 
@@ -430,7 +436,7 @@ class ProcessNamer:
         if not exe.is_file():
             return False
         try:
-            return read_version_field(exe, STAMP_FIELD) is not None
+            return self._read_field(exe, STAMP_FIELD) is not None
         except OSError:
             return False
 

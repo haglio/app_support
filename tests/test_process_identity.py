@@ -19,10 +19,45 @@ from app_support.process_identity import (
     read_version_field,
 )
 
-# Stamping runs UpdateResource, which only works on a real PE, so these exercise
-# an actual interpreter -- the one the suite is running under, copied somewhere
-# disposable.
+# Stamping runs UpdateResource, which only works on a real PE, so the Windows
+# tier below exercises an actual interpreter -- the one the suite is running
+# under, copied somewhere disposable.
 REAL_INTERPRETER = Path(sys.executable)
+
+
+class _FakeResources:
+    """The two Win32 resource calls as a recording fake.
+
+    What ``stamp`` wrote is what ``read_field`` answers, which is exactly the
+    contract the real pair keeps -- so the keep/refresh/discard decisions can be
+    pinned on any platform, with the Windows tier left to prove the real pair
+    honours it. ``fails`` stands in for a source that cannot carry a
+    description: a shim, a shell wrapper, anything that is not a PE.
+    """
+
+    def __init__(self, *, fails: bool = False) -> None:
+        self.stamped: dict[Path, dict[str, str]] = {}
+        self.stamp_calls = 0
+        self.fails = fails
+
+    def stamp(self, exe: Path, *, fields: dict[str, str], icon: bytes | None) -> None:
+        self.stamp_calls += 1
+        if self.fails:
+            raise OSError("this file cannot carry a version resource")
+        self.stamped[Path(exe)] = dict(fields)
+
+    def read_field(self, exe: Path, field: str) -> str | None:
+        fields = self.stamped.get(Path(exe))
+        return None if fields is None else fields.get(field)
+
+
+def _stub_interpreter(tmp_path: Path, name: str = "pythonw.exe") -> Path:
+    """A stand-in interpreter for decision tests: the fake never inspects it,
+    so a few bytes in the right place beat copying a real one."""
+    exe = tmp_path / ".venv" / "Scripts" / name
+    exe.parent.mkdir(parents=True, exist_ok=True)
+    exe.write_bytes(b"MZ stub interpreter")
+    return exe
 
 
 def _interpreter(tmp_path: Path, name: str = "pythonw.exe") -> Path:
@@ -116,12 +151,18 @@ class TestBuildIconResources:
 
 class TestNamedExe:
     def test_copies_the_interpreter_to_a_role_named_sibling(self, tmp_path: Path):
-        source = _interpreter(tmp_path)
+        # A sibling, not a copy elsewhere: pyvenv.cfg is found one directory up
+        # from the interpreter, so anywhere but Scripts/ is a different (or no)
+        # virtualenv, with the app's own imports failing.
+        source = _stub_interpreter(tmp_path)
+        resources = _FakeResources()
 
-        result = Path(ProcessNamer("Fun Time").named_exe(source, "Portrait"))
+        result = Path(ProcessNamer("Fun Time", stamp=resources.stamp,
+                                   read_field=resources.read_field)
+                      .named_exe(source, "Portrait"))
 
         assert result == source.with_name("FunTime-Portrait.exe")
-        assert result.is_file()
+        assert result.read_bytes() == source.read_bytes()
 
     def test_the_copy_describes_itself(self, tmp_path: Path):
         """The whole point: the Processes tab reads the file description, so a
@@ -173,61 +214,76 @@ class TestNamedExe:
         # Asked on every launch, and the answer has to be "already there" -- a
         # copy judged stale on its own would rewrite a running image every run
         # and be refused for it.
-        source = _interpreter(tmp_path)
-        namer = ProcessNamer("Genau")
+        source = _stub_interpreter(tmp_path)
+        resources = _FakeResources()
+        namer = ProcessNamer("Genau", stamp=resources.stamp,
+                             read_field=resources.read_field)
         first = Path(namer.named_exe(source, "Genau"))
-        stamp = first.stat().st_mtime_ns
 
-        namer.named_exe(source, "Genau")
-
-        assert first.stat().st_mtime_ns == stamp
+        assert Path(namer.named_exe(source, "Genau")) == first
+        assert resources.stamp_calls == 1
 
     def test_refreshes_a_copy_made_from_an_older_interpreter(self, tmp_path: Path):
         # A Python upgrade replaces the launcher underneath.  A copy that keeps
         # running the old one is an app on an interpreter nobody installed.
-        source = _interpreter(tmp_path)
-        namer = ProcessNamer("Genau")
+        source = _stub_interpreter(tmp_path)
+        resources = _FakeResources()
+        namer = ProcessNamer("Genau", stamp=resources.stamp,
+                             read_field=resources.read_field)
         stale = Path(namer.named_exe(source, "Landscape"))
-        stale.write_bytes(b"MZ not even a launcher")
+        source.write_bytes(b"MZ the upgrade's launcher, longer than before")
 
         namer.named_exe(source, "Landscape")
 
-        assert read_version_field(stale, "FileDescription") == "Genau – Landscape"
+        assert stale.read_bytes() == source.read_bytes()
+        assert resources.stamped[stale]["FileDescription"] == "Genau – Landscape"
 
     def test_refreshes_a_copy_whose_label_this_version_no_longer_writes(self, tmp_path: Path):
         """The stamp records the label as well as the interpreter, because a
         copy relabelled in code but not on disk would keep the old row heading
         for good -- the file is still current by every other measure."""
-        source = _interpreter(tmp_path)
-        ProcessNamer("Old Name").named_exe(source, "Dashboard")
+        source = _stub_interpreter(tmp_path)
+        resources = _FakeResources()
+        ProcessNamer("Old Name", stamp=resources.stamp,
+                     read_field=resources.read_field).named_exe(source, "Dashboard")
         # The same prefix with a different label: the file name cannot tell them
         # apart, so only the recorded stamp can.
-        result = Path(ProcessNamer("OldName").named_exe(source, "Dashboard"))
+        result = Path(ProcessNamer("OldName", stamp=resources.stamp,
+                                   read_field=resources.read_field)
+                      .named_exe(source, "Dashboard"))
 
-        assert read_version_field(result, "FileDescription") == "OldName – Dashboard"
+        assert resources.stamped[result]["FileDescription"] == "OldName – Dashboard"
 
     def test_falls_back_to_the_interpreter_when_the_copy_cannot_be_made(self, tmp_path: Path):
         # A read-only venv, an antivirus hold, a full disk.  Naming a process is
         # never worth failing a launch over: the app comes up anonymous.
-        source = _interpreter(tmp_path)
+        source = _stub_interpreter(tmp_path)
         source.with_name("Broker-Broker.exe").mkdir()  # the copy cannot land there
+        resources = _FakeResources()
 
-        assert ProcessNamer("Broker").named_exe(source, "Broker") == str(source)
+        assert ProcessNamer("Broker", stamp=resources.stamp,
+                            read_field=resources.read_field) \
+            .named_exe(source, "Broker") == str(source)
 
     def test_falls_back_when_the_interpreter_cannot_carry_a_description(self, tmp_path: Path):
         """Stamping needs a real executable.  Anything else -- a shim, a shell
         wrapper -- loses only its name, and a launch that would have worked
         still works."""
-        source = _shim(tmp_path)
+        source = _stub_interpreter(tmp_path)
+        resources = _FakeResources(fails=True)
 
-        assert ProcessNamer("Broker").named_exe(source, "Broker") == str(source)
+        assert ProcessNamer("Broker", stamp=resources.stamp,
+                            read_field=resources.read_field) \
+            .named_exe(source, "Broker") == str(source)
 
     def test_leaves_nothing_behind_when_it_cannot_describe_the_copy(self, tmp_path: Path):
         # A copy that names nothing is a file added to the venv for no benefit,
         # and a launcher pointed at it would report a process it cannot identify.
-        source = _shim(tmp_path)
+        source = _stub_interpreter(tmp_path)
+        resources = _FakeResources(fails=True)
 
-        ProcessNamer("Broker").named_exe(source, "Broker")
+        ProcessNamer("Broker", stamp=resources.stamp,
+                     read_field=resources.read_field).named_exe(source, "Broker")
 
         assert not source.with_name("Broker-Broker.exe").exists()
 
@@ -237,31 +293,33 @@ class TestNamedExe:
         # The usual reason a refresh fails is that the last run's copy is still
         # running and Windows will not overwrite a running image.  One label
         # behind beats going back to an unidentifiable process.
-        source = _interpreter(tmp_path)
-        existing = Path(ProcessNamer("Clipper").named_exe(source, "Clipper"))
+        source = _stub_interpreter(tmp_path)
+        resources = _FakeResources()
+        existing = Path(ProcessNamer("Clipper", stamp=resources.stamp,
+                                     read_field=resources.read_field)
+                        .named_exe(source, "Clipper"))
+        source.write_bytes(b"MZ upgraded underneath, so a refresh is wanted")
         monkeypatch.setattr(
             "app_support.process_identity.shutil.copyfile",
             lambda *a, **k: (_ for _ in ()).throw(PermissionError("in use")),
         )
 
-        # A different label wants a rewrite, cannot have one, and keeps what is
-        # there rather than leaving the process anonymous.
-        assert ProcessNamer("Clipper").named_exe(source, "Clipper") == str(existing)
-        assert read_version_field(existing, "FileDescription") == "Clipper"
+        # The refresh cannot happen, and what is there is one of ours -- so it
+        # is kept rather than leaving the process anonymous.
+        assert ProcessNamer("Clipper", stamp=resources.stamp,
+                            read_field=resources.read_field) \
+            .named_exe(source, "Clipper") == str(existing)
+        assert resources.stamped[existing]["FileDescription"] == "Clipper"
 
     def test_falls_back_rather_than_raising_on_a_role_it_cannot_name(self, tmp_path: Path):
         # A launch site is not a validation site: a bad role loses the name, not
         # the window.
-        source = _interpreter(tmp_path)
+        source = _stub_interpreter(tmp_path)
+        resources = _FakeResources()
 
-        assert ProcessNamer("Broker").named_exe(source, "Bad Role") == str(source)
-
-
-def _shim(tmp_path: Path) -> Path:
-    source = tmp_path / ".venv" / "Scripts" / "pythonw.exe"
-    source.parent.mkdir(parents=True, exist_ok=True)
-    source.write_bytes(b"#!/bin/sh\n")
-    return source
+        assert ProcessNamer("Broker", stamp=resources.stamp,
+                            read_field=resources.read_field) \
+            .named_exe(source, "Bad Role") == str(source)
 
 
 class TestPrepareLauncher:
@@ -269,9 +327,12 @@ class TestPrepareLauncher:
         """An app's shortcut starts pythonw, so that is the file to copy -- and
         naming it from sys.executable would name a copy after a copy on every
         run after the first."""
-        source = _interpreter(tmp_path)
+        source = _stub_interpreter(tmp_path)
+        resources = _FakeResources()
 
-        ProcessNamer("Highdeas").prepare_launcher("Highdeas", source)
+        ProcessNamer("Highdeas", stamp=resources.stamp,
+                     read_field=resources.read_field) \
+            .prepare_launcher("Highdeas", source)
 
         assert source.with_name("Highdeas-Highdeas.exe").is_file()
 
