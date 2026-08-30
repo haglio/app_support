@@ -19,6 +19,8 @@ Two more things every repo in the family needs, and used to keep its own copy of
 
 - **`sanitize`** — the pre-publication content guard and the harvester that feeds
   it, plus the pytest plugin that enforces a clean tracked tree. See below.
+- **`dead_code`** — the family's vulture gate in one shape, so eleven repos stop
+  keeping six. See below.
 - **`launch_smoke`** — reads everything a launcher's entry point imports off its
   AST so a test can replay it in a fresh interpreter. A windowed launch has no
   console, so an import that fails inside one leaves the icon doing nothing and
@@ -109,6 +111,40 @@ a public clone and a fresh CI checkout both look like. A harvest with roots but
 no vocabulary declines and says which file it wants, rather than walking
 half-informed and putting a machine's own filing words onto a list that syncs to
 every checkout.
+
+## The dead-code gate
+
+`app_support.dead_code` runs vulture over the directories a repo names and fails
+the suite on the report:
+
+```python
+# tests/test_dead_code.py
+from pathlib import Path
+
+from app_support.dead_code import assert_no_dead_code
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def test_no_dead_code():
+    assert_no_dead_code(ROOT / "the_package", whitelist=ROOT / "vulture_whitelist.py")
+```
+
+Add `vulture` to the repo's `[dev]` extra — it is the *scanning* repo's dev
+dependency, never this package's, which installs into every app's venv.
+
+**Name the production directories; never scan `.` behind an `--exclude` list.**
+vulture matches those patterns against absolute paths, and an agent's checkout
+lives at `<repo>/.claude/worktrees/<name>` — so `--exclude .claude` matches the
+root of the tree being scanned and excludes every file in it. Two repos here
+carried that no-op.
+
+**Silence is not a pass unless something was read.** vulture reports nothing for
+a clean tree, and also for a directory holding no Python, for input it could not
+parse, and for not being installed at all. The scan tells them apart — it checks
+that each target has Python under it before starting, and treats every exit code
+but "clean" and "here is the report" as a scan that did not happen. A gate that
+conflates them goes green the day its target is renamed and stays green.
 
 ## Tests
 

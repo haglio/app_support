@@ -13,6 +13,10 @@ dependencies = []
 [project.optional-dependencies]
 dev = [
     "pytest",
+    # The scanner behind app_support.dead_code. A dev dependency of every repo
+    # that asks for that gate, including this one -- never a dependency of the
+    # package, which installs into every app's venv.
+    "vulture",
 ]
 
 # Consumers install this editable from a local path (see README); it is never
