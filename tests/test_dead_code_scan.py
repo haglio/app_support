@@ -10,7 +10,12 @@ from pathlib import Path
 
 import pytest
 
-from app_support.dead_code import ScanDidNotRun, assert_no_dead_code, scan
+from app_support.dead_code import (
+    ScanDidNotRun,
+    assert_no_dead_code,
+    assert_whitelist_is_live,
+    scan,
+)
 
 
 def _tree(root: Path, **modules: str) -> Path:
@@ -59,6 +64,56 @@ def test_a_whitelist_entry_takes_a_name_out_of_the_report(tmp_path):
     whitelist.write_text("polish_the_brass\n", encoding="utf-8")
 
     assert_no_dead_code(package, whitelist=whitelist)
+
+
+def test_a_whitelist_that_suppresses_what_the_scan_reports_is_live(tmp_path):
+    """Spelled the way ``vulture --make-whitelist`` writes it: ``_.name`` for an
+    attribute or method, with ``_`` standing in for "some object" rather than
+    naming an entry of its own.
+    """
+    package = _tree(
+        tmp_path,
+        widgets="class Sideboard:\n    def polish(self):\n        self.drawer = 1\n",
+    )
+    whitelist = tmp_path / "vulture_whitelist.py"
+    whitelist.write_text("_.polish\n_.drawer\n", encoding="utf-8")
+
+    assert_whitelist_is_live(package, whitelist=whitelist)
+
+
+def test_a_whitelist_entry_that_suppresses_nothing_fails(tmp_path):
+    """The exception file is the record of what a repo decided to allow, and an
+    entry whose subject was deleted long ago is only there to hide the next name
+    that happens to match it. One repo here reached 31 dead entries out of 45,
+    23 of them naming symbols the family no longer contains.
+    """
+    package = _tree(tmp_path, widgets="def polish_the_brass():\n    pass\n")
+    whitelist = tmp_path / "vulture_whitelist.py"
+    whitelist.write_text(
+        "polish_the_brass\nwind_the_clock  # deleted in 2019\n", encoding="utf-8"
+    )
+
+    with pytest.raises(AssertionError) as failure:
+        assert_whitelist_is_live(package, whitelist=whitelist)
+
+    assert "wind_the_clock" in str(failure.value)
+    assert "polish_the_brass" not in str(failure.value)
+
+
+def test_a_stale_entry_is_caught_in_the_attribute_spelling_too(tmp_path):
+    package = _tree(
+        tmp_path,
+        widgets="class Sideboard:\n    def polish(self):\n        self.drawer = 1\n",
+    )
+    whitelist = tmp_path / "vulture_whitelist.py"
+    whitelist.write_text("_.polish\n_.drawer\n_.varnish\n", encoding="utf-8")
+
+    with pytest.raises(AssertionError) as failure:
+        assert_whitelist_is_live(package, whitelist=whitelist)
+
+    assert "varnish" in str(failure.value)
+    assert "polish" not in str(failure.value)
+    assert "drawer" not in str(failure.value)
 
 
 def test_a_target_that_is_not_there_is_refused_rather_than_called_clean(tmp_path):
