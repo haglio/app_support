@@ -136,8 +136,8 @@ dependency, never this package's, which installs into every app's venv.
 **Name the production directories; never scan `.` behind an `--exclude` list.**
 vulture matches those patterns against absolute paths, and an agent's checkout
 lives at `<repo>/.claude/worktrees/<name>` — so `--exclude .claude` matches the
-root of the tree being scanned and excludes every file in it. Two repos here
-carried that no-op.
+root of the tree being scanned and excludes every file in it. Three repos here
+carried that no-op and say so in the docstrings of the gates they fixed.
 
 **Keep the whitelist outside the trees it applies to.** vulture reads it by
 unioning the names it uses with the names the scanned tree uses, so a whitelist
