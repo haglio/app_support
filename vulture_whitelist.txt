@@ -1,0 +1,16 @@
+# Vulture whitelist -- names the scan reports that are not dead code.
+#
+# Handed to vulture as one more file to read, so a mention here counts as a use.
+# Nothing imports or runs it. Grouped by reason, so each entry can be checked
+# against the thing that actually calls it.
+#
+# Two rules about this file, both enforced. `tests/test_dead_code.py` fails on
+# an entry that has stopped suppressing anything, so nothing may sit here once
+# its subject is gone. And it is `.txt` rather than the family's usual `.py`
+# because this repo's root may publish exactly one importable top-level name --
+# `tests/test_sanitize_plugin.py` holds that -- while a whitelist inside one of
+# the scanned directories would be read as part of the tree and silence the gate
+# entirely. Outside the scan and outside the import path is the one place left.
+
+# --- pytest fixtures (collected by name, never called by our code) ---
+_the_process_is_given_back  # tests/conftest.py
