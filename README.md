@@ -139,6 +139,13 @@ lives at `<repo>/.claude/worktrees/<name>` — so `--exclude .claude` matches th
 root of the tree being scanned and excludes every file in it. Two repos here
 carried that no-op.
 
+**Keep the whitelist outside the trees it applies to.** vulture reads it by
+unioning the names it uses with the names the scanned tree uses, so a whitelist
+kept *inside* a scanned directory is read as part of that tree — every name in
+it counts as used, the gate reports nothing whatever the tree holds, and the
+liveness check calls every entry stale. The scan refuses that arrangement rather
+than running it.
+
 **The whitelist may not outlive what it suppresses.** `assert_whitelist_is_live`
 re-runs the scan without the whitelist and fails on any name in it that no
 longer appears. The file records the exceptions a repo decided on, so an entry

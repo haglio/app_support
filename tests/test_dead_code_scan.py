@@ -116,6 +116,24 @@ def test_a_stale_entry_is_caught_in_the_attribute_spelling_too(tmp_path):
     assert "drawer" not in str(failure.value)
 
 
+def test_a_whitelist_kept_inside_a_scanned_tree_is_refused(tmp_path):
+    """Where a whitelist may not live. vulture reads the file by unioning the
+    names it uses with the names the tree uses, so one kept *inside* a scanned
+    directory is read twice -- and every name in it counts as used whether or
+    not it was handed over. The gate then reports nothing whatever the tree
+    holds, and `assert_whitelist_is_live` calls every entry stale.
+    """
+    package = _tree(tmp_path, widgets="def polish_the_brass():\n    pass\n")
+    whitelist = package / "vulture_whitelist.py"
+    whitelist.write_text("polish_the_brass\n", encoding="utf-8")
+
+    with pytest.raises(ScanDidNotRun):
+        scan(package, whitelist=whitelist)
+
+    with pytest.raises(ScanDidNotRun):
+        assert_whitelist_is_live(package, whitelist=whitelist)
+
+
 def test_a_target_that_is_not_there_is_refused_rather_than_called_clean(tmp_path):
     """The gate a repo renamed a directory out from under reports nothing, and
     nothing is what a clean tree reports too. vulture leaves them

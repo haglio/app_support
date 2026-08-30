@@ -62,6 +62,28 @@ def _refuse_a_target_with_nothing_to_read(targets: tuple[Path | str, ...]) -> No
             raise ScanDidNotRun(f"nothing to scan: no Python under {path}")
 
 
+def _refuse_a_whitelist_inside_the_scan(
+    targets: tuple[Path | str, ...], whitelist: Path | str
+) -> None:
+    """Where a whitelist may not live.
+
+    vulture reads the file by unioning the names it uses with the names the
+    scanned tree uses, so one kept inside a scanned directory is read as part of
+    that tree whether or not it was handed over -- and the gate then reports
+    nothing at all, whatever the tree holds. Keep it beside the repo root, the
+    way every repo in this family already does.
+    """
+    kept = Path(whitelist).resolve()
+    for target in targets:
+        directory = Path(target).resolve()
+        if directory in kept.parents:
+            raise ScanDidNotRun(
+                f"the whitelist {kept} is inside {directory}, which is scanned. "
+                "Every name in it would count as used and the gate could not "
+                "report anything; keep it outside the trees it applies to."
+            )
+
+
 def scan(
     *targets: Path | str,
     whitelist: Path | str | None = None,
@@ -80,6 +102,7 @@ def scan(
     green for the rest of its life.
     """
     if whitelist is not None:
+        _refuse_a_whitelist_inside_the_scan(targets, whitelist)
         targets = (*targets, whitelist)
     _refuse_a_target_with_nothing_to_read(targets)
     command = [sys.executable, "-m", "vulture",
@@ -149,6 +172,7 @@ def assert_whitelist_is_live(
     entries out of 45, 23 of them naming symbols the family no longer contains,
     and its gate could not see what its own deletions left behind.
     """
+    _refuse_a_whitelist_inside_the_scan(targets, whitelist)
     report = scan(*targets, min_confidence=min_confidence)
     stale = sorted(
         _names_the_whitelist_suppresses(whitelist) - _names_the_report_carries(report)
