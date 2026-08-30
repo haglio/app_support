@@ -139,6 +139,13 @@ lives at `<repo>/.claude/worktrees/<name>` — so `--exclude .claude` matches th
 root of the tree being scanned and excludes every file in it. Two repos here
 carried that no-op.
 
+**The whitelist may not outlive what it suppresses.** `assert_whitelist_is_live`
+re-runs the scan without the whitelist and fails on any name in it that no
+longer appears. The file records the exceptions a repo decided on, so an entry
+whose subject was deleted is not merely untidy — it is a standing exemption for
+whatever name matches it next. One repo here reached 31 dead entries out of 45,
+23 of them naming symbols the family no longer contains.
+
 **Silence is not a pass unless something was read.** vulture reports nothing for
 a clean tree, and also for a directory holding no Python, for input it could not
 parse, and for not being installed at all. The scan tells them apart — it checks

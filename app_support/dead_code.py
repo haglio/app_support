@@ -27,6 +27,8 @@ venv where a scanner has no business being.
 """
 from __future__ import annotations
 
+import ast
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -105,4 +107,55 @@ def assert_no_dead_code(
         "vulture found dead code. Delete it, or -- if the caller is a framework "
         "vulture cannot see -- add the name to the whitelist with a comment "
         f"saying who calls it:\n{report}"
+    )
+
+
+# `vulture --make-whitelist` spells an attribute `_.name`, so `_` is the file's
+# placeholder for "some object" and never an entry of its own.
+_WHITELIST_PLACEHOLDER = "_"
+
+
+def _names_the_whitelist_suppresses(whitelist: Path | str) -> set[str]:
+    """Every name mentioned in the whitelist file, however it is spelled.
+
+    vulture takes the file as source and unions the names it uses with the ones
+    the scanned tree uses, so a mention is the whole mechanism -- ``_.name`` for
+    an attribute or method, a bare name for anything else.
+    """
+    tree = ast.parse(Path(whitelist).read_text(encoding="utf-8"))
+    names = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute):
+            names.add(node.attr)
+        elif isinstance(node, ast.Name) and node.id != _WHITELIST_PLACEHOLDER:
+            names.add(node.id)
+    return names
+
+
+def _names_the_report_carries(report: str) -> set[str]:
+    return set(re.findall(r"unused \w+ '([^']+)'", report))
+
+
+def assert_whitelist_is_live(
+    *targets: Path | str,
+    whitelist: Path | str,
+    min_confidence: int = 60,
+) -> None:
+    """Fail on a whitelist entry that no longer suppresses anything.
+
+    The file records the exceptions a repo decided on, so an entry whose subject
+    was deleted is not merely tidy-able: it is a standing exemption for whatever
+    name happens to match it next. One repo in this family reached 31 dead
+    entries out of 45, 23 of them naming symbols the family no longer contains,
+    and its gate could not see what its own deletions left behind.
+    """
+    report = scan(*targets, min_confidence=min_confidence)
+    stale = sorted(
+        _names_the_whitelist_suppresses(whitelist) - _names_the_report_carries(report)
+    )
+    assert not stale, (
+        f"{Path(whitelist).name} suppresses names vulture no longer reports. "
+        "Delete these entries -- each one is an exemption waiting for the next "
+        "name that happens to match it:\n"
+        + "\n".join(f"  {name}" for name in stale)
     )
