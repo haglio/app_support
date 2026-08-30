@@ -2,9 +2,12 @@
 
 Every repo here answers "has anything stopped being used?" with vulture, and
 eight of them had grown their own arrangement of the same subprocess call: six
-shapes, three whitelist conventions, and four of the eight unable to tell a
-clean tree from a scan that never happened. A repo asks for the gate in a few
-lines instead::
+shapes and three whitelist conventions. Counted rather than assumed: **seven of
+the eight report a clean tree for a directory that holds no Python at all**
+(evolver is the one that already asserts it found sources), and **one of them
+reports a clean tree when vulture is not installed** -- the four that compare an
+exit code to zero fail that case instead, with a message reading "Vulture found
+dead code:" and then nothing. A repo asks for the gate in a few lines instead::
 
     # tests/test_dead_code.py
     from app_support.dead_code import assert_no_dead_code
