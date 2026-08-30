@@ -1,0 +1,108 @@
+"""The family's dead-code gate, published once instead of copied eleven times.
+
+Every repo here answers "has anything stopped being used?" with vulture, and
+eight of them had grown their own arrangement of the same subprocess call: six
+shapes, three whitelist conventions, and four of the eight unable to tell a
+clean tree from a scan that never happened. A repo asks for the gate in a few
+lines instead::
+
+    # tests/test_dead_code.py
+    from app_support.dead_code import assert_no_dead_code
+
+    ROOT = Path(__file__).resolve().parent.parent
+
+    def test_no_dead_code():
+        assert_no_dead_code(ROOT / "the_package", whitelist=ROOT / "vulture_whitelist.py")
+
+Name the production directories rather than scanning ``.`` behind an
+``--exclude`` list. vulture matches those patterns against absolute paths, and
+an agent's checkout lives at ``<repo>/.claude/worktrees/<name>`` -- so
+``--exclude .claude`` matches the root of the tree being scanned and excludes
+every file in it, which is precisely the no-op this module exists to make
+impossible.
+
+vulture is a dev dependency of the repo asking for the gate, not of this
+package: nothing here imports it, and this package installs into every app's
+venv where a scanner has no business being.
+"""
+from __future__ import annotations
+
+import subprocess
+import sys
+from pathlib import Path
+
+# vulture's exit codes: 0 nothing to report, 3 the report is not empty. Every
+# other code means it did not get as far as an answer -- 1 for input it could
+# not read, 2 for arguments it could not parse, and 1 again from the interpreter
+# when vulture is not installed at all.
+_NOTHING_TO_REPORT = 0
+_REPORT_IS_NOT_EMPTY = 3
+
+
+class ScanDidNotRun(RuntimeError):
+    """vulture never reached an answer, so silence here means nothing."""
+
+
+def _refuse_a_target_with_nothing_to_read(targets: tuple[Path | str, ...]) -> None:
+    """The failure no exit code reports: a target with no Python under it.
+
+    vulture is content to be handed a directory holding nothing it can read and
+    exits 0 for it, which is the same answer a scanned-and-clean tree gets. A
+    gate whose target has moved, been renamed, or been swallowed by an
+    ``--exclude`` that matched more than its author meant then passes for the
+    rest of its life while scanning nothing at all.
+    """
+    for target in targets:
+        path = Path(target)
+        if not path.exists():
+            raise ScanDidNotRun(f"nothing to scan: {path} does not exist")
+        if path.is_dir() and next(path.rglob("*.py"), None) is None:
+            raise ScanDidNotRun(f"nothing to scan: no Python under {path}")
+
+
+def scan(
+    *targets: Path | str,
+    whitelist: Path | str | None = None,
+    min_confidence: int = 60,
+) -> str:
+    """vulture's report over *targets*; empty when there is nothing to report.
+
+    *whitelist* is a Python file naming the exceptions a repo has decided on --
+    framework callbacks, attributes read by something vulture cannot follow. It
+    is handed to vulture as one more thing to scan, so a name mentioned there
+    counts as used.
+
+    Raises `ScanDidNotRun` rather than returning that same empty string when the
+    scan did not happen. The two are the whole difficulty: a gate that reads
+    "vulture is not installed" or "that directory is gone" as a clean tree is
+    green for the rest of its life.
+    """
+    if whitelist is not None:
+        targets = (*targets, whitelist)
+    _refuse_a_target_with_nothing_to_read(targets)
+    command = [sys.executable, "-m", "vulture",
+               *(str(target) for target in targets),
+               "--min-confidence", str(min_confidence)]
+    result = subprocess.run(command, capture_output=True, text=True)
+    if result.returncode == _REPORT_IS_NOT_EMPTY:
+        return result.stdout
+    if result.returncode != _NOTHING_TO_REPORT:
+        raise ScanDidNotRun(
+            f"vulture exited {result.returncode} instead of scanning:\n"
+            f"  {' '.join(command)}\n{result.stdout}{result.stderr}"
+        )
+    return ""
+
+
+def assert_no_dead_code(
+    *targets: Path | str,
+    whitelist: Path | str | None = None,
+    min_confidence: int = 60,
+) -> None:
+    """Fail the suite with vulture's report over *targets*."""
+    report = scan(*targets, whitelist=whitelist, min_confidence=min_confidence)
+    assert not report, (
+        "vulture found dead code. Delete it, or -- if the caller is a framework "
+        "vulture cannot see -- add the name to the whitelist with a comment "
+        f"saying who calls it:\n{report}"
+    )
