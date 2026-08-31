@@ -88,6 +88,13 @@ class TestExePrefix:
         with pytest.raises(ValueError):
             exe_prefix("   ")
 
+    @pytest.mark.parametrize("app_name", ["Fun Time", "Highdeas", "OSR2 Broker!", "a.b*c"])
+    def test_never_holds_a_character_a_regex_would_read(self, app_name: str):
+        # Which is what lets process_name_pattern put the prefix in as it
+        # stands: everything but letters and digits comes out, and the one
+        # hyphen appended after them is literal outside a character class.
+        assert re.fullmatch(r"[A-Za-z0-9]+-", exe_prefix(app_name)), app_name
+
 
 class TestNaming:
     def test_names_the_copy_for_its_app_and_role(self):
@@ -338,6 +345,14 @@ class TestPrepareLauncher:
 
 
 class TestProcessNamePattern:
+    def test_carries_the_prefix_the_way_the_copies_spell_it(self):
+        # This string is read and debugged inside a PowerShell sweep, beside
+        # the image names it matches.  A prefix respelled on the way in --
+        # "FunTime\-" for "FunTime-" -- means the same thing to a regex engine
+        # and costs the reader the one check they can make by eye.
+        namer = ProcessNamer("Fun Time")
+        assert namer.prefix in namer.process_name_pattern
+
     def test_matches_the_copies_the_app_launches_under(self):
         pattern = ProcessNamer("Fun Time").process_name_pattern
         assert re.match(pattern, "FunTime-Portrait.exe")

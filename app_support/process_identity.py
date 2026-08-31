@@ -320,8 +320,12 @@ class ProcessNamer:
         Written for PowerShell's ``-match``, which is where process sweeps apply
         it, and anchored so it cannot catch some other app's ``mypythonw.exe``.
         """
+        # The prefix goes in as it stands: exe_prefix leaves only letters,
+        # digits and the hyphen it appends, none of which a regex reads.
+        # Escaping it spelled the prefix one way here and another on disk, in
+        # a string whose readers compare the two by eye.
         return (r"^pythonw?\.exe$|^py\.exe$|^"
-                + re.escape(self.prefix) + r"[A-Za-z]+\.exe$")
+                + self.prefix + r"[A-Za-z]+\.exe$")
 
     # --- making them ---
 
