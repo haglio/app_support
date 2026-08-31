@@ -373,6 +373,33 @@ class TestProcessNamePattern:
             assert not re.match(pattern, name), name
 
 
+class TestOwnsExeName:
+    NAMER = ProcessNamer("Fun Time")
+
+    def test_recognizes_its_own_copies_whatever_their_case(self):
+        assert self.NAMER.owns_exe_name("FunTime-Dashboard.exe")
+        assert self.NAMER.owns_exe_name("funtime-dashboard.exe")
+
+    def test_answers_for_exactly_the_names_it_gives_its_copies(self):
+        # One rule, two answers: a name this namer hands out has to be a name
+        # it owns, or a sweep and the launcher disagree about which processes
+        # belong to the app.
+        for role in ("Dashboard", "AudioCompanion", "Nau"):
+            name = self.NAMER.exe_name("pythonw.exe", role)
+            assert self.NAMER.owns_exe_name(name), name
+
+    def test_does_not_claim_the_interpreters_a_copy_falls_back_to(self):
+        # The whole difference from process_name_pattern, and why both exist:
+        # a caller bounded by nothing but the image name (a shared desktop, not
+        # a command line) would be sweeping somebody else's Python.
+        for name in ("pythonw.exe", "python.exe", "py.exe"):
+            assert not self.NAMER.owns_exe_name(name), name
+
+    def test_does_not_claim_a_name_that_merely_starts_the_same(self):
+        for name in ("FunTimeSetup.msi", "FunTimeOther.exe", "Genau-Nau.exe", "notepad.exe"):
+            assert not self.NAMER.owns_exe_name(name), name
+
+
 def _has_resource(exe: Path, *, kind: int, name: int) -> bool:
     k32 = ctypes.WinDLL("kernel32", use_last_error=True)
     k32.LoadLibraryExW.restype = wintypes.HMODULE
