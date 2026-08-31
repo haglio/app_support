@@ -17,6 +17,7 @@ output never reproduces the content it is guarding against.
 """
 from __future__ import annotations
 
+import argparse
 import bisect
 import re
 import subprocess
@@ -226,13 +227,33 @@ def _staged_violations(repo: Path, terms: Sequence[str]) -> list[Violation]:
     return out
 
 
+def build_parser() -> argparse.ArgumentParser:
+    """The two flags the hooks pass.
+
+    argparse, not a scan of ``sys.argv``: this runs inside a git hook, where a
+    missing value for ``--message`` used to be an IndexError.
+    """
+    parser = argparse.ArgumentParser(
+        prog="app_support.sanitize",
+        description="Refuse a commit that carries a blocked term.")
+    what = parser.add_mutually_exclusive_group()
+    what.add_argument("--staged", action="store_true",
+                      help="Scan the staged changes (pre-commit).")
+    what.add_argument("--message", metavar="FILE",
+                      help="Scan a commit message file (commit-msg).")
+    return parser
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """``--staged`` for pre-commit, ``--message FILE`` for commit-msg.
 
     Exits 0 when there is no blocklist to enforce, so a public clone and a
-    checkout without the overlay both commit normally.
+    checkout without the overlay both commit normally. The flags are parsed
+    first, before that check: a hook calling this wrongly must hear about it in
+    the checkout where the guard has nothing to enforce as well as in the one
+    where it does.
     """
-    args = list(sys.argv[1:] if argv is None else argv)
+    args = build_parser().parse_args(sys.argv[1:] if argv is None else list(argv))
     try:
         repo = _repo_root()
     except (OSError, subprocess.SubprocessError):
@@ -242,11 +263,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not terms:
         return 0
 
-    if "--message" in args:
-        target = args[args.index("--message") + 1]
-        text = Path(target).read_text(encoding="utf-8", errors="replace")
+    if args.message:
+        text = Path(args.message).read_text(encoding="utf-8", errors="replace")
         what = "commit message"
-        violations = find_violations(text, terms, path=target)
+        violations = find_violations(text, terms, path=args.message)
     else:
         what = "staged changes"
         violations = _staged_violations(repo, terms)
