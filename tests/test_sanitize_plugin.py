@@ -162,6 +162,29 @@ class TestTheGuardPlugin:
 
         assert self._pytest(repo).returncode == 0
 
+    def test_an_armed_checkout_with_nothing_tracked_is_refused_not_reported_clean(
+        self, tmp_path: Path,
+    ):
+        """A pass that scanned no files says the same word as a pass that
+        scanned the tree, and the second is the only one worth anything. The
+        blocklist half of that hole is handled where the terms are resolved;
+        this is the other half -- terms in hand, and a walk that came back with
+        nothing to read.
+        """
+        repo = tmp_path / "empty"
+        (repo / "sanitize").mkdir(parents=True)
+        (repo / "pyproject.toml").write_text(PYPROJECT, encoding="utf-8")
+        (repo / "sanitize" / "blocklist.local.txt").write_text(
+            f"{TERM}\n", encoding="utf-8")
+        (repo / "test_local.py").write_text(
+            "def test_local():\n    assert True\n", encoding="utf-8")
+        _git(repo, "init", "-b", "main")
+
+        done = self._pytest(repo)
+
+        assert done.returncode != 0, done.stdout
+        assert "no files at all" in done.stdout
+
     def test_a_directory_run_is_still_a_run_of_the_whole_tree(self, tmp_path: Path):
         """`pytest tests/` is the command this family's own instructions give,
         and it has narrowed nothing -- so it enforces, exactly as a bare run

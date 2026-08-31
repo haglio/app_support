@@ -45,6 +45,10 @@ def test_no_blocklisted_terms_in_the_tracked_tree(pytestconfig):
         ["git", "-C", str(repo), "ls-files"],
         capture_output=True, text=True, check=True,
     ).stdout.split()
+    # A walk that read nothing reports "passed" in the same words as a walk that
+    # read the tree, and only one of them means anything. git having succeeded is
+    # not enough: an empty list is the shape a scan of nothing arrives in.
+    assert tracked, "the tracked-tree walk saw no files at all"
     violations = scan_files((repo / rel for rel in tracked), terms, root=repo)
     # Print only the redacted excerpt, never the matched term itself.
     assert not violations, "blocklisted terms in tracked files:\n" + "\n".join(
