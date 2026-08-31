@@ -9,6 +9,8 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from app_support.sanitize import (
     blocklist_path,
     find_violations,
@@ -318,3 +320,44 @@ class TestHookEntryPoint:
 
         assert done.returncode != 0
         assert "app_support" in done.stderr
+
+
+class TestTheFlagsTheHookPasses:
+    """This runs inside a git hook, where a usage mistake used to be a
+    traceback and a misspelling used to be silently the other mode."""
+
+    def test_a_message_with_no_file_is_a_usage_error_not_a_traceback(self):
+        """`args[args.index("--message") + 1]` raised IndexError here."""
+        from app_support.sanitize.guard import build_parser
+
+        with pytest.raises(SystemExit):
+            build_parser().parse_args(["--message"])
+
+    def test_each_mode_parses_on_its_own(self):
+        from app_support.sanitize.guard import build_parser
+
+        assert build_parser().parse_args(["--staged"]).staged is True
+        assert build_parser().parse_args(["--message", "MSG"]).message == "MSG"
+
+    def test_the_two_modes_are_exclusive(self):
+        """One scan per run: a hook is either pre-commit or commit-msg."""
+        from app_support.sanitize.guard import build_parser
+
+        with pytest.raises(SystemExit):
+            build_parser().parse_args(["--staged", "--message", "MSG"])
+
+    def test_a_misspelled_flag_is_refused_rather_than_read_as_the_other_mode(self):
+        from app_support.sanitize.guard import build_parser
+
+        with pytest.raises(SystemExit):
+            build_parser().parse_args(["--staged-changes"])
+
+    def test_main_refuses_the_malformed_call_before_it_looks_for_a_blocklist(self):
+        """The parser has to be the first thing `main` does, or the checkout
+        that most needs the usage error -- a public clone with no blocklist --
+        is the one that exits 0 on it.
+        """
+        from app_support.sanitize.guard import main
+
+        with pytest.raises(SystemExit):
+            main(["--message"])
