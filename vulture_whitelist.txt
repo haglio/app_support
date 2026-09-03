@@ -14,3 +14,7 @@
 
 # --- pytest fixtures (collected by name, never called by our code) ---
 _the_process_is_given_back  # tests/conftest.py
+
+# --- ctypes structure fields written for COM to read, never read back here ---
+_.vt  # app_support/win32.py, the PROPVARIANT handed to IPropertyStore::SetValue
+_.pwszVal  # app_support/win32.py, the same PROPVARIANT
