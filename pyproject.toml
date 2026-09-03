@@ -13,6 +13,7 @@ dependencies = []
 [project.optional-dependencies]
 dev = [
     "pytest",
+    "pytest-timeout",
     # The scanner behind app_support.dead_code. A dev dependency of every repo
     # that asks for that gate, including this one -- never a dependency of the
     # package, which installs into every app's venv.
@@ -26,8 +27,13 @@ dev = [
 include = ["app_support*"]
 
 [tool.pytest.ini_options]
-# The second plugin is the content guard's enforcement check, which this repo
-# adopts the same way every consumer will: one line, and the tracked tree is
-# scanned on every run.
-addopts = "-p no:cacheprovider -p app_support.sanitize.pytest_plugin"
+# A ceiling on a hang, not a performance budget. The slowest test on a
+# developer machine is the tracked-tree content scan, but it is not the
+# slowest on a runner: it returns early when no blocklist is reachable, and
+# the blocklist is git-ignored, so a fresh checkout has none. What CI does run
+# longest here is the sanitize hook tests, each driving a real git repo, at
+# about a second. --timeout-method=thread is the half that pays for itself: it
+# dumps the hung stack, which turns a stalled required check into a one-line
+# diagnosis. tests/test_timeouts.py holds all three halves of it.
+addopts = "-p no:cacheprovider -p app_support.sanitize.pytest_plugin --timeout=60 --timeout-method=thread"
 testpaths = ["tests"]
