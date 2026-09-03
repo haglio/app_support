@@ -312,6 +312,17 @@ class ProcessNamer:
         return f"{self.app_name} – {_WORD_BREAK_RE.sub(' ', role)}"
 
     @property
+    def _copy_name_pattern(self) -> str:
+        """A regex matching the image names this namer's own copies carry.
+
+        The prefix goes in as it stands: exe_prefix leaves only letters, digits
+        and the hyphen it appends, none of which a regex reads.  Escaping it
+        spelled the prefix one way here and another on disk, in a string whose
+        readers compare the two by eye.
+        """
+        return "^" + self.prefix + r"[A-Za-z]+\.exe$"
+
+    @property
     def process_name_pattern(self) -> str:
         """A regex matching every image name one of this app's processes can run
         under: a role-named copy, or -- when the copy could not be made -- the
@@ -320,8 +331,19 @@ class ProcessNamer:
         Written for PowerShell's ``-match``, which is where process sweeps apply
         it, and anchored so it cannot catch some other app's ``mypythonw.exe``.
         """
-        return (r"^pythonw?\.exe$|^py\.exe$|^"
-                + re.escape(self.prefix) + r"[A-Za-z]+\.exe$")
+        return r"^pythonw?\.exe$|^py\.exe$|" + self._copy_name_pattern
+
+    def owns_exe_name(self, name: str) -> bool:
+        """Whether *name* is one of the role-named copies this namer makes.
+
+        Narrower than :attr:`process_name_pattern`, and built from the same rule
+        so the two cannot come to disagree: this asks whether the app NAMED the
+        process, where the pattern asks whether the process could be the app's
+        at all.  A caller bounded by nothing but the image name wants this one
+        -- the plain interpreters the pattern also matches are as likely to be
+        somebody else's.
+        """
+        return re.fullmatch(self._copy_name_pattern, name, re.IGNORECASE) is not None
 
     # --- making them ---
 

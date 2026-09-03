@@ -88,6 +88,13 @@ class TestExePrefix:
         with pytest.raises(ValueError):
             exe_prefix("   ")
 
+    @pytest.mark.parametrize("app_name", ["Fun Time", "Highdeas", "OSR2 Broker!", "a.b*c"])
+    def test_never_holds_a_character_a_regex_would_read(self, app_name: str):
+        # Which is what lets process_name_pattern put the prefix in as it
+        # stands: everything but letters and digits comes out, and the one
+        # hyphen appended after them is literal outside a character class.
+        assert re.fullmatch(r"[A-Za-z0-9]+-", exe_prefix(app_name)), app_name
+
 
 class TestNaming:
     def test_names_the_copy_for_its_app_and_role(self):
@@ -338,6 +345,14 @@ class TestPrepareLauncher:
 
 
 class TestProcessNamePattern:
+    def test_carries_the_prefix_the_way_the_copies_spell_it(self):
+        # This string is read and debugged inside a PowerShell sweep, beside
+        # the image names it matches.  A prefix respelled on the way in --
+        # "FunTime\-" for "FunTime-" -- means the same thing to a regex engine
+        # and costs the reader the one check they can make by eye.
+        namer = ProcessNamer("Fun Time")
+        assert namer.prefix in namer.process_name_pattern
+
     def test_matches_the_copies_the_app_launches_under(self):
         pattern = ProcessNamer("Fun Time").process_name_pattern
         assert re.match(pattern, "FunTime-Portrait.exe")
@@ -356,6 +371,33 @@ class TestProcessNamePattern:
         pattern = ProcessNamer("Fun Time").process_name_pattern
         for name in ("notepad.exe", "mypythonw.exe", "FunTimeOther.exe", "Genau-Nau.exe"):
             assert not re.match(pattern, name), name
+
+
+class TestOwnsExeName:
+    NAMER = ProcessNamer("Fun Time")
+
+    def test_recognizes_its_own_copies_whatever_their_case(self):
+        assert self.NAMER.owns_exe_name("FunTime-Dashboard.exe")
+        assert self.NAMER.owns_exe_name("funtime-dashboard.exe")
+
+    def test_answers_for_exactly_the_names_it_gives_its_copies(self):
+        # One rule, two answers: a name this namer hands out has to be a name
+        # it owns, or a sweep and the launcher disagree about which processes
+        # belong to the app.
+        for role in ("Dashboard", "AudioCompanion", "Nau"):
+            name = self.NAMER.exe_name("pythonw.exe", role)
+            assert self.NAMER.owns_exe_name(name), name
+
+    def test_does_not_claim_the_interpreters_a_copy_falls_back_to(self):
+        # The whole difference from process_name_pattern, and why both exist:
+        # a caller bounded by nothing but the image name (a shared desktop, not
+        # a command line) would be sweeping somebody else's Python.
+        for name in ("pythonw.exe", "python.exe", "py.exe"):
+            assert not self.NAMER.owns_exe_name(name), name
+
+    def test_does_not_claim_a_name_that_merely_starts_the_same(self):
+        for name in ("FunTimeSetup.msi", "FunTimeOther.exe", "Genau-Nau.exe", "notepad.exe"):
+            assert not self.NAMER.owns_exe_name(name), name
 
 
 def _has_resource(exe: Path, *, kind: int, name: int) -> bool:
