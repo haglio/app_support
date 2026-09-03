@@ -1,6 +1,7 @@
 """Tests for app_support.logging_utils."""
 from __future__ import annotations
 
+import faulthandler
 import logging
 import logging.handlers
 import sys
@@ -109,6 +110,28 @@ class TestInstallExceptionLogging:
         content = log_file.read_text(encoding="utf-8")
         assert "KeyboardInterrupt" not in content
 
+    def test_an_exception_that_kills_a_thread_reaches_the_log(self, tmp_path: Path):
+        """The thread half of the hook, driven the way it fires in production:
+        a worker dies, and the log must say what killed it and which thread it
+        was — a hook that swallowed the exception would leave both hooks
+        "installed" and every crash silent.
+        """
+        log_file = tmp_path / "exc.log"
+        logger = configure_logging("test.exc.threadcrash", log_file)
+        install_exception_logging(logger)
+
+        def die():
+            raise RuntimeError("boom in worker")
+
+        worker = threading.Thread(target=die, name="worker-under-test")
+        worker.start()
+        worker.join()
+        for h in logger.handlers:
+            h.flush()
+        content = log_file.read_text(encoding="utf-8")
+        assert "boom in worker" in content
+        assert "thread:worker-under-test" in content
+
     def test_sys_excepthook_logs_other_exceptions(self, tmp_path: Path):
         log_file = tmp_path / "exc.log"
         logger = configure_logging("test.exc.other", log_file)
@@ -137,6 +160,22 @@ class TestEnableFaulthandler:
         try:
             assert log_file.parent.is_dir()
             assert not handle.closed
+        finally:
+            handle.close()
+
+    def test_arms_faulthandler_not_just_the_file(self, tmp_path: Path):
+        """Registering with faulthandler is the function's namesake effect; an
+        open handle in the right directory with nothing armed on it would
+        swallow the very crash it exists to record. pytest arms faulthandler
+        for its own reporting, so it is switched off first — otherwise this
+        would pass without the function doing anything.
+        """
+        faulthandler.disable()
+        log_file = tmp_path / "fault.log"
+
+        handle = enable_faulthandler(log_file)
+        try:
+            assert faulthandler.is_enabled()
         finally:
             handle.close()
 

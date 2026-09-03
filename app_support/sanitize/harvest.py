@@ -123,7 +123,6 @@ def harvest(
     *,
     excluded: Collection[str],
     suffixes: Collection[str],
-    max_depth: int = MAX_DEPTH,
 ) -> set[str]:
     """Every name-shaped term under *roots*.
 
@@ -137,7 +136,7 @@ def harvest(
             continue
         base = len(root.parts)
         for path in root.rglob("*"):
-            if len(path.parts) - base > max_depth:
+            if len(path.parts) - base > MAX_DEPTH:
                 continue
             try:
                 if path.is_dir():

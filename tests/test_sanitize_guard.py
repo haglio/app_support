@@ -73,6 +73,9 @@ class TestFindViolations:
         """
         for form in ("badterms", "badterm's", "badtermed", "badterming"):
             assert find_violations(f"the {form} here", ["badterm"]), form
+        # `es` is its own branch: the bare `s` alternative cannot reach a
+        # sibilant's plural, so without it `boxes` walks past `box`.
+        assert find_violations("all the boxes here", ["box"])
 
     def test_widening_still_refuses_an_unrelated_longer_word(self):
         """Separator and inflection slack must not decay into a substring match:

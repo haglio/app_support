@@ -174,13 +174,14 @@ class TestHarvest:
                        excluded=EXCLUDED, suffixes=SUFFIXES)
 
     def test_stops_descending_past_the_depth_limit(self, tmp_path: Path):
+        # Deeper than MAX_DEPTH, so the walk itself is what must refuse it.
         deep = tmp_path
         for part in ("a", "b", "c", "d", "e", "f", "g"):
             deep = deep / part
         deep.mkdir(parents=True)
         (deep / "Petra Vance - Deep.dat").touch()
         assert "petra vance" not in harvest(
-            [tmp_path], excluded=EXCLUDED, suffixes=SUFFIXES, max_depth=3)
+            [tmp_path], excluded=EXCLUDED, suffixes=SUFFIXES)
 
     def test_nothing_harvested_is_ever_an_excluded_term(self, tmp_path: Path):
         found = harvest([self._tree(tmp_path)], excluded=EXCLUDED, suffixes=SUFFIXES)
