@@ -7,14 +7,12 @@ from app_support.subprocess_utils import hidden_subprocess_kwargs
 
 class TestHiddenSubprocessKwargs:
     def test_returns_empty_dict_on_non_windows(self):
-        with patch("app_support.subprocess_utils.os.name", "posix"), \
-             patch("app_support.subprocess_utils.sys.platform", "linux"):
+        with patch("app_support.subprocess_utils.sys.platform", "linux"):
             assert hidden_subprocess_kwargs() == {}
 
     def test_returns_windows_flags_on_nt(self):
         fake_startupinfo = MagicMock(dwFlags=0)
-        with patch("app_support.subprocess_utils.os.name", "nt"), \
-             patch("app_support.subprocess_utils.sys.platform", "win32"), \
+        with patch("app_support.subprocess_utils.sys.platform", "win32"), \
              patch("app_support.subprocess_utils.subprocess.STARTUPINFO", return_value=fake_startupinfo), \
              patch("app_support.subprocess_utils.subprocess.STARTF_USESHOWWINDOW", 1), \
              patch("app_support.subprocess_utils.subprocess.CREATE_NO_WINDOW", 2), \
@@ -30,8 +28,7 @@ class TestHiddenSubprocessKwargs:
         # showing one, and SW_HIDE alone still allocates the console; a console
         # flashing over the video is the bug either half on its own permits.
         fake_startupinfo = MagicMock(dwFlags=0)
-        with patch("app_support.subprocess_utils.os.name", "nt"), \
-             patch("app_support.subprocess_utils.sys.platform", "win32"), \
+        with patch("app_support.subprocess_utils.sys.platform", "win32"), \
              patch("app_support.subprocess_utils.subprocess.STARTUPINFO", return_value=fake_startupinfo), \
              patch("app_support.subprocess_utils.subprocess.STARTF_USESHOWWINDOW", 1), \
              patch("app_support.subprocess_utils.subprocess.CREATE_NO_WINDOW", 2), \
