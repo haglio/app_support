@@ -104,3 +104,16 @@ def test_a_dataclass_field_nothing_reads_is_reported(tmp_path):
     assert unread.dataclass_fields(root, [root / "pkg"]) == ["pkg/records.py:8: Record.unread"]
     with pytest.raises(AssertionError, match=r"Record\.unread"):
         unread.assert_no_dataclass_field_goes_unread(root, [root / "pkg"])
+
+
+def test_a_name_the_repo_allows_is_left_out_of_the_report(tmp_path):
+    """A field read only by `dataclasses.asdict`, a constant read by a sibling
+    repo: the repo names them, with the reason beside each, and the scan holds
+    everything else."""
+    root = _tree(tmp_path, {
+        "pkg/__init__.py": "",
+        "pkg/a.py": "SERIALIZED = 1\nUNREAD = 2\n",
+    })
+    unread.assert_no_module_constant_goes_unread(root, [root / "pkg"], allowing=("SERIALIZED", "UNREAD"))
+    with pytest.raises(AssertionError, match="UNREAD"):
+        unread.assert_no_module_constant_goes_unread(root, [root / "pkg"], allowing=("SERIALIZED",))

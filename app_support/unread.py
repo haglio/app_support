@@ -77,6 +77,13 @@ def _package_modules(packages) -> list[Path]:
     return sorted(path for package in packages for path in Path(package).rglob("*.py"))
 
 
+def _not_allowed(found, allowing) -> list[str]:
+    """*found* minus the reports whose name the repo allows -- a field read only
+    by ``dataclasses.asdict``, a constant a sibling repo reads -- each named with
+    its reason beside the call."""
+    return [report for report in found if report.rsplit(": ", 1)[1] not in allowing]
+
+
 def module_constants(root, packages) -> list[str]:
     """Module-level names assigned in *packages* and read nowhere in the tree.
 
@@ -106,9 +113,9 @@ def module_constants(root, packages) -> list[str]:
     return found
 
 
-def assert_no_module_constant_goes_unread(root, packages) -> None:
+def assert_no_module_constant_goes_unread(root, packages, *, allowing=()) -> None:
     """A constant nobody measures against is a number with no meaning left."""
-    found = module_constants(root, packages)
+    found = _not_allowed(module_constants(root, packages), allowing)
     assert not found, "Assigned and never read:\n" + "\n".join(found)
 
 
@@ -176,9 +183,9 @@ def stored_parameters(root, packages) -> list[str]:
     return found
 
 
-def assert_no_constructor_parameter_is_stored_and_never_read(root, packages) -> None:
+def assert_no_constructor_parameter_is_stored_and_never_read(root, packages, *, allowing=()) -> None:
     """A signature that asks for something it does not use is a lie."""
-    found = stored_parameters(root, packages)
+    found = _not_allowed(stored_parameters(root, packages), allowing)
     assert not found, "Stored and never read:\n" + "\n".join(found)
 
 
@@ -228,8 +235,8 @@ def test_helpers(root, tests_dir) -> list[str]:
     return found
 
 
-def assert_no_test_helper_is_written_and_never_called(root, tests_dir) -> None:
-    found = test_helpers(root, tests_dir)
+def assert_no_test_helper_is_written_and_never_called(root, tests_dir, *, allowing=()) -> None:
+    found = _not_allowed(test_helpers(root, tests_dir), allowing)
     assert not found, "Written and never called:\n" + "\n".join(found)
 
 
@@ -277,8 +284,8 @@ def argparse_options(root, packages) -> list[str]:
             if dest not in read]
 
 
-def assert_every_argparse_option_is_read(root, packages) -> None:
-    found = argparse_options(root, packages)
+def assert_every_argparse_option_is_read(root, packages, *, allowing=()) -> None:
+    found = _not_allowed(argparse_options(root, packages), allowing)
     assert not found, "command-line options nothing reads:\n" + "\n".join(found)
 
 
@@ -322,6 +329,6 @@ def dataclass_fields(root, packages) -> list[str]:
     return found
 
 
-def assert_no_dataclass_field_goes_unread(root, packages) -> None:
-    found = dataclass_fields(root, packages)
+def assert_no_dataclass_field_goes_unread(root, packages, *, allowing=()) -> None:
+    found = _not_allowed(dataclass_fields(root, packages), allowing)
     assert not found, "dataclass fields nothing reads:\n" + "\n".join(found)
