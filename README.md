@@ -25,6 +25,11 @@ Two more things every repo in the family needs, and used to keep its own copy of
   AST so a test can replay it in a fresh interpreter. A windowed launch has no
   console, so an import that fails inside one leaves the icon doing nothing and
   the suite entirely green.
+- **`peer_watch`** — two apps that must both be up all the time watching each
+  other, so neither stays dead until the next sign-in, plus the stand-down marker
+  that keeps a revival from arguing with a quit the user meant. The marker's path
+  is spelled there once because its writer and its reader are different
+  applications with no import between them.
 
 Standard library only, on purpose: this is installed into every app's venv, so a
 dependency here becomes a dependency everywhere.
