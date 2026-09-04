@@ -205,3 +205,31 @@ def test_an_argument_a_function_never_reads_is_reported(tmp_path):
         "def a(used, unused):\n    return used\n\n\ndef _cb(_frames):\n    return 1\n", encoding="utf-8")
     with pytest.raises(AssertionError, match=r"a\.py:1:13: ARG001"):
         assert_no_function_takes_an_argument_it_never_reads(tmp_path, tmp_path / "pkg")
+
+
+def _two_packages_sharing_a_name(tmp_path):
+    """`helper` is dead in `a` and alive in `b`: scanned together they hide each
+    other's corpses, since vulture matches by bare name across all it is handed."""
+    for name in ("a", "b"):
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "a" / "mod.py").write_text("def helper():\n    return 1\n", encoding="utf-8")
+    (tmp_path / "b" / "mod.py").write_text(
+        "def helper():\n    return 2\n\n\ndef main():\n    return helper()\n\n\nmain()\n", encoding="utf-8")
+    return tmp_path / "a", tmp_path / "b"
+
+
+def test_packages_scanned_each_alone_cannot_hide_each_others_dead_code(tmp_path):
+    a, b = _two_packages_sharing_a_name(tmp_path)
+    assert_no_dead_code(a, b)
+    with pytest.raises(AssertionError, match="helper"):
+        assert_no_dead_code(a, b, each_alone=True)
+
+
+def test_a_whitelist_entry_one_package_alone_reports_is_live(tmp_path):
+    a, b = _two_packages_sharing_a_name(tmp_path)
+    whitelist = tmp_path / "vulture_whitelist.py"
+    whitelist.write_text("helper\n", encoding="utf-8")
+    with pytest.raises(AssertionError, match="helper"):
+        assert_whitelist_is_live(a, b, whitelist=whitelist)
+    assert_whitelist_is_live(a, b, whitelist=whitelist, each_alone=True)

@@ -124,13 +124,28 @@ def scan(
     return ""
 
 
+def _reports(targets, whitelist, min_confidence, each_alone) -> str:
+    """vulture's report over *targets* -- one run, or one run per target.
+
+    Scanned together, packages hide each other's corpses: vulture matches by
+    bare name across everything it is handed, so a function dead in one package
+    is invisible while any other has a live name like it. One run each is
+    narrower, and costs the cross-package readers, which the whitelist names.
+    """
+    if not each_alone:
+        return scan(*targets, whitelist=whitelist, min_confidence=min_confidence)
+    return "".join(scan(target, whitelist=whitelist, min_confidence=min_confidence)
+                   for target in targets)
+
+
 def assert_no_dead_code(
     *targets: Path | str,
     whitelist: Path | str | None = None,
     min_confidence: int = 60,
+    each_alone: bool = False,
 ) -> None:
     """Fail the suite with vulture's report over *targets*."""
-    report = scan(*targets, whitelist=whitelist, min_confidence=min_confidence)
+    report = _reports(targets, whitelist, min_confidence, each_alone)
     assert not report, (
         "vulture found dead code. Delete it, or -- if the caller is a framework "
         "vulture cannot see -- add the name to the whitelist with a comment "
@@ -168,6 +183,7 @@ def assert_whitelist_is_live(
     *targets: Path | str,
     whitelist: Path | str,
     min_confidence: int = 60,
+    each_alone: bool = False,
 ) -> None:
     """Fail on a whitelist entry that no longer suppresses anything.
 
@@ -178,7 +194,7 @@ def assert_whitelist_is_live(
     and its gate could not see what its own deletions left behind.
     """
     _refuse_a_whitelist_inside_the_scan(targets, whitelist)
-    report = scan(*targets, min_confidence=min_confidence)
+    report = _reports(targets, None, min_confidence, each_alone)
     stale = sorted(
         _names_the_whitelist_suppresses(whitelist) - _names_the_report_carries(report)
     )
