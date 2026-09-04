@@ -61,3 +61,15 @@ def test_a_tree_ruff_never_looked_at_is_not_clean(tmp_path):
     lint.assert_lint_is_clean(repo, repo / "pkg")
     with pytest.raises(lint.LintDidNotRun, match="nothing under"):
         lint.assert_lint_is_clean(repo, repo / "empty")
+
+
+def test_a_noqa_for_a_rule_this_config_does_not_run_is_not_unused(tmp_path):
+    """Other gates run ruff with selects of their own (genau's argument scan is
+    `ARG`), and a ratcheted rule is ignored, not gone: a marker for either is
+    dormant, and RUF100 must leave it for the gate that reads it."""
+    repo = _repo(tmp_path, "def f(a):  # noqa: ARG001\n    return 1\n")
+    (repo / "ruff.toml").write_text(lint.render_config(["PLC0415"]), encoding="utf-8")
+    (repo / "pkg" / "late.py").write_text(
+        "print('first')\n\nimport os  # noqa: E402, PLC0415\n\nprint(os.sep)\n",
+        encoding="utf-8")
+    lint.assert_lint_is_clean(repo, repo / "pkg")
