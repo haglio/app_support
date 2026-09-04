@@ -154,6 +154,18 @@ that each target has Python under it before starting, and treats every exit code
 but "clean" and "here is the report" as a scan that did not happen. A gate that
 conflates them goes green the day its target is renamed and stays green.
 
+**The rest of what a dead-code gate asks.** Two repos had grown checks the
+scan cannot make, and they are published beside it so every repo asks the same
+questions: `assert_every_package_is_scanned` (a package added beside the named
+ones gets no gate otherwise); `assert_nothing_is_imported_or_assigned_and_left_unread`
+and `assert_no_function_takes_an_argument_it_never_reads`, which run ruff's F401/
+F811/F841 and ARG rules per file with the repo's own config set aside, since
+vulture resolves names across the whole tree and misses an import that is dead
+here and alive next door; and `app_support.unread`, the AST scans for what is
+written and never read -- a module constant, a constructor parameter stored on
+`self`, a dataclass field, an `argparse` option, a helper left in a test file.
+Each is a floor: a name that collides with a live one elsewhere is not reported.
+
 ## The lint gate
 
 `app_support.lint` holds the family's ruff config -- line length 100, double
