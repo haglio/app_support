@@ -187,6 +187,9 @@ family's config around the repo's own ratchet -- the rules the config found
 there on the day it was adopted, listed at the end of `ignore` -- and refuses a
 file that differs anywhere else. Work a ratchet off by deleting its code from
 the list and fixing what ruff then reports; change the family's numbers here.
+A `# noqa` for a ratcheted rule, or for a rule another gate runs with a select
+of its own (`ARG`, `N`, `S`), is dormant rather than unused: the config lists
+those as `external`, and RUF100 leaves the marker for the gate that reads it.
 
 **Silence is not a pass unless something was read.** The second test names the
 directories ruff must have looked at, and treats a missing ruff, another

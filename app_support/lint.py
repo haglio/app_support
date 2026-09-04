@@ -34,6 +34,11 @@ RUFF_VERSION = "0.16.6"
 
 FAMILY_IGNORES = ("E501", "BLE001", "S110")
 
+# Rule families other gates in this family run with selects of their own (genau's
+# argument scan is ARG) or that only ever existed as markers here: a noqa for one
+# is dormant, not unused, and RUF100 leaves it for the gate that reads it.
+READ_BY_OTHER_GATES = ("ARG", "N", "S")
+
 _SELECT = ("F", "E", "W", "I", "UP", "B", "C4", "SIM", "RUF", "PL", "PT", "DTZ", "PIE",
            "PERF", "FLY", "ISC", "RET", "FURB", "EXE")
 
@@ -60,6 +65,7 @@ def render_config(ratchet=()) -> str:
         "[lint]\n"
         f"select = [{_quoted(_SELECT)}]\n"
         f"ignore = [{ignores}]\n"
+        f"external = [{_quoted((*READ_BY_OTHER_GATES, *FAMILY_IGNORES, *ratchet))}]\n"
         "\n"
         "[format]\n"
         'quote-style = "double"\n'

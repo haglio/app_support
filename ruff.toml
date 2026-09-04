@@ -6,6 +6,7 @@ select = ["F", "E", "W", "I", "UP", "B", "C4", "SIM", "RUF", "PL", "PT", "DTZ", 
 ignore = ["E501", "BLE001", "S110",
     # This repo's ratchet: what the family config found here, to be worked off rule by rule.
     "PLW1510", "PLR2004", "PT011", "RUF001", "PLC0415", "RUF002", "PLR0913"]
+external = ["ARG", "N", "S", "E501", "BLE001", "S110", "PLW1510", "PLR2004", "PT011", "RUF001", "PLC0415", "RUF002", "PLR0913"]
 
 [format]
 quote-style = "double"
