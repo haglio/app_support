@@ -16,7 +16,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from app_support.sanitize import pytest_plugin
+from app_support.sanitize import blocklist_path, pytest_plugin
 
 APP_SUPPORT = Path(__file__).resolve().parents[1]
 TERM = "plantedterm"
@@ -29,6 +29,19 @@ addopts = "-p no:cacheprovider -p app_support.sanitize.pytest_plugin"
 
 def _git(cwd: Path, *args: str) -> None:
     subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True)
+
+
+def _arm(repo: Path, terms: str) -> Path:
+    """Put a list where the guard will look for it, by asking the guard.
+
+    These cases are about what the plugin does once terms resolve, not about
+    where they were found; ``test_sanitize_guard.TestBlocklistPath`` pins the
+    layout against literal paths, and this reads it from there.
+    """
+    path = blocklist_path(repo)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(terms, encoding="utf-8")
+    return path
 
 
 class TestWhichRunsAreEnforced:
@@ -78,16 +91,11 @@ class TestWhichRunsAreEnforced:
 
 class TestTheGuardPlugin:
     def _repo(self, tmp_path: Path, *, blocklist: str | None, tracked: str) -> Path:
-        repo = tmp_path / "repo"
-        (repo / "sanitize").mkdir(parents=True)
+        repo = tmp_path / "family" / "repo"
+        repo.mkdir(parents=True)
         (repo / "pyproject.toml").write_text(PYPROJECT, encoding="utf-8")
-        # Ignored exactly as in the real repos: the blocklist is a catalogue of
-        # every term, so a tracked copy would fail the check it exists to power.
-        (repo / ".gitignore").write_text(
-            "sanitize/blocklist.local.txt\n", encoding="utf-8")
         if blocklist is not None:
-            (repo / "sanitize" / "blocklist.local.txt").write_text(
-                blocklist, encoding="utf-8")
+            _arm(repo, blocklist)
         (repo / "notes.md").write_text(tracked, encoding="utf-8")
         _git(repo, "init", "-b", "main")
         _git(repo, "config", "user.email", "guard@example.test")
@@ -187,11 +195,10 @@ class TestTheGuardPlugin:
         this is the other half -- terms in hand, and a walk that came back with
         nothing to read.
         """
-        repo = tmp_path / "empty"
-        (repo / "sanitize").mkdir(parents=True)
+        repo = tmp_path / "family" / "empty"
+        repo.mkdir(parents=True)
         (repo / "pyproject.toml").write_text(PYPROJECT, encoding="utf-8")
-        (repo / "sanitize" / "blocklist.local.txt").write_text(
-            f"{TERM}\n", encoding="utf-8")
+        _arm(repo, f"{TERM}\n")
         (repo / "test_local.py").write_text(
             "def test_local():\n    assert True\n", encoding="utf-8")
         _git(repo, "init", "-b", "main")

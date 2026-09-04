@@ -5,9 +5,8 @@ machine's own list names: private vocabulary, filename fragments, provider and
 site names, personal identifiers. The term list is deliberately *not* committed:
 a checked-in blocklist would itself be a catalogue of the words we are trying to
 keep out of the public repo.
-Instead the real list lives in a git-ignored overlay (``blocklist.local.txt``)
-and only a tame ``blocklist.example.txt`` ships in the tree to document the
-format.
+Instead one list sits beside the family of checkouts, in no repository at all —
+see ``blocklist_path``.
 
 The module is dependency-free and importable without the app, so a repo's git
 hooks and its unit suite can both call it cheaply — run it as
@@ -27,7 +26,7 @@ from pathlib import Path
 from typing import Iterable, Sequence
 
 _MAX_EXCERPT = 160
-_BLOCKLIST_NAME = "blocklist.local.txt"
+_BLOCKLIST = Path("sanitize") / "blocklist.txt"
 # What may stand between the words of a multi-word term: any run of spacing or
 # joining punctuation, or nothing — the shapes a filename uses.
 _SEPARATOR = r"[\s\-_.]*"
@@ -121,33 +120,32 @@ def find_violations(
 
 
 def blocklist_path(repo: Path) -> Path:
-    """Where *repo*'s real blocklist lives — found from a worktree as well.
+    """The one list, beside the checkouts rather than inside any of them.
 
-    ``blocklist.local.txt`` is git-ignored, so it exists only in the checkout
-    where it was written: the primary. A worktree has none, and that made the
-    tracked-tree check a silent no-op in exactly the place all the work happens
-    — a banned term could be written, committed and landed without one red test.
+    The list describes the machine, not a tree, so a copy per repository was
+    always the wrong shape: eleven of them had to be edited in lockstep to stay
+    one list, and nothing made them. Beside the family it is one file, and being
+    outside every repository is what makes it uncommittable — a stronger promise
+    than the ``.gitignore`` line each copy used to rely on.
 
-    ``git rev-parse --git-common-dir`` names the primary's git directory, which
-    every worktree shares, so its parent is the primary checkout. Borrowing the
-    overlay across checkouts is the point: it describes the machine, not the
-    tree.
+    ``git rev-parse --git-common-dir`` names the primary checkout's git
+    directory, which every worktree shares, so two levels up from it is the
+    directory the checkouts sit in. Resolving from the worktree's own path
+    instead would land two levels too deep, which is how the tracked-tree check
+    was once a silent no-op in exactly the place all the work happens.
 
     The returned path need not exist — a public clone legitimately has no
     blocklist, and so does a source tree with no git at all. Callers check
     ``.exists()`` and treat absence as nothing to enforce.
     """
-    local = repo / "sanitize" / _BLOCKLIST_NAME
-    if local.exists():
-        return local
     try:
         common_dir = subprocess.run(
             ["git", "-C", str(repo), "rev-parse", "--git-common-dir"],
             capture_output=True, text=True, check=True,
         ).stdout.strip()
     except (OSError, subprocess.SubprocessError):
-        return local
-    return (repo / common_dir).resolve().parent / "sanitize" / _BLOCKLIST_NAME
+        return repo.resolve().parent / _BLOCKLIST
+    return (repo / common_dir).resolve().parent.parent / _BLOCKLIST
 
 
 def load_blocklist(path: Path) -> list[str]:

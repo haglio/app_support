@@ -135,42 +135,73 @@ def _git(cwd: Path, *args: str) -> None:
     subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True)
 
 
+def _arm(repo: Path, terms: str) -> Path:
+    """Put a list where the guard will look for it, by asking the guard.
+
+    Every case below is about what happens once terms resolve, not about where
+    they were found, so the layout is stated once — in ``TestBlocklistPath``,
+    which pins it against literal paths — and read from here.
+    """
+    path = blocklist_path(repo)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(terms, encoding="utf-8")
+    return path
+
+
+def _checkout(family: Path, name: str) -> Path:
+    repo = family / name
+    repo.mkdir(parents=True)
+    _git(repo, "init", "-b", "main")
+    _git(repo, "config", "user.email", "guard@example.test")
+    _git(repo, "config", "user.name", "Guard Test")
+    return repo
+
+
 class TestBlocklistPath:
-    """The blocklist is git-ignored, so only its resolution keeps the guard alive."""
+    """One list for every checkout, so only its resolution keeps the guard alive."""
 
-    def test_uses_this_checkout_when_the_blocklist_is_here(self, tmp_path: Path):
-        (tmp_path / "sanitize").mkdir()
-        here = tmp_path / "sanitize" / "blocklist.local.txt"
-        here.write_text("alpha\n", encoding="utf-8")
-        assert blocklist_path(tmp_path) == here
+    def test_reads_the_one_list_beside_the_checkouts(self, tmp_path: Path):
+        family = tmp_path / "family"
+        repo = _checkout(family, "repo")
+        shared = family / "sanitize" / "blocklist.txt"
+        shared.parent.mkdir()
+        shared.write_text("alpha\n", encoding="utf-8")
+        assert blocklist_path(repo) == shared.resolve()
 
-    def test_falls_back_to_the_primary_checkout_from_a_worktree(self, tmp_path: Path):
-        """The regression this whole helper exists for: a worktree never has the
-        git-ignored overlay, so resolving it locally left the guard toothless
-        wherever the work actually happens.
+    def test_ignores_a_copy_left_inside_a_checkout(self, tmp_path: Path):
+        """A per-repo copy is not a second place to look — it is the thing the one
+        list replaced. Eleven of them drifted apart unseen, and a checkout that
+        could still prefer its own would let the twelfth drift back in.
         """
-        primary = tmp_path / "primary"
-        primary.mkdir()
-        _git(primary, "init", "-b", "main")
-        _git(primary, "config", "user.email", "guard@example.test")
-        _git(primary, "config", "user.name", "Guard Test")
-        (primary / "sanitize").mkdir()
-        real = primary / "sanitize" / "blocklist.local.txt"
-        real.write_text("alpha\n", encoding="utf-8")
+        family = tmp_path / "family"
+        repo = _checkout(family, "repo")
+        (repo / "sanitize").mkdir()
+        (repo / "sanitize" / "blocklist.txt").write_text("stale\n", encoding="utf-8")
+        assert blocklist_path(repo).parent.parent == family.resolve()
+
+    def test_finds_it_from_a_worktree_too(self, tmp_path: Path):
+        """The regression this helper exists for: a worktree sits two levels below
+        the family, so resolving from it naively looks in the wrong place entirely
+        and leaves the guard toothless wherever the work actually happens.
+        """
+        family = tmp_path / "family"
+        primary = _checkout(family, "repo")
+        shared = family / "sanitize" / "blocklist.txt"
+        shared.parent.mkdir()
+        shared.write_text("alpha\n", encoding="utf-8")
         (primary / "README.md").write_text("hi\n", encoding="utf-8")
         _git(primary, "add", "README.md")
         _git(primary, "commit", "-m", "seed")
 
-        tree = tmp_path / "tree"
+        tree = primary / ".claude" / "worktrees" / "side"
         _git(primary, "worktree", "add", str(tree), "-b", "side")
-        assert not (tree / "sanitize" / "blocklist.local.txt").exists()
-        assert blocklist_path(tree) == real.resolve()
+        assert blocklist_path(tree) == shared.resolve()
 
-    def test_returns_a_missing_path_when_no_checkout_has_one(self, tmp_path: Path):
-        """The public-clone case: no blocklist here, none in the primary either.
-        Absence must read as "nothing to enforce" — a returned path that simply
-        does not exist — never a crash. Same outcome when git is missing entirely,
-        which the helper swallows for the benefit of a source tree with no repo.
+    def test_returns_a_missing_path_when_there_is_no_list(self, tmp_path: Path):
+        """The public-clone case: a checkout with no family beside it. Absence must
+        read as "nothing to enforce" — a returned path that simply does not exist —
+        never a crash. Same outcome when git is missing entirely, which the helper
+        swallows for the benefit of a source tree with no repo.
         """
         clone = tmp_path / "clone"
         clone.mkdir()
@@ -187,17 +218,10 @@ class TestHookEntryPoint:
     TERM = "nonceterm"  # invented, like every fixture value here
 
     def _repo(self, tmp_path: Path, terms: str | None) -> Path:
-        repo = tmp_path / "repo"
-        (repo / "sanitize").mkdir(parents=True)
-        # Ignored here exactly as in the real repos. It matters to the fixture:
-        # the blocklist necessarily contains every term, so a staged copy of it
-        # trips the hook — which is the right answer for a real repo and the
-        # wrong setup for a test.
-        (repo / ".gitignore").write_text(
-            "sanitize/blocklist.local.txt\n", encoding="utf-8")
+        repo = tmp_path / "family" / "repo"
+        repo.mkdir(parents=True)
         if terms is not None:
-            (repo / "sanitize" / "blocklist.local.txt").write_text(
-                terms, encoding="utf-8")
+            _arm(repo, terms)
         here = Path(__file__).resolve().parent.parent
         for rel in ("tools/githooks/pre-commit", "tools/githooks/commit-msg"):
             dest = repo / rel
