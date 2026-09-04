@@ -107,16 +107,27 @@ def ruff_version(root) -> str:
     return ran.stdout.split()[-1]
 
 
-def files_seen(root) -> list[Path]:
-    """What ruff would scan under *root*, its config's excludes applied."""
-    ran = _ruff(root, "check", "--show-files", ".")
+def scan_targets(root, trees) -> list[str]:
+    """What the gate hands ruff: the named *trees* and the root's own files.
+
+    Never `.`: a gate checks out sibling repos beside or inside this one
+    (player_core's runner puts shared_ui under it) and an agent's checkout lives
+    in `.claude/worktrees`, and all of it would be read under this repo's config.
+    """
+    return [str(tree) for tree in trees] + [path.name for path in sorted(Path(root).glob("*.py"))]
+
+
+def files_seen(root, targets) -> list[Path]:
+    """What ruff would scan of *targets* under *root*, its config's excludes applied."""
+    ran = _ruff(root, "check", "--show-files", *targets)
     if ran.returncode != 0:
         raise LintDidNotRun(f"ruff could not list {root}:\n{ran.stdout}{ran.stderr}")
     return [Path(line) for line in ran.stdout.splitlines() if line.strip()]
 
 
-def findings(root) -> list[str]:
-    """ruff's findings under *root*, one concise line each; empty when it found nothing.
+def findings(root, targets) -> list[str]:
+    """ruff's findings in *targets* under *root*, one concise line each; empty when
+    it found nothing.
 
     Raises `LintDidNotRun` rather than returning that same empty list when ruff
     did not scan: not installed, another version than the family's, or a
@@ -125,28 +136,29 @@ def findings(root) -> list[str]:
     version = ruff_version(root)
     if version != RUFF_VERSION:
         raise LintDidNotRun(f"ruff {version} is not the family's {RUFF_VERSION}; pin it in [dev]")
-    ran = _ruff(root, "check", "--no-fix", "--output-format", "concise", ".")
+    ran = _ruff(root, "check", "--no-fix", "--output-format", "concise", *targets)
     if ran.returncode not in (0, 1):
         raise LintDidNotRun(f"ruff exited {ran.returncode} instead of scanning {root}:\n"
                             f"{ran.stdout}{ran.stderr}")
     return [line for line in ran.stdout.splitlines() if _A_FINDING.match(line)]
 
 
-def _refuse_a_scan_that_skipped(root, must_scan) -> None:
+def _refuse_a_scan_that_skipped(root, trees, targets) -> None:
     """The failure no exit code reports: a tree the config's excludes or the
     gitignore swallowed whole, which scans clean for the rest of its life."""
-    seen = files_seen(root)
-    for directory in must_scan:
-        wanted = Path(directory).resolve()
+    seen = files_seen(root, targets)
+    for tree in trees:
+        wanted = Path(tree).resolve()
         if not any(wanted in path.resolve().parents for path in seen):
             raise LintDidNotRun(f"ruff scanned nothing under {wanted}")
 
 
-def assert_lint_is_clean(root, *must_scan) -> None:
-    """ruff finds nothing under *root*, having scanned at least one file under
-    each of *must_scan*."""
-    _refuse_a_scan_that_skipped(root, must_scan)
-    found = findings(root)
+def assert_lint_is_clean(root, *trees) -> None:
+    """ruff finds nothing in *trees* or in the root's own files, having scanned at
+    least one file under each tree."""
+    targets = scan_targets(root, trees)
+    _refuse_a_scan_that_skipped(root, trees, targets)
+    found = findings(root, targets)
     if found:
         raise AssertionError(
             f"ruff found {len(found)} thing(s) under {root}:\n" + "\n".join(found))
