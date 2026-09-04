@@ -153,6 +153,44 @@ that each target has Python under it before starting, and treats every exit code
 but "clean" and "here is the report" as a scan that did not happen. A gate that
 conflates them goes green the day its target is renamed and stays green.
 
+## The lint gate
+
+`app_support.lint` holds the family's ruff config -- line length 100, double
+quotes, the audit's select with `E501`, `BLE001` and `S110` ignored -- and the
+check that runs it. A repo commits the `ruff.toml` that `render_config` writes
+and asks for both halves:
+
+```python
+# tests/test_lint.py
+from pathlib import Path
+
+from app_support.lint import assert_config_is_the_familys, assert_lint_is_clean
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def test_the_ruff_config_is_the_familys():
+    assert_config_is_the_familys(ROOT / "ruff.toml")
+
+
+def test_ruff_finds_nothing():
+    assert_lint_is_clean(ROOT, ROOT / "the_package", ROOT / "tests")
+```
+
+Add `ruff==0.16.6` -- `lint.RUFF_VERSION`, the one version the gate accepts --
+to the repo's `[dev]` extra; another version finds other things and is refused
+rather than trusted.
+
+**One config, eleven copies that cannot differ.** The first test renders the
+family's config around the repo's own ratchet -- the rules the config found
+there on the day it was adopted, listed at the end of `ignore` -- and refuses a
+file that differs anywhere else. Work a ratchet off by deleting its code from
+the list and fixing what ruff then reports; change the family's numbers here.
+
+**Silence is not a pass unless something was read.** The second test names the
+directories ruff must have looked at, and treats a missing ruff, another
+version, or a refused configuration as a scan that did not happen.
+
 ## Tests
 
 ```bash
