@@ -45,8 +45,8 @@ from __future__ import annotations
 
 import ast
 import subprocess
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
-from typing import Callable, Iterable, Sequence
 
 # Only these two. A broad ``except Exception`` around a launch body is an error
 # *reporter* -- it puts a dialog on screen or writes a crash log -- so an import
@@ -82,9 +82,8 @@ def _optional_imports(tree: ast.Module) -> set[int]:
     them and this must not insist on them."""
     optional: set[int] = set()
     for node in ast.walk(tree):
-        if isinstance(node, ast.If) and _is_type_checking(node.test):
-            body = node.body
-        elif isinstance(node, ast.Try) and _tolerates_a_missing_module(node.handlers):
+        if ((isinstance(node, ast.If) and _is_type_checking(node.test))
+                or (isinstance(node, ast.Try) and _tolerates_a_missing_module(node.handlers))):
             body = node.body
         else:
             continue

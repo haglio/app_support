@@ -17,9 +17,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 import conftest
+import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 # This file, whose tests are plain module-level functions collected in source
