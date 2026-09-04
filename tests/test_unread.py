@@ -121,3 +121,11 @@ def test_a_name_the_repo_allows_is_left_out_of_the_report(tmp_path):
     unread.assert_no_module_constant_goes_unread(root, [root / "pkg"], allowing=("SERIALIZED", "UNREAD"))
     with pytest.raises(AssertionError, match="UNREAD"):
         unread.assert_no_module_constant_goes_unread(root, [root / "pkg"], allowing=("SERIALIZED",))
+
+
+def test_a_dunder_is_read_by_the_language_not_by_name(tmp_path):
+    root = _tree(tmp_path, {
+        "pkg/__init__.py": "",
+        "pkg/a.py": "__all__ = ['f']\n__version__ = '1'\nUNREAD = 2\n\n\ndef f():\n    return 1\n",
+    })
+    assert unread.module_constants(root, [root / "pkg"]) == ["pkg/a.py:3: UNREAD"]

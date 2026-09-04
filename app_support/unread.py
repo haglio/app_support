@@ -84,6 +84,11 @@ def _not_allowed(found, allowing) -> list[str]:
     return [report for report in found if report.rsplit(": ", 1)[1] not in allowing]
 
 
+def _is_a_dunder(name: str) -> bool:
+    """``__all__``, ``__version__``: read by the language and its tools, never by name."""
+    return name.startswith("__") and name.endswith("__")
+
+
 def module_constants(root, packages) -> list[str]:
     """Module-level names assigned in *packages* and read nowhere in the tree.
 
@@ -109,7 +114,8 @@ def module_constants(root, packages) -> list[str]:
             found.extend(
                 f"{_where(root, path, node.lineno)}: {target.id}"
                 for target in targets
-                if target.id not in here and target.id not in elsewhere)
+                if not _is_a_dunder(target.id)
+                and target.id not in here and target.id not in elsewhere)
     return found
 
 
