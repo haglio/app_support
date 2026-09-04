@@ -240,6 +240,24 @@ def assert_no_test_helper_is_written_and_never_called(root, tests_dir, *, allowi
     assert not found, "Written and never called:\n" + "\n".join(found)
 
 
+def _attributes_read_or_named_in(packages) -> set[str]:
+    """Every ``x.<name>`` in *packages*, plus the literal name of any
+    ``getattr(x, "name", ...)``."""
+    read: set[str] = set()
+    for path in _package_modules(packages):
+        tree = _parse(path)
+        if tree is None:
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute):
+                read.add(node.attr)
+            elif (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                    and node.func.id == "getattr" and len(node.args) >= 2
+                    and isinstance(node.args[1], ast.Constant)):
+                read.add(node.args[1].value)
+    return read
+
+
 def _argparse_dests(tree: ast.Module):
     """Every option an ``add_argument`` call in *tree* declares, as the attribute
     the parsed namespace will carry it under."""
@@ -259,16 +277,6 @@ def _argparse_dests(tree: ast.Module):
             yield spelling.lstrip("-").replace("-", "_"), node.lineno
 
 
-def _attributes_read_in(packages) -> set[str]:
-    return {
-        node.attr
-        for path in _package_modules(packages)
-        if (tree := _parse(path)) is not None
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Attribute)
-    }
-
-
 def argparse_options(root, packages) -> list[str]:
     """Options a parser in *packages* declares that no attribute read in
     *packages* consults -- a launcher surface that does nothing."""
@@ -279,7 +287,7 @@ def argparse_options(root, packages) -> list[str]:
             continue
         for dest, lineno in _argparse_dests(tree):
             declared.setdefault(dest, _where(root, path, lineno))
-    read = _attributes_read_in(packages)
+    read = _attributes_read_or_named_in(packages)
     return [f"{where}: {dest}" for dest, where in sorted(declared.items(), key=lambda d: d[1])
             if dest not in read]
 
@@ -291,24 +299,6 @@ def assert_every_argparse_option_is_read(root, packages, *, allowing=()) -> None
 
 def _is_a_dataclass(cls: ast.ClassDef) -> bool:
     return any("dataclass" in ast.unparse(d) for d in cls.decorator_list)
-
-
-def _attributes_read_or_named_in(packages) -> set[str]:
-    """Every ``x.<name>`` in *packages*, plus the literal name of any
-    ``getattr(x, "name", ...)``."""
-    read: set[str] = set()
-    for path in _package_modules(packages):
-        tree = _parse(path)
-        if tree is None:
-            continue
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Attribute):
-                read.add(node.attr)
-            elif (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-                    and node.func.id == "getattr" and len(node.args) >= 2
-                    and isinstance(node.args[1], ast.Constant)):
-                read.add(node.args[1].value)
-    return read
 
 
 def dataclass_fields(root, packages) -> list[str]:
