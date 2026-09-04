@@ -96,16 +96,14 @@ tests run, not a soft one. So the check worth making before a repo takes any of
 them is `<that interpreter> -c "import app_support.sanitize"` — a repo with no
 venv, or one whose CI never installs this package, needs that settled first.
 
-**Nothing this package reads is committed.** Every list lives in git-ignored
-`sanitize/*.local.txt` files, because the lists describe the machine and a
-committed copy of one would be the catalogue the guard exists to keep out:
+**Nothing this package reads is committed.** There is one blocklist for every
+checkout, at `sanitize/blocklist.txt` in the directory the checkouts sit in —
+outside every repository, because the list describes the machine and a committed
+copy of it would be the catalogue the guard exists to keep out. One term per
+line; blank lines and `#` comments are skipped.
 
-| File | Holds |
-| --- | --- |
-| `blocklist.local.txt` | the terms to refuse (`blocklist.example.txt` documents the format) |
-
-A checkout with no blocklist enforces nothing and commits normally — that is what
-a public clone and a fresh CI checkout both look like.
+A checkout with no blocklist beside it enforces nothing and commits normally —
+that is what a public clone and a fresh CI checkout both look like.
 
 ## The dead-code gate
 

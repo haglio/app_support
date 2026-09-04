@@ -3,10 +3,9 @@
 Published from here so eleven checkouts share one copy instead of eleven. The
 guard refuses a blocklisted term while it is still staged.
 
-Nothing here knows what any of those terms *are*. Every list this package reads
-— the blocklist above all — lives in git-ignored ``sanitize/*.local.txt``
-files beside each checkout, because the lists describe the machine and a
-committed copy of one would be the catalogue it exists to keep out of the repo.
+Nothing here knows what any of those terms *are*. The one list lives beside the
+family of checkouts rather than inside any of them — it describes the machine,
+and a committed copy of it would be the catalogue it exists to keep out.
 
     python -m app_support.sanitize --staged          # pre-commit
     python -m app_support.sanitize --message FILE    # commit-msg
