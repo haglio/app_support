@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 _MAX_EXCERPT = 160
-_BLOCKLIST = Path("sanitize") / "blocklist.txt"
+_BLOCKLIST = Path(".sanitize") / "blocklist.txt"
 # What may stand between the words of a multi-word term: any run of spacing or
 # joining punctuation, or nothing — the shapes a filename uses.
 _SEPARATOR = r"[\s\-_.]*"
@@ -133,6 +133,9 @@ def blocklist_path(repo: Path) -> Path:
     directory the checkouts sit in. Resolving from the worktree's own path
     instead would land two levels too deep, which is how the tracked-tree check
     was once a silent no-op in exactly the place all the work happens.
+
+    The leading dot says what the directory is: everything else beside it is a
+    checkout, and this one is not.
 
     The returned path need not exist — a public clone legitimately has no
     blocklist, and so does a source tree with no git at all. Callers check

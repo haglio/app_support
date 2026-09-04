@@ -1,7 +1,8 @@
 """Tests for the pre-publication content guard.
 
 Every "banned" term here is an invented placeholder — the guard's real
-blocklist is git-ignored, and these tests must themselves stay publishable.
+blocklist lives outside every repository, and these tests must themselves stay
+publishable.
 """
 from __future__ import annotations
 
@@ -163,7 +164,7 @@ class TestBlocklistPath:
     def test_reads_the_one_list_beside_the_checkouts(self, tmp_path: Path):
         family = tmp_path / "family"
         repo = _checkout(family, "repo")
-        shared = family / "sanitize" / "blocklist.txt"
+        shared = family / ".sanitize" / "blocklist.txt"
         shared.parent.mkdir()
         shared.write_text("alpha\n", encoding="utf-8")
         assert blocklist_path(repo) == shared.resolve()
@@ -175,8 +176,8 @@ class TestBlocklistPath:
         """
         family = tmp_path / "family"
         repo = _checkout(family, "repo")
-        (repo / "sanitize").mkdir()
-        (repo / "sanitize" / "blocklist.txt").write_text("stale\n", encoding="utf-8")
+        (repo / ".sanitize").mkdir()
+        (repo / ".sanitize" / "blocklist.txt").write_text("stale\n", encoding="utf-8")
         assert blocklist_path(repo).parent.parent == family.resolve()
 
     def test_finds_it_from_a_worktree_too(self, tmp_path: Path):
@@ -186,7 +187,7 @@ class TestBlocklistPath:
         """
         family = tmp_path / "family"
         primary = _checkout(family, "repo")
-        shared = family / "sanitize" / "blocklist.txt"
+        shared = family / ".sanitize" / "blocklist.txt"
         shared.parent.mkdir()
         shared.write_text("alpha\n", encoding="utf-8")
         (primary / "README.md").write_text("hi\n", encoding="utf-8")
