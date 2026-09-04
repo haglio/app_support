@@ -192,8 +192,10 @@ of its own (`ARG`, `N`, `S`), is dormant rather than unused: the config lists
 those as `external`, and RUF100 leaves the marker for the gate that reads it.
 
 **Silence is not a pass unless something was read.** The second test names the
-directories ruff must have looked at, and treats a missing ruff, another
-version, or a refused configuration as a scan that did not happen.
+trees ruff scans -- the root's own files are always in, `.` never is, since a
+gate checks out sibling repos beside or inside this one -- refuses a tree it
+scanned nothing under, and treats a missing ruff, another version, or a refused
+configuration as a scan that did not happen.
 
 ## Tests
 

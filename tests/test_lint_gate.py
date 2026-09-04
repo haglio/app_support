@@ -73,3 +73,19 @@ def test_a_noqa_for_a_rule_this_config_does_not_run_is_not_unused(tmp_path):
         "print('first')\n\nimport os  # noqa: E402, PLC0415\n\nprint(os.sep)\n",
         encoding="utf-8")
     lint.assert_lint_is_clean(repo, repo / "pkg")
+
+
+def test_only_the_named_trees_and_the_root_files_are_scanned(tmp_path):
+    """A gate checks out siblings beside or inside the repo (player_core's runner
+    puts shared_ui under it), and a checkout lives in `.claude/worktrees`: a scan of
+    `.` reads all of them under this repo's config. The named directories and the
+    root's own files are the repo."""
+    repo = _repo(tmp_path, "def f():\n    return 1\n")
+    nested = repo / "sibling_checkout" / "pkg"
+    nested.mkdir(parents=True)
+    (nested / "mod.py").write_text("import os\n", encoding="utf-8")
+    (repo / "launch.py").write_text("def g():\n    return 2\n", encoding="utf-8")
+    lint.assert_lint_is_clean(repo, repo / "pkg")
+    (repo / "launch.py").write_text("import os\n", encoding="utf-8")
+    with pytest.raises(AssertionError, match=r"launch\.py:1:8: F401"):
+        lint.assert_lint_is_clean(repo, repo / "pkg")
