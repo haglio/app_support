@@ -22,9 +22,9 @@ import bisect
 import re
 import subprocess
 import sys
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Sequence
 
 _MAX_EXCERPT = 160
 _BLOCKLIST_NAME = "blocklist.local.txt"
