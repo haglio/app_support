@@ -97,10 +97,11 @@ them is `<that interpreter> -c "import app_support.sanitize"` — a repo with no
 venv, or one whose CI never installs this package, needs that settled first.
 
 **Nothing this package reads is committed.** There is one blocklist for every
-checkout, at `sanitize/blocklist.txt` in the directory the checkouts sit in —
+checkout, at `.sanitize/blocklist.txt` in the directory the checkouts sit in —
 outside every repository, because the list describes the machine and a committed
-copy of it would be the catalogue the guard exists to keep out. One term per
-line; blank lines and `#` comments are skipped.
+copy of it would be the catalogue the guard exists to keep out. The leading dot
+marks it as not one of the checkouts beside it. One term per line; blank lines
+and `#` comments are skipped.
 
 A checkout with no blocklist beside it enforces nothing and commits normally —
 that is what a public clone and a fresh CI checkout both look like.
