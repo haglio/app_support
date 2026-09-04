@@ -79,9 +79,13 @@ def test_an_argparse_option_nothing_reads_is_reported(tmp_path):
             "    p.add_argument('--read-me')\n"
             "    p.add_argument('--never-read')\n"
             "    p.add_argument('-x', dest='explicit')\n"
+            "    p.add_argument('--read-by-getattr', type=float, default=1.0)\n"
             "    return p.parse_args()\n"
         ),
-        "pkg/app.py": "def run(args):\n    return args.read_me, args.explicit\n",
+        "pkg/app.py": (
+            "def run(args):\n"
+            "    return args.read_me, args.explicit, getattr(args, 'read_by_getattr', 1.0)\n"
+        ),
     })
     assert unread.argparse_options(root, [root / "pkg"]) == ["pkg/cli.py:7: never_read"]
     with pytest.raises(AssertionError, match="never_read"):
