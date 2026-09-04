@@ -12,7 +12,10 @@ import pytest
 
 from app_support.dead_code import (
     ScanDidNotRun,
+    assert_every_package_is_scanned,
     assert_no_dead_code,
+    assert_no_function_takes_an_argument_it_never_reads,
+    assert_nothing_is_imported_or_assigned_and_left_unread,
     assert_whitelist_is_live,
     scan,
 )
@@ -167,3 +170,38 @@ def test_a_file_vulture_cannot_parse_is_refused_rather_than_called_clean(tmp_pat
 
     with pytest.raises(ScanDidNotRun):
         scan(package)
+
+
+def test_a_package_the_gate_does_not_name_is_reported(tmp_path):
+    """A fourth package added beside the named ones would otherwise get no
+    dead-code gate at all, which is how genau's tools/ came to have none."""
+    for name in ("app", "tools", "tests"):
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / ".hidden").mkdir()
+    (tmp_path / ".hidden" / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "docs").mkdir()
+    assert_every_package_is_scanned(tmp_path, ("app", "tools"))
+    with pytest.raises(AssertionError, match="tools"):
+        assert_every_package_is_scanned(tmp_path, ("app",))
+
+
+def test_an_import_unused_in_its_own_file_is_reported_even_if_a_sibling_uses_the_name(tmp_path):
+    """The hole vulture cannot see: it resolves names across the whole tree, so an
+    import unused HERE but live in a sibling module never reports. ruff answers
+    per file."""
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "pkg" / "a.py").write_text("import os\n\n\ndef a():\n    return os.sep\n", encoding="utf-8")
+    (tmp_path / "pkg" / "b.py").write_text("import os\n\n\ndef b():\n    return 1\n", encoding="utf-8")
+    with pytest.raises(AssertionError, match=r"b\.py:1:8: F401"):
+        assert_nothing_is_imported_or_assigned_and_left_unread(tmp_path, tmp_path / "pkg")
+
+
+def test_an_argument_a_function_never_reads_is_reported(tmp_path):
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "pkg" / "a.py").write_text(
+        "def a(used, unused):\n    return used\n\n\ndef _cb(_frames):\n    return 1\n", encoding="utf-8")
+    with pytest.raises(AssertionError, match=r"a\.py:1:13: ARG001"):
+        assert_no_function_takes_an_argument_it_never_reads(tmp_path, tmp_path / "pkg")

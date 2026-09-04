@@ -125,8 +125,8 @@ def files_seen(root, targets) -> list[Path]:
     return [Path(line) for line in ran.stdout.splitlines() if line.strip()]
 
 
-def findings(root, targets) -> list[str]:
-    """ruff's findings in *targets* under *root*, one concise line each; empty when
+def _check(root, *args) -> list[str]:
+    """ruff's findings from one ``check`` run, one concise line each; empty when
     it found nothing.
 
     Raises `LintDidNotRun` rather than returning that same empty list when ruff
@@ -136,11 +136,23 @@ def findings(root, targets) -> list[str]:
     version = ruff_version(root)
     if version != RUFF_VERSION:
         raise LintDidNotRun(f"ruff {version} is not the family's {RUFF_VERSION}; pin it in [dev]")
-    ran = _ruff(root, "check", "--no-fix", "--output-format", "concise", *targets)
+    ran = _ruff(root, "check", "--no-fix", "--output-format", "concise", *args)
     if ran.returncode not in (0, 1):
         raise LintDidNotRun(f"ruff exited {ran.returncode} instead of scanning {root}:\n"
                             f"{ran.stdout}{ran.stderr}")
     return [line for line in ran.stdout.splitlines() if _A_FINDING.match(line)]
+
+
+def findings(root, targets) -> list[str]:
+    """ruff's findings in *targets* under *root*, under the repo's own config."""
+    return _check(root, *targets)
+
+
+def findings_for_rules(root, rules, *targets) -> list[str]:
+    """ruff's findings for *rules* alone in *targets*, the repo's config set aside:
+    what a gate asks when a rule must hold whatever the ratchet says."""
+    return _check(root, "--isolated", "--select", ",".join(rules),
+                  *(str(target) for target in targets))
 
 
 def _refuse_a_scan_that_skipped(root, trees, targets) -> None:

@@ -36,6 +36,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from app_support import lint
+
 # vulture's exit codes: 0 nothing to report, 3 the report is not empty. Every
 # other code means it did not get as far as an answer -- 1 for input it could
 # not read, 2 for arguments it could not parse, and 1 again from the interpreter
@@ -186,3 +188,55 @@ def assert_whitelist_is_live(
         "name that happens to match it:\n"
         + "\n".join(f"  {name}" for name in stale)
     )
+
+
+def packages_under(root) -> set[str]:
+    """Every top-level package beside *root*: a directory with an ``__init__.py``
+    whose name is not hidden or private."""
+    return {
+        path.name for path in Path(root).iterdir()
+        if path.is_dir() and (path / "__init__.py").exists()
+        and not path.name.startswith((".", "_"))
+    }
+
+
+def assert_every_package_is_scanned(root, scanned, *, ignoring=("tests",)) -> None:
+    """Fail on a top-level package the gate does not name.
+
+    A package added beside the named ones would otherwise get no gate at all,
+    which is how one repo's ``tools/`` came to hold 699 lines nothing scanned.
+    """
+    unnamed = sorted(packages_under(root) - set(scanned) - set(ignoring))
+    assert not unnamed, (
+        "packages beside the scanned ones that no gate names: "
+        + ", ".join(unnamed) + ". Name them in the scan, or in `ignoring` with a reason."
+    )
+
+
+# The ruff rules that name dead code and nothing else: an import nothing uses, a
+# redefinition that shadows the first, a local assigned and never read.
+DEAD_CODE_LINT_RULES = ("F401", "F811", "F841")
+
+# A parameter the body never reads, one level out from the constructor scan in
+# `app_support.unread`. ARG001 alone by default: a framework override (Qt's
+# paintEvent, a player's pump) is handed arguments it is free to ignore.
+UNREAD_ARGUMENT_RULES = ("ARG001",)
+
+
+def assert_nothing_is_imported_or_assigned_and_left_unread(root, *targets) -> None:
+    """The hole vulture cannot see: deadness local to one module.
+
+    vulture resolves names across the whole tree it is handed, so an import
+    unused HERE but live in a sibling module never reports. ruff answers per
+    file, under these rules alone, whatever the repo's own config ratchets.
+    """
+    found = lint.findings_for_rules(root, DEAD_CODE_LINT_RULES, *targets)
+    assert not found, "ruff found dead code:\n" + "\n".join(found)
+
+
+def assert_no_function_takes_an_argument_it_never_reads(
+    root, *targets, rules=UNREAD_ARGUMENT_RULES,
+) -> None:
+    """A signature that asks for something it does not use is a lie."""
+    found = lint.findings_for_rules(root, rules, *targets)
+    assert not found, "ruff found unread arguments:\n" + "\n".join(found)
