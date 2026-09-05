@@ -44,6 +44,14 @@ class TestThirdPartyImports:
 
         assert third_party_imports(root, [root / "someapp"]) == {}
 
+    def test_a_root_level_module_is_scanned_when_named_as_a_file(self, tmp_path: Path):
+        root = _repo(tmp_path, source="")
+        (root / "tray_app.py").write_text("import examplelib\n", encoding="utf-8")
+
+        found = third_party_imports(root, [root / "someapp", root / "tray_app.py"])
+
+        assert found == {"examplelib": ["tray_app.py"]}
+
     def test_a_from_import_counts_by_its_top_level_name(self, tmp_path: Path):
         root = _repo(tmp_path, source="from other_thing.sub import x\nfrom . import sibling\n")
 
