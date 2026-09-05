@@ -187,11 +187,13 @@ _IID_IShellLinkW = _make_guid("000214F9-0000-0000-C000-000000000046")
 _IID_IPersistFile = _make_guid("0000010B-0000-0000-C000-000000000046")
 _IID_IPropertyStore = _make_guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99")
 
+_STGM_READ = 0x00000000
 _STGM_READWRITE = 0x00000002
 _VTBL_QI = 0
 _VTBL_RELEASE = 2
 _VTBL_IPF_LOAD = 5
 _VTBL_IPF_SAVE = 6
+_VTBL_IPS_GET_VALUE = 5
 _VTBL_IPS_SET_VALUE = 6
 _VTBL_IPS_COMMIT = 7
 
@@ -284,6 +286,71 @@ def _set_lnk_aumid(lnk_path: str, app_id: str, com) -> None:
                 persist_file, lnk_path, True)
             if hr < 0:
                 raise _hresult("IPersistFile::Save", hr)
+        finally:
+            _release(persist_file)
+    finally:
+        _release(shell_link.value)
+
+
+def read_shortcut_app_user_model_id(lnk_path: str, *, ole32=_ole32) -> str | None:
+    """The AppUserModelID the shortcut at *lnk_path* carries, or ``None`` for none.
+
+    The inverse of :func:`set_shortcut_app_user_model_id`, in the same apartment
+    bracket for the same reason.  It exists because a stamp that reported
+    success still has to be read back to be believed -- the one failure in this
+    module Windows reports no error for is a wrong property key, which writes a
+    real value under the wrong name -- so this is what a test of the stamp asks,
+    and what a launcher asks of a pin it did not write.
+    """
+    com = ole32()
+    hr = com.CoInitializeEx(None, _COINIT_APARTMENTTHREADED)
+    if hr < 0:
+        raise _hresult("CoInitializeEx", hr)
+    try:
+        return _get_lnk_aumid(lnk_path, com)
+    finally:
+        com.CoUninitialize()
+
+
+def _get_lnk_aumid(lnk_path: str, com) -> str | None:
+    shell_link = ctypes.c_void_p()
+    hr = com.CoCreateInstance(
+        ctypes.byref(_CLSID_ShellLink), None, _CLSCTX_ALL,
+        ctypes.byref(_IID_IShellLinkW), ctypes.byref(shell_link),
+    )
+    if hr < 0:
+        raise _hresult("CoCreateInstance(ShellLink)", hr)
+    try:
+        persist_file = _query_interface(shell_link.value, _IID_IPersistFile)
+        try:
+            hr = _vtbl_call(persist_file, _VTBL_IPF_LOAD,
+                            ctypes.HRESULT, wintypes.LPCWSTR, ctypes.c_ulong)(
+                persist_file, lnk_path, _STGM_READ)
+            if hr < 0:
+                raise _hresult("IPersistFile::Load", hr)
+
+            prop_store = _query_interface(shell_link.value, _IID_IPropertyStore)
+            try:
+                pv = _PROPVARIANT()
+                hr = _vtbl_call(prop_store, _VTBL_IPS_GET_VALUE,
+                                ctypes.HRESULT,
+                                ctypes.POINTER(_PROPERTYKEY),
+                                ctypes.POINTER(_PROPVARIANT))(
+                    prop_store,
+                    ctypes.byref(_PKEY_AppUserModel_ID),
+                    ctypes.byref(pv))
+                if hr < 0:
+                    raise _hresult("IPropertyStore::GetValue", hr)
+                try:
+                    # A shortcut with no such property answers VT_EMPTY, and
+                    # S_OK: absence is an answer here, not a failure.
+                    return pv.pwszVal if pv.vt == _VT_LPWSTR else None
+                finally:
+                    # The string in the variant is COM's allocation, not ours.
+                    _declare(com, "PropVariantClear", ctypes.HRESULT,
+                             ctypes.POINTER(_PROPVARIANT))(ctypes.byref(pv))
+            finally:
+                _release(prop_store)
         finally:
             _release(persist_file)
     finally:
