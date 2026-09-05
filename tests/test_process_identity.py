@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ctypes
+import logging
 import re
 import shutil
 import struct
@@ -342,6 +343,66 @@ class TestPrepareLauncher:
             .prepare_launcher("Highdeas", source)
 
         assert source.with_name("Highdeas-Highdeas.exe").is_file()
+
+
+class TestNameThisProcess:
+    """The call at the top of an app's ``main()``: the copy for next time, made
+    from the launcher named and never from whatever is running, and never worth
+    the window."""
+
+    def _launchers(self, tmp_path: Path) -> tuple[Path, Path]:
+        console = _stub_interpreter(tmp_path, "python.exe")
+        windowed = _stub_interpreter(tmp_path, "pythonw.exe")
+        windowed.write_bytes(b"MZ the windowed launcher, told apart by its bytes")
+        return console, windowed
+
+    def test_copies_the_windowed_launcher_beside_the_running_one_by_default(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ):
+        # By name, from the running interpreter's directory: on every run after
+        # the first, sys.executable IS the copy, and copying it would name a
+        # copy after a copy.
+        console, windowed = self._launchers(tmp_path)
+        monkeypatch.setattr(sys, "executable", str(console))
+        resources = _FakeResources()
+
+        ProcessNamer("Highdeas", stamp=resources.stamp,
+                     read_field=resources.read_field).name_this_process("Highdeas")
+
+        assert console.with_name("Highdeas-Highdeas.exe").read_bytes() == windowed.read_bytes()
+
+    def test_copies_the_console_launcher_when_that_is_what_starts_the_app(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ):
+        # A .vbs that redirects the app's output into a log runs python.exe, so
+        # naming pythonw would leave a copy nothing ever starts.
+        console, windowed = self._launchers(tmp_path)
+        monkeypatch.setattr(sys, "executable", str(windowed))
+        resources = _FakeResources()
+
+        ProcessNamer("Highdeas", stamp=resources.stamp, read_field=resources.read_field) \
+            .name_this_process("Highdeas", interpreter="python.exe")
+
+        assert console.with_name("Highdeas-Highdeas.exe").read_bytes() == console.read_bytes()
+
+    def test_never_raises_when_python_cannot_say_what_it_is_running_under(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
+    ):
+        """sys.executable is documented to be empty then.  That is the failure
+        named_exe cannot foresee -- it never gets a path -- and the one every
+        app used to wrap the call for.  It costs the name, never the window,
+        and it says so: a task list full of anonymous Pythons with nothing
+        anywhere recording why is the state this module exists to end."""
+        monkeypatch.setattr(sys, "executable", "")
+        resources = _FakeResources()
+
+        with caplog.at_level(logging.WARNING, logger="app_support.process_identity"):
+            ProcessNamer("Highdeas", stamp=resources.stamp,
+                         read_field=resources.read_field).name_this_process("Highdeas")
+
+        (record,) = caplog.records
+        assert "Highdeas" in record.getMessage()
+        assert record.exc_info, "the warning says something failed but not what"
 
 
 class TestProcessNamePattern:
