@@ -30,6 +30,15 @@ Two more things every repo in the family needs, and used to keep its own copy of
   is the call at the top of every `main()`. **`process_identity_check`** runs an
   app's own naming against a throwaway venv and reads back what it made, so no
   suite has to grep its entry point for the call.
+- **`overlay`** — the content overlay every app keeps its private values in:
+  which file answers, what a partial local overlay is short of, and the three
+  answers a repo can give for a missing key (backfill, empty, refuse).
+  **`config_reader`** — the JSON config loader's helpers, each refusal naming the
+  dotted key and the file. **`siblings`** — where the other checkouts are, asked
+  one way: the walk that finds a sibling from a clone and a worktree alike, the
+  sys.path rule that never shadows the app's own packages, and the overlay's
+  project roots. **`dependencies`** — the gate that every third-party import a
+  package makes is a dependency its pyproject declares.
 - **`file_channel`** — the files one process steers another through and the
   files it publishes back: a command queue appended to and claimed whole, a flag
   read as one character with a caller-named default, a wall-clock stamp and its
