@@ -30,6 +30,21 @@ class TestDeclaredDependencies:
 
         assert declared_dependencies(root / "pyproject.toml") == {"examplelib", "other-thing", "third"}
 
+    def test_an_extra_is_a_declaration_too(self, tmp_path: Path):
+        # A feature behind `pip install repo[voice]` is declared; installing it is
+        # the launcher's business.
+        root = _repo(tmp_path, source="")
+        (root / "pyproject.toml").write_text(
+            '[project]
+name = "someapp"
+dependencies = ["examplelib"]
+'
+            '[project.optional-dependencies]
+voice = ["speechlib>=2"]
+', encoding="utf-8")
+
+        assert declared_dependencies(root / "pyproject.toml") == {"examplelib", "speechlib"}
+
 
 class TestThirdPartyImports:
     def test_the_standard_library_and_the_locals_are_not_third_party(self, tmp_path: Path):
