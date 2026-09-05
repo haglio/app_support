@@ -34,14 +34,14 @@ class TestDeclaredDependencies:
         # A feature behind `pip install repo[voice]` is declared; installing it is
         # the launcher's business.
         root = _repo(tmp_path, source="")
-        (root / "pyproject.toml").write_text(
-            '[project]
-name = "someapp"
-dependencies = ["examplelib"]
-'
-            '[project.optional-dependencies]
-voice = ["speechlib>=2"]
-', encoding="utf-8")
+        pyproject = "\n".join([
+            "[project]",
+            'name = "someapp"',
+            'dependencies = ["examplelib"]',
+            "[project.optional-dependencies]",
+            'voice = ["speechlib>=2"]',
+        ])
+        (root / "pyproject.toml").write_text(pyproject, encoding="utf-8")
 
         assert declared_dependencies(root / "pyproject.toml") == {"examplelib", "speechlib"}
 
