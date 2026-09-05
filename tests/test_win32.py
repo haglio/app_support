@@ -18,6 +18,7 @@ from app_support.win32 import (
     _PKEY_AppUserModel_ID,
     is_mutex_held,
     mutex_name,
+    read_shortcut_app_user_model_id,
     set_app_user_model_id,
     set_shortcut_app_user_model_id,
     show_error_popup,
@@ -177,6 +178,78 @@ class TestSetShortcutAppUserModelId:
         assert len(ole32.CoUninitialize.calls) == 1
 
 
+class TestReadShortcutAppUserModelId:
+    def test_an_apartment_it_never_opened_is_not_given_back(self):
+        # The reader's bracket is the stamper's, for the stamper's reason.
+        ole32 = _FakeOle32(init=RPC_E_CHANGED_MODE)
+
+        with pytest.raises(OSError) as raised:
+            read_shortcut_app_user_model_id("C:/pins/Example.lnk", ole32=lambda: ole32)
+
+        assert ole32.CoUninitialize.calls == []
+        assert ole32.CoCreateInstance.calls == []
+        assert "CoInitializeEx" in str(raised.value)
+
+    def test_an_apartment_it_opened_is_given_back_even_when_the_read_fails(self):
+        ole32 = _FakeOle32(init=0, create=E_INVALIDARG)
+
+        with pytest.raises(OSError) as raised:
+            read_shortcut_app_user_model_id("C:/pins/Example.lnk", ole32=lambda: ole32)
+
+        assert len(ole32.CoUninitialize.calls) == 1
+        assert "CoCreateInstance" in str(raised.value)
+
+
+def _a_shortcut(tmp_path: pathlib.Path) -> pathlib.Path:
+    """A real .lnk, written the way the family's launchers write theirs --
+    through WScript.Shell, which carries no AppUserModelID.  The paths ride in
+    as environment variables rather than interpolated into the script, so a
+    quote in a temp path is never PowerShell syntax."""
+    import os
+    import subprocess
+
+    lnk = tmp_path / "Example.lnk"
+    script = (
+        "$ws = New-Object -ComObject WScript.Shell; "
+        "$s = $ws.CreateShortcut($env:LNK_PATH); "
+        "$s.TargetPath = $env:LNK_TARGET; "
+        "$s.Save()"
+    )
+    subprocess.run(
+        ["powershell.exe", "-NoProfile", "-Command", script],
+        check=True, capture_output=True,
+        env={**os.environ, "LNK_PATH": str(lnk),
+             "LNK_TARGET": os.environ.get("COMSPEC", "cmd.exe")},
+    )
+    assert lnk.is_file()
+    return lnk
+
+
+@pytest.mark.skipif(not hasattr(ctypes, "windll"), reason="COM: only Windows can say")
+class TestTheStampOnARealShortcut:
+    """The one thing the fakes above cannot stand in for: past CoCreateInstance
+    the code reads function pointers out of an object Windows built, and only
+    Windows can say whether it reads them right."""
+
+    def test_a_shortcut_the_shell_wrote_carries_no_identity(self, tmp_path: pathlib.Path):
+        assert read_shortcut_app_user_model_id(str(_a_shortcut(tmp_path))) is None
+
+    def test_what_was_stamped_is_what_reads_back(self, tmp_path: pathlib.Path):
+        lnk = _a_shortcut(tmp_path)
+
+        set_shortcut_app_user_model_id(str(lnk), "Example.App")
+
+        assert read_shortcut_app_user_model_id(str(lnk)) == "Example.App"
+
+    def test_a_second_stamp_replaces_the_first(self, tmp_path: pathlib.Path):
+        lnk = _a_shortcut(tmp_path)
+        set_shortcut_app_user_model_id(str(lnk), "Example.App")
+
+        set_shortcut_app_user_model_id(str(lnk), "Example.Other")
+
+        assert read_shortcut_app_user_model_id(str(lnk)) == "Example.Other"
+
+
 class TestMutexName:
     def test_the_name_is_the_base_and_a_digest_of_the_identity(self):
         # Pinned to the digit, because the name is a promise to a process that
@@ -318,6 +391,43 @@ MB_OK = 0x0
 MB_ICONERROR = 0x10
 MB_SETFOREGROUND = 0x00010000
 MB_TOPMOST = 0x00040000
+
+
+@pytest.mark.skipif(not hasattr(ctypes, "windll"), reason="a named mutex: only Windows can say")
+class TestANamedMutexOnWindows:
+    """The fakes above pin what is declared and what is closed; these ask
+    Windows itself whether the two calls agree about one real mutex, under a
+    name nothing else on the machine could be holding."""
+
+    def _close(self, handle: int) -> None:
+        kernel32 = ctypes.WinDLL("kernel32")
+        kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+        kernel32.CloseHandle(handle)
+
+    def test_a_name_nobody_holds_reads_as_free(self):
+        assert not is_mutex_held(f"Local\\app-support-test-{uuid.uuid4().hex}")
+
+    def test_a_held_name_reads_as_held_until_its_handle_closes(self):
+        name = f"Local\\app-support-test-{uuid.uuid4().hex}"
+        handle = try_acquire_mutex(name)
+        assert handle is not None
+        try:
+            assert is_mutex_held(name)
+            assert try_acquire_mutex(name) is None
+        finally:
+            self._close(handle)
+        assert not is_mutex_held(name)
+
+    def test_probing_a_free_name_does_not_claim_it(self):
+        # A probe that left a mutex behind would refuse the very instance it
+        # was asked on behalf of.
+        name = f"Local\\app-support-test-{uuid.uuid4().hex}"
+
+        is_mutex_held(name)
+
+        handle = try_acquire_mutex(name)
+        assert handle is not None
+        self._close(handle)
 
 
 class TestShowErrorPopup:
