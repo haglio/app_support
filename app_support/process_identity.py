@@ -422,6 +422,37 @@ class ProcessNamer:
         source = Path(python_exe) if python_exe else Path(sys.executable).with_name("pythonw.exe")
         self.named_exe(source, role)
 
+    def name_this_process(self, role: str, interpreter: str = "pythonw.exe") -> None:
+        """Make the copy this app's launcher should start it through NEXT time.
+
+        An app's own process is the one case that cannot be named on the way in:
+        naming it means writing a file with Python, and the process that would
+        do the writing is the one being named.  So the launcher prefers the copy
+        when it is there and falls back to the plain interpreter when it is not,
+        and each run makes it for the run after -- which costs one launch, once,
+        and then heals itself for good.
+
+        *interpreter* is the file name of the launcher the app is started
+        through, beside the running one: the windowed ``pythonw.exe`` a shortcut
+        starts, or ``python.exe`` for a launcher that redirects the app's output
+        into a log.  By name, never ``sys.executable`` itself, because on every
+        run after the first that IS the copy, and copying it would name a copy
+        after a copy.
+
+        Never raises.  `named_exe` falls back on the failures it can foresee,
+        but this call sits at the top of an app's ``main()``, and there the
+        failure nobody foresaw -- an interpreter Python could not locate, so
+        ``sys.executable`` is empty -- is still not worth the window.  Every app
+        wrapped the call in the same try/except for that reason; this is that
+        wrapping, held once.  The failure is logged rather than swallowed: a
+        task list full of anonymous Pythons with nothing anywhere saying why is
+        the state this module exists to end.
+        """
+        try:
+            self.named_exe(Path(sys.executable).with_name(interpreter), role)
+        except Exception:
+            logger.warning("Not naming this process (%s); launching unnamed", role, exc_info=True)
+
     # --- staying current ---
 
     def _source_stamp(self, source: Path, description: str) -> str:
