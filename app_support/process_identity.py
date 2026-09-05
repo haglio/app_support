@@ -405,23 +405,6 @@ class ProcessNamer:
             return str(python_exe)
         return str(target)
 
-    def prepare_launcher(self, role: str, python_exe: str | Path | None = None) -> None:
-        """Make the copy this app's shortcut should start through NEXT time.
-
-        An app's own process is the one case that cannot be named on the way in:
-        naming it means writing a file with Python, and the process that would
-        do the writing is the one being named.  So the shortcut prefers the copy
-        when it is there and falls back to the plain interpreter when it is not,
-        and each run makes it for the run after -- which costs one launch, once,
-        and then heals itself for good.
-
-        Defaults to the windowed interpreter beside the running one, because
-        that is what a desktop app's shortcut starts: reading ``sys.executable``
-        directly would name a copy after a copy on every run after the first.
-        """
-        source = Path(python_exe) if python_exe else Path(sys.executable).with_name("pythonw.exe")
-        self.named_exe(source, role)
-
     def name_this_process(self, role: str, interpreter: str = "pythonw.exe") -> None:
         """Make the copy this app's launcher should start it through NEXT time.
 
