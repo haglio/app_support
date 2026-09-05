@@ -357,12 +357,16 @@ class ProcessNamer:
         is full.  The app then runs exactly as it did before, with an anonymous
         process: a worse task list and a working app.
         """
+        # Nothing below may raise past here: two docstrings promise a launch
+        # never fails over its name.  The catches are as wide as the promise --
+        # a truncated icon raises struct.error out of the stamp, and off Windows
+        # the resource API is not there to call at all.
         source = Path(python_exe)
         try:
             target = source.with_name(self.exe_name(source, role))
             description = self.description(role)
             stamp = self._source_stamp(source, description)
-        except (ValueError, OSError):
+        except Exception:
             logger.warning("Not naming the %s process", role, exc_info=True)
             return str(python_exe)
 
@@ -389,7 +393,7 @@ class ProcessNamer:
                 "ProductName": self.app_name,
                 STAMP_FIELD: stamp,
             })
-        except (OSError, ValueError):
+        except Exception:
             # A described copy already there, one label or one Python upgrade
             # behind, still names its process -- better than going back to an
             # anonymous one.  That is the usual way to land here: the last run's
