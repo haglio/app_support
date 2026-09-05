@@ -37,3 +37,22 @@ class TestHiddenSubprocessKwargs:
 
         assert set(result) == {"creationflags", "startupinfo"}
         assert fake_startupinfo.wShowWindow == 0
+
+    def test_a_flag_the_caller_adds_rides_with_the_hiding_one(self):
+        # A child that also has to be detached, or run at a lower priority:
+        # OR-ed here, so the caller never again spells the console flag by hand
+        # and forgets the STARTUPINFO half.
+        fake_startupinfo = MagicMock(dwFlags=0)
+        with patch("app_support.subprocess_utils.sys.platform", "win32"), \
+             patch("app_support.subprocess_utils.subprocess.STARTUPINFO", return_value=fake_startupinfo), \
+             patch("app_support.subprocess_utils.subprocess.STARTF_USESHOWWINDOW", 1), \
+             patch("app_support.subprocess_utils.subprocess.CREATE_NO_WINDOW", 2), \
+             patch("app_support.subprocess_utils.subprocess.SW_HIDE", 0):
+            result = hidden_subprocess_kwargs(creationflags=8)
+
+        assert result["creationflags"] == 2 | 8
+        assert result["startupinfo"] is fake_startupinfo
+
+    def test_off_windows_the_added_flag_has_nowhere_to_go_either(self):
+        with patch("app_support.subprocess_utils.sys.platform", "linux"):
+            assert hidden_subprocess_kwargs(creationflags=8) == {}
