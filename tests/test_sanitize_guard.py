@@ -145,6 +145,22 @@ class TestScanFiles:
         (tmp_path / "img.bin").write_bytes(b"\x00\xff\xfe badterm \x00")
         assert scan_files([tmp_path / "img.bin"], ["badterm"], root=tmp_path) == []
 
+    def test_flags_a_file_named_after_a_term(self, tmp_path: Path):
+        """The path was passed through as a label and never scanned, so a file
+        NAMED after a term cleared the hook, the tracked-tree check and CI --
+        which is how a launcher named after one reached a public main
+        (bug 79).  A name hit is reported at line 0 with the name redacted --
+        the report would otherwise print the term -- and a binary file's name
+        is read even though its contents are not."""
+        (tmp_path / "badterm-notes.md").write_text("clean", encoding="utf-8")
+        (tmp_path / "play_badterm.bin").write_bytes(b"\x00\xff\xfe")
+        found = scan_files(
+            [tmp_path / "badterm-notes.md", tmp_path / "play_badterm.bin"],
+            ["badterm"], root=tmp_path)
+        assert [(v.path, v.line, v.term) for v in found] == [
+            ("*** notes md", 0, "badterm"), ("play *** bin", 0, "badterm")]
+        assert all("badterm" not in repr(v) for v in found)
+
 
 def _git(cwd: Path, *args: str) -> None:
     subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True)
@@ -272,6 +288,14 @@ class TestHookEntryPoint:
         assert done.returncode != 0
         assert "blocked term" in done.stderr
         assert self.TERM not in done.stderr  # redacted, never echoed back
+
+    def test_the_hook_refuses_a_file_named_after_a_term(self, tmp_path: Path):
+        repo = self._repo(tmp_path, f"{self.TERM}\n")
+        (repo / f"play_{self.TERM}.bat").write_text("clean\n", encoding="utf-8")
+        _git(repo, "add", ".")
+        done = self._commit(repo)
+        assert done.returncode != 0
+        assert self.TERM not in done.stderr
 
     def test_the_hook_refuses_a_banned_term_in_the_message(self, tmp_path: Path):
         repo = self._repo(tmp_path, f"{self.TERM}\n")

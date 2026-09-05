@@ -30,6 +30,8 @@ _BLOCKLIST = Path(".sanitize") / "blocklist.txt"
 # What may stand between the words of a multi-word term: any run of spacing or
 # joining punctuation, or nothing — the shapes a filename uses.
 _SEPARATOR = r"[\s\-_.]*"
+# What a filename joins its words with; read as spaces when the name is scanned.
+_NAME_JOINERS = re.compile(r"[\s\-_.]+")
 # Trailing inflections a blocklist entry is not written with but text uses.
 _INFLECTION = r"(?:'?s|es|ed|ing)?"
 
@@ -167,26 +169,58 @@ def load_blocklist(path: Path) -> list[str]:
     return terms
 
 
+def _safe_name(path: str, patterns: Sequence[tuple[str, re.Pattern[str]]]) -> str:
+    """*path* as a report may show it: itself, unless its name carries a term.
+
+    A name joins its words with ``_``, ``-`` and ``.``, which the matcher's word
+    boundaries read as letters, so the name is judged with those as spaces --
+    and a name that carries a term is shown in that reading, redacted, since
+    the report and pytest's introspection would otherwise print the term.
+    """
+    words = _NAME_JOINERS.sub(" ", path)
+    if any(pat.search(words) for _term, pat in patterns):
+        return _redact(words, patterns)
+    return path
+
+
+def name_violations(path: str, terms: Iterable[str]) -> list[Violation]:
+    """Every blocklisted term in a file's *name*, reported at line 0.
+
+    A name is text the repository publishes as surely as any file's contents,
+    and it used to be passed through as a label and never scanned -- which is
+    how a launcher named after a term cleared every guard and reached a
+    public ``main``.  The path is reported redacted (:func:`_safe_name`).
+    """
+    patterns = _compile(terms)
+    words = _NAME_JOINERS.sub(" ", path)
+    return [Violation(_safe_name(path, patterns), 0, term, "(in the file's name)")
+            for term, pat in patterns if pat.search(words)]
+
+
 def scan_files(
     paths: Iterable[Path],
     terms: Iterable[str],
     *,
     root: Path | None = None,
 ) -> list[Violation]:
-    """Scan each readable text file for blocklisted terms.
+    """Scan each file's name, and each readable text file's contents, for
+    blocklisted terms.
 
-    Binary or undecodable files are skipped — assets are excluded from a public
-    repo by ``.gitignore``, not by this text guard.
+    Binary or undecodable contents are skipped — assets are excluded from a
+    public repo by ``.gitignore``, not by this text guard — but every name is
+    read.
     """
     terms = list(terms)
+    patterns = _compile(terms)
     out: list[Violation] = []
     for path in paths:
+        display = str(path.relative_to(root)) if root else str(path)
+        out.extend(name_violations(display, terms))
         try:
             text = path.read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
             continue
-        display = str(path.relative_to(root)) if root else str(path)
-        out.extend(find_violations(text, terms, path=display))
+        out.extend(find_violations(text, terms, path=_safe_name(display, patterns)))
     return out
 
 
@@ -219,8 +253,10 @@ def _staged_violations(repo: Path, terms: Sequence[str]) -> list[Violation]:
         ["git", "diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z"],
         cwd=repo, capture_output=True, text=True, check=True,
     ).stdout.split("\0")
+    patterns = _compile(terms)
     out: list[Violation] = []
     for rel in filter(None, names):
+        out.extend(name_violations(rel, terms))
         blob = subprocess.run(
             ["git", "show", f":{rel}"], cwd=repo, capture_output=True, check=False,
         )
@@ -230,7 +266,7 @@ def _staged_violations(repo: Path, terms: Sequence[str]) -> list[Violation]:
             text = blob.stdout.decode("utf-8")
         except UnicodeDecodeError:
             continue
-        out.extend(find_violations(text, terms, path=rel))
+        out.extend(find_violations(text, terms, path=_safe_name(rel, patterns)))
     return out
 
 
