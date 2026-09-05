@@ -2,9 +2,8 @@
 
 The scaffolding every desktop app in this project family stands on.
 
-Five applications launch as windowed Python processes on Windows — Fun Time,
-Genau, Nau, Clipper and the OSR2 broker — and each one had grown its own
-byte-identical copy of the same four things:
+Every desktop app in this family launches as a windowed Python process on
+Windows, and each one had grown its own byte-identical copy of the same things:
 
 - **`logging_utils`** — a rotating file logger, `sys`/`threading` exception hooks
   that survive an unhandled crash, and a faulthandler for the native ones.

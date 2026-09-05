@@ -58,6 +58,9 @@ logger = logging.getLogger(__name__)
 _RT_ICON = 3
 _RT_GROUP_ICON = 14
 _RT_VERSION = 16
+# EndUpdateResource's second argument: whether to throw the pending edits away.
+_DISCARD_EDITS = True
+_KEEP_EDITS = False
 _LANG_EN_US = 0x0409
 _CODEPAGE_UNICODE = 0x04B0
 
@@ -70,10 +73,8 @@ STAMP_FIELD = "AppSupportSource"
 _ROLE_RE = re.compile(r"^[A-Za-z]+$")
 
 # Where a CamelCase role breaks into words.  A capital starts a word only when
-# the character before it was lower-case, or when it heads a capitalised word
-# after a run of capitals -- so an acronym stays whole.  Breaking at every
-# capital turned "GenauVR" into "Genau V R", which then no longer matched the
-# app's own name and got that name pasted in front of it as well.
+# the character before it was lower-case, or when it heads a capitalized word
+# after a run of capitals -- so an acronym stays whole.
 _WORD_BREAK_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 
 
@@ -226,9 +227,9 @@ def stamp_identity(exe: Path, *, fields: dict[str, str], icon: bytes | None) -> 
             # tidying pass over a fixed id range threw away the relabelling it
             # came with.
     except Exception:
-        dll.EndUpdateResourceW(handle, True)  # discard
+        dll.EndUpdateResourceW(handle, _DISCARD_EDITS)
         raise
-    if not dll.EndUpdateResourceW(handle, False):
+    if not dll.EndUpdateResourceW(handle, _KEEP_EDITS):
         raise OSError(f"EndUpdateResource failed ({ctypes.get_last_error()})")
 
 

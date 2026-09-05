@@ -30,7 +30,7 @@ Always `--config-settings editable_mode=compat`; the README says why, and
   dependency here is a dependency everywhere.
 - **Only what a second repo needs.** One caller means it stays with its caller.
 
-## Changing this repo changes five apps
+## Changing this repo changes every app
 
 A change lands in every consumer the moment it is saved — they install this
 editable, so there is no version to bump and no buffer against a mistake. Run
