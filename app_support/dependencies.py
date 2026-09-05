@@ -88,12 +88,22 @@ class _UnconditionalImports(ast.NodeVisitor):
             self.names.add(node.module.split(".")[0])
 
 
+def _sources(package: Path) -> list[Path]:
+    """*package*'s modules: every ``.py`` under a directory, or the one file named."""
+    package = Path(package)
+    return [package] if package.is_file() else sorted(package.rglob("*.py"))
+
+
 def third_party_imports(root: Path, packages: Iterable[Path], *, local: Iterable[str] = ()) -> dict[str, list[str]]:
-    """Every third-party name the *packages* import unconditionally, with the files that do."""
+    """Every third-party name the *packages* import unconditionally, with the files that do.
+
+    A package is a directory, or a single root-level module -- an entry point,
+    a config -- named as a file; a repo that keeps modules at its root has both.
+    """
     skip = set(sys.stdlib_module_names) | set(local) | set(FAMILY_SIBLINGS)
     found: dict[str, set[str]] = {}
     for package in packages:
-        for path in sorted(Path(package).rglob("*.py")):
+        for path in _sources(package):
             try:
                 tree = ast.parse(path.read_text(encoding="utf-8"))
             except (SyntaxError, UnicodeDecodeError):
