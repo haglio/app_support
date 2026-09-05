@@ -25,6 +25,11 @@ Two more things every repo in the family needs, and used to keep its own copy of
   AST so a test can replay it in a fresh interpreter. A windowed launch has no
   console, so an import that fails inside one leaves the icon doing nothing and
   the suite entirely green.
+- **`process_identity`** — the copy of its interpreter an app starts each of its
+  processes through, named and described for the task list; `name_this_process`
+  is the call at the top of every `main()`. **`process_identity_check`** runs an
+  app's own naming against a throwaway venv and reads back what it made, so no
+  suite has to grep its entry point for the call.
 - **`peer_watch`** — two apps that must both be up all the time watching each
   other, so neither stays dead until the next sign-in, plus the stand-down marker
   that keeps a revival from arguing with a quit the user meant. The marker's path
