@@ -36,13 +36,16 @@ class _FakeResources:
     description: a shim, a shell wrapper, anything that is not a PE.
     """
 
-    def __init__(self, *, fails: bool = False) -> None:
+    def __init__(self, *, fails: bool = False, raising: Exception | None = None) -> None:
         self.stamped: dict[Path, dict[str, str]] = {}
         self.stamp_calls = 0
         self.fails = fails
+        self.raising = raising
 
     def stamp(self, exe: Path, *, fields: dict[str, str], icon: bytes | None) -> None:
         self.stamp_calls += 1
+        if self.raising is not None:
+            raise self.raising
         if self.fails:
             raise OSError("this file cannot carry a version resource")
         self.stamped[Path(exe)] = dict(fields)
@@ -309,6 +312,24 @@ class TestNamedExe:
                             read_field=resources.read_field) \
             .named_exe(source, "Clipper") == str(existing)
         assert resources.stamped[existing]["FileDescription"] == "Clipper"
+
+    @pytest.mark.parametrize("failure", [
+        struct.error("unpack_from requires a buffer of at least 6 bytes"),
+        AttributeError("module 'ctypes' has no attribute 'WinDLL'"),
+        RuntimeError("anything else the resource API can say"),
+    ], ids=["a truncated icon", "no Win32 resource API", "anything else"])
+    def test_never_raises_however_the_stamp_fails(self, tmp_path: Path, failure):
+        """Two docstrings promise a launch never fails over its name, and the
+        catch was narrower than the promise: a truncated .ico raised
+        struct.error through it, and off Windows the resource API is not
+        there at all (bug 21).  Whatever the stamp raises, the app comes up."""
+        source = _stub_interpreter(tmp_path)
+        resources = _FakeResources(raising=failure)
+
+        assert ProcessNamer("Broker", stamp=resources.stamp,
+                            read_field=resources.read_field) \
+            .named_exe(source, "Broker") == str(source)
+        assert not source.with_name("Broker-Broker.exe").exists()
 
     def test_falls_back_rather_than_raising_on_a_role_it_cannot_name(self, tmp_path: Path):
         # A launch site is not a validation site: a bad role loses the name, not
