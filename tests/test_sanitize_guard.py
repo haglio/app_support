@@ -18,6 +18,20 @@ from app_support.sanitize import (
     load_blocklist,
     scan_files,
 )
+from app_support.sanitize.guard import Violation
+
+
+class TestViolation:
+    def test_its_repr_names_the_place_and_not_the_term(self):
+        """A failing tracked-tree check reprints every violation through
+        pytest's assertion introspection -- once in the terminal, twice in a
+        retained junit artifact -- and the dataclass repr carried the term,
+        the one thing the guard exists to keep out of both (bug 82)."""
+        shown = repr(Violation("notes.md", 3, "forbiddenterm", "has *** in it"))
+
+        assert "forbiddenterm" not in shown
+        assert "notes.md" in shown
+        assert "3" in shown
 
 
 class TestFindViolations:

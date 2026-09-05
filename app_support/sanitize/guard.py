@@ -22,7 +22,7 @@ import re
 import subprocess
 import sys
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 _MAX_EXCERPT = 160
@@ -36,11 +36,17 @@ _INFLECTION = r"(?:'?s|es|ed|ing)?"
 
 @dataclass(frozen=True)
 class Violation:
-    """One blocklisted term found at a location."""
+    """One blocklisted term found at a location.
+
+    The term stays out of the repr: a failing check reprints its violations
+    through pytest's assertion introspection, into the terminal and into any
+    retained junit artifact, and the term is the one thing this guard exists
+    to keep out of both.  The excerpt is already redacted.
+    """
 
     path: str
     line: int
-    term: str
+    term: str = field(repr=False)
     excerpt: str
 
 
