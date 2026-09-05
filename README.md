@@ -30,6 +30,13 @@ Two more things every repo in the family needs, and used to keep its own copy of
   is the call at the top of every `main()`. **`process_identity_check`** runs an
   app's own naming against a throwaway venv and reads back what it made, so no
   suite has to grep its entry point for the call.
+- **`file_channel`** — the files one process steers another through and the
+  files it publishes back: a command queue appended to and claimed whole, a flag
+  read as one character with a caller-named default, a wall-clock stamp and its
+  age, a `key=value` record, and the whole-or-nothing publish under all of them.
+  **`state_files`** spells the names of the files two repos meet at, once, with
+  who writes each, who reads it and what it holds; its tests run each writer
+  against its reader.
 - **`win32`** — what a windowed process says about itself to Windows: its
   taskbar identity, the same identity stamped onto (and read back off) a
   shortcut through COM, the named mutex that answers whether it may run, and
