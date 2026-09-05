@@ -92,6 +92,25 @@ class TestFindViolations:
         # sibilant's plural, so without it `boxes` walks past `box`.
         assert find_violations("all the boxes here", ["box"])
 
+    def test_an_entry_written_in_the_plural_matches_its_own_stem(self):
+        """`badterms` on the list matched `badterms` and let `badterm` through:
+        the inflection slack ran only one way, and a list is full of plurals
+        (bug 80).  The plural's stem is what the entry names.
+        """
+        assert find_violations("one badterm here", ["badterms"])
+        assert find_violations("the badterms here", ["badterms"])
+        assert find_violations("one box here", ["boxes"])
+        assert find_violations("a bad phrase here", ["bad phrases"])
+
+    def test_a_word_that_merely_ends_in_s_is_not_stemmed(self):
+        """`glass` names glass, not `glas`; `bus`, `this` and a three-letter
+        word are left as written, so the stem never decays into a substring
+        that fires on something else."""
+        assert find_violations("a glas of water", ["glass"]) == []
+        assert find_violations("the bu stop", ["bus"]) == []
+        assert find_violations("thi one", ["this"]) == []
+        assert find_violations("a ga leak", ["gas"]) == []
+
     def test_widening_still_refuses_an_unrelated_longer_word(self):
         """Separator and inflection slack must not decay into a substring match:
         `cat` may reach `cat-s`, never `concatenated`.

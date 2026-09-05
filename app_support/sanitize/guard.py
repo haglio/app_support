@@ -34,6 +34,29 @@ _SEPARATOR = r"[\s\-_.]*"
 _NAME_JOINERS = re.compile(r"[\s\-_.]+")
 # Trailing inflections a blocklist entry is not written with but text uses.
 _INFLECTION = r"(?:'?s|es|ed|ing)?"
+# What a plural's stem ends in when the plural took ``es`` -- not ``s``, since
+# ``phrases`` is ``phrase`` + ``s`` as surely as ``buses`` is ``bus`` + ``es``.
+_SIBILANT_ENDINGS = ("x", "z", "ch", "sh")
+
+
+def _stem(word: str) -> str:
+    """The word an entry written in the plural names.
+
+    A list is full of plurals, and an entry's own inflection slack ran only
+    forward: ``badterms`` caught ``badterms`` and let ``badterm`` through.  Only
+    a plural is undone -- ``es`` after x, z, ch or sh, else a lone ``s`` -- and
+    only where a real stem is left: never after ``ss``, ``us`` or ``is``, never
+    from a word of three letters or fewer, so the stem cannot decay into a
+    substring that fires on something else.  A plural in ``ses`` keeps its
+    ``e`` (``phrases`` reads as ``phrase``), and a plural this cannot undo
+    still matches exactly what it matched before.
+    """
+    lower = word.lower()
+    if len(lower) <= 3 or not lower.endswith("s") or lower.endswith(("ss", "us", "is")):
+        return word
+    if lower.endswith("es") and lower[:-2].endswith(_SIBILANT_ENDINGS):
+        return word[:-2]
+    return word[:-1]
 
 
 @dataclass(frozen=True)
@@ -67,7 +90,9 @@ def _term_pattern(term: str) -> re.Pattern[str]:
       or joining punctuation, including none at all.
     * **Inflections.** ``badterm`` on the list did not catch ``badterms`` in a
       README, because the trailing ``(?!\\w)`` refused the plural. A short
-      inflectional tail is allowed before that boundary.
+      inflectional tail is allowed before that boundary -- and an entry
+      written in the plural is matched from its stem (:func:`_stem`), so it
+      catches its own singular too.
 
     Both widenings were measured against every tracked file in all eleven repos
     before landing: they added no false positive, and they caught real names that
@@ -75,6 +100,8 @@ def _term_pattern(term: str) -> re.Pattern[str]:
     """
     stripped = term.strip()
     parts = stripped.split()
+    if parts and parts[-1].isalpha():
+        parts[-1] = _stem(parts[-1])
     core = _SEPARATOR.join(re.escape(p) for p in parts) if parts else re.escape(stripped)
     left = r"(?<!\w)" if stripped[:1].isalnum() or stripped[:1] == "_" else ""
     right = r"(?!\w)" if stripped[-1:].isalnum() or stripped[-1:] == "_" else ""
