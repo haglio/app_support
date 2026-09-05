@@ -89,11 +89,11 @@ class TestEnsureSiblingImportable:
 
 class TestProjectRoots:
     def test_an_overlay_that_says_nothing_means_the_fallback(self, tmp_path: Path):
-        assert project_roots({}, fallback=tmp_path / "projects") == (tmp_path / "projects",)
-        assert project_roots({"project_roots": []}, fallback=tmp_path) == (tmp_path,)
+        assert project_roots(None, fallback=tmp_path / "projects") == (tmp_path / "projects",)
+        assert project_roots([], fallback=tmp_path) == (tmp_path,)
 
     def test_the_overlays_roots_in_its_order(self, tmp_path: Path):
-        roots = project_roots({"project_roots": ["D:/repos", "C:/old"]}, fallback=tmp_path)
+        roots = project_roots(["D:/repos", "C:/old"], fallback=tmp_path)
 
         assert roots == (Path("D:/repos"), Path("C:/old"))
 
