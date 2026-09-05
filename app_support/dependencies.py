@@ -60,11 +60,19 @@ def _normalized(name: str) -> str:
 
 
 def declared_dependencies(pyproject: Path) -> set[str]:
-    """The distributions ``[project.dependencies]`` names, normalized."""
+    """The distributions ``[project.dependencies]`` and every optional extra name, normalized.
+
+    An extra is a declaration too: a feature whose imports sit behind
+    ``pip install repo[voice]`` is declared, and installing the feature is the
+    launcher's business, not this gate's.
+    """
     with Path(pyproject).open("rb") as handle:
         project = tomllib.load(handle).get("project", {})
+    requirements = list(project.get("dependencies", []))
+    for extra in project.get("optional-dependencies", {}).values():
+        requirements.extend(extra)
     found = set()
-    for requirement in project.get("dependencies", []):
+    for requirement in requirements:
         match = _DIST_NAME.match(requirement)
         if match:
             found.add(_normalized(match.group(1)))
