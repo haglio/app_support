@@ -341,12 +341,16 @@ class TestHookEntryPoint:
 
     def test_no_blocklist_means_no_enforcement(self, tmp_path: Path):
         """A public clone has no overlay. It must commit normally, not be told
-        the guard cannot run.
+        the guard cannot run -- but it is told, in one line, that nothing was
+        enforced: on the machine that keeps the list, that line is the only
+        sign the list has gone missing (bug 47).
         """
         repo = self._repo(tmp_path, None)
         (repo / "notes.md").write_text(f"this has {self.TERM} in it\n", encoding="utf-8")
         _git(repo, "add", ".")
-        assert self._commit(repo).returncode == 0
+        done = self._commit(repo)
+        assert done.returncode == 0
+        assert "no blocklist" in done.stderr
 
     def _shadow(self, tmp_path: Path) -> Path:
         """A path entry where ``app_support`` resolves to something that is not

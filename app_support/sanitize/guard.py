@@ -331,6 +331,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     path = blocklist_path(repo)
     terms = load_blocklist(path) if path.exists() else []
     if not terms:
+        # Said on the way past, never refused: a public clone has no list and
+        # commits normally, but on the machine that keeps one this line is the
+        # only sign that the list has gone missing.
+        print(f"sanitize: no blocklist at {path}; nothing enforced", file=sys.stderr)
         return 0
 
     if args.message:
