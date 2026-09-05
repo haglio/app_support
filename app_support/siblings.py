@@ -26,9 +26,8 @@ from __future__ import annotations
 
 import importlib.util
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Any
 
 
 def sibling_checkout(name: str, *, near: Path) -> Path:
@@ -74,19 +73,19 @@ def ensure_sibling_importable(name: str, *, near: Path) -> None:
         sys.path.append(root)
 
 
-def project_roots(content: Mapping[str, Any], *, fallback: Path) -> tuple[Path, ...]:
+def project_roots(configured: Iterable[str | Path] | None, *, fallback: Path) -> tuple[Path, ...]:
     """The folders that hold the suite's app checkouts, in search order.
 
-    An overlay that says nothing means *fallback* -- ``<library root>/projects``,
-    where the repos lived before they moved out of the file-synced tree the
-    library stays in.  A *list* rather than one path so a part-finished move
-    resolves: each checkout is found wherever it actually is right now, with no
-    window where half the suite is unreachable.
+    *configured* is what the content overlay says -- its ``project_roots`` key,
+    read by the caller so the key stays visible where that repo's overlay
+    contract is pinned.  Nothing there means *fallback*: ``<library
+    root>/projects``, where the repos lived before they moved out of the
+    file-synced tree the library stays in.  A *list* rather than one path so a
+    part-finished move resolves: each checkout is found wherever it actually is
+    right now, with no window where half the suite is unreachable.
     """
-    roots = content.get("project_roots")
-    if not roots:
-        return (Path(fallback),)
-    return tuple(Path(root) for root in roots)
+    roots = tuple(Path(root) for root in configured or ())
+    return roots or (Path(fallback),)
 
 
 def project_dir(name: str, roots: Sequence[Path]) -> Path:
