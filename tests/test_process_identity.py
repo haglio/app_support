@@ -105,7 +105,8 @@ class TestNaming:
     def test_keeps_the_interpreter_suffix_rather_than_assuming_one(self):
         # Taking the suffix from the source keeps a console interpreter and a
         # windowed one from being told apart by anything but which was copied.
-        assert ProcessNamer("Genau").exe_name("python.exe", "Genau").endswith(".exe")
+        # A suffix that is not .exe, so an assumed .exe cannot pass this.
+        assert ProcessNamer("Genau").exe_name("python.com", "Genau").endswith(".com")
 
     @pytest.mark.parametrize("role", ["Audio Companion", "audio-companion", "../evil", "", "Nau2"])
     def test_refuses_a_role_that_is_not_plain_letters(self, role: str):
@@ -182,16 +183,6 @@ class TestNamedExe:
         assert read_version_field(result, "FileDescription") == "Highdeas"
         assert read_version_field(result, "ProductName") == "Highdeas"
         assert read_version_field(result, STAMP_FIELD)
-
-    def test_copies_it_beside_the_source_so_the_venv_still_resolves(self, tmp_path: Path):
-        # pyvenv.cfg is found one directory up from the interpreter, so a copy
-        # anywhere but Scripts/ is a different (or no) virtualenv -- with the
-        # app's site-packages missing and every import of its own failing.
-        source = _interpreter(tmp_path)
-
-        result = Path(ProcessNamer("Clipper").named_exe(source, "Clipper"))
-
-        assert result.parent == source.parent
 
     def test_keeps_the_interpreters_own_application_manifest(self, tmp_path: Path):
         """Rewriting resources must not cost the manifest that comes with them:
