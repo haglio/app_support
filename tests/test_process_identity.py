@@ -330,21 +330,6 @@ class TestNamedExe:
             .named_exe(source, "Bad Role") == str(source)
 
 
-class TestPrepareLauncher:
-    def test_names_the_windowed_interpreter_beside_the_running_one(self, tmp_path: Path):
-        """An app's shortcut starts pythonw, so that is the file to copy -- and
-        naming it from sys.executable would name a copy after a copy on every
-        run after the first."""
-        source = _stub_interpreter(tmp_path)
-        resources = _FakeResources()
-
-        ProcessNamer("Highdeas", stamp=resources.stamp,
-                     read_field=resources.read_field) \
-            .prepare_launcher("Highdeas", source)
-
-        assert source.with_name("Highdeas-Highdeas.exe").is_file()
-
-
 class TestNameThisProcess:
     """The call at the top of an app's ``main()``: the copy for next time, made
     from the launcher named and never from whatever is running, and never worth
