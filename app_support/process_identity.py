@@ -395,7 +395,7 @@ class ProcessNamer:
             })
         except Exception:
             # A described copy already there, one label or one Python upgrade
-            # behind, still names its process -- better than going back to an
+            # out of date, still names its process -- better than going back to an
             # anonymous one.  That is the usual way to land here: the last run's
             # copy is still running, so Windows refuses to overwrite the image.
             # The test is what the file SAYS rather than that it exists, because
