@@ -483,4 +483,4 @@ class ProcessNamer:
             if target.is_file():
                 target.unlink()
         except OSError:
-            logger.info("Left %s behind; it could not be removed", target.name, exc_info=True)
+            logger.info("Left %s in place; it could not be removed", target.name, exc_info=True)

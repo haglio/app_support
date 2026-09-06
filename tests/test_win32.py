@@ -419,7 +419,7 @@ class TestANamedMutexOnWindows:
         assert not is_mutex_held(name)
 
     def test_probing_a_free_name_does_not_claim_it(self):
-        # A probe that left a mutex behind would refuse the very instance it
+        # A probe that left a mutex in place would refuse the very instance it
         # was asked on behalf of.
         name = f"Local\\app-support-test-{uuid.uuid4().hex}"
 
