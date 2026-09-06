@@ -157,7 +157,7 @@ def build_version_info(fields: dict[str, str]) -> bytes:
 def build_icon_resources(ico: bytes) -> tuple[list[bytes], bytes]:
     """Split a .ico into its images and a directory that indexes them by id.
 
-    An .ico on disk and an icon in a PE are the same images behind two different
+    An .ico on disk and an icon in a PE are the same images under two different
     directories: the file's points at byte offsets, the resource's at resource
     ids.  So the images go in untouched and only the directory is rebuilt.
     """

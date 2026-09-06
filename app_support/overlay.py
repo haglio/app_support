@@ -42,7 +42,7 @@ def read_overlay(local_path: Path, example_path: Path) -> dict[str, Any]:
     """The local overlay's content when there is one, else the committed example.
 
     As written, never merged; see :func:`backfilled` for the repos that want the
-    example's placeholders behind a partial overlay.
+    example's placeholders under a partial overlay.
     """
     return json.loads(overlay_path(local_path, example_path).read_text(encoding="utf-8"))
 
@@ -61,7 +61,7 @@ def backfilled(
     data: dict[str, Any], example: Mapping[str, Any], *,
     empty_when_absent: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """*data* with every documented key present: the example's value behind each
+    """*data* with every documented key present: the example's value under each
     one it lacks, except the keys in *empty_when_absent*, which get that value.
 
     A partial overlay -- one that exists but omits a key -- then never trips a
