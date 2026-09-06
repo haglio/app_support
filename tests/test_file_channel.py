@@ -114,7 +114,7 @@ def test_consume_skips_blank_lines(tmp_path: Path):
 
 
 def test_consume_takes_the_queue_away(tmp_path: Path):
-    """Claimed by rename, not read-then-truncated: the truncate had a hole one
+    """Claimed by rename, not read-then-truncated: the truncate had a gap one
     verb wide, and a handoff verb appended into it was erased unread."""
     path = tmp_path / "cmd.txt"
     path.write_text("NEXT", encoding="utf-8")
