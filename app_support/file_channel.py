@@ -232,7 +232,7 @@ def read_key_values(path: Path) -> dict[str, str]:
     A status is published whole, so a read either sees a complete record or the
     file mid-replace -- and what to do then (hand back the last good snapshot,
     usually) is the reader's to decide, which it cannot if the failure is hidden
-    behind an empty dict.
+    under an empty dict.
     """
     return dict(
         line.split("=", 1)
