@@ -449,7 +449,7 @@ def show_error_popup(title: str, message: str, *, user32=_user32) -> None:
 
     For the process that has nowhere else to say it: launched hidden from a
     shortcut, no console to print to, no window of its own yet.  Such a process
-    has no claim on the foreground, so a plain message dialog opens *under*
+    has no claim on the foreground, so a plain message dialog opens *underneath*
     whatever the user is looking at -- and a hidden process that exits having
     shown nothing is indistinguishable from one that crashed.
     ``MB_SETFOREGROUND`` and ``MB_TOPMOST`` are what make the dialog the thing
