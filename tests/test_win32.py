@@ -431,10 +431,10 @@ class TestANamedMutexOnWindows:
 
 
 class TestShowErrorPopup:
-    def test_the_box_comes_up_in_front_of_whatever_is_there(self):
+    def test_the_dialog_comes_up_in_front_of_whatever_is_there(self):
         # The reason the whole helper exists. A process launched hidden from a
         # shortcut has no claim on the foreground, so without SETFOREGROUND and
-        # TOPMOST the dialog opens *behind* what the user is looking at -- which
+        # TOPMOST the dialog opens *under* what the user is looking at -- which
         # reads as having crashed with no explanation. Two of the four copies
         # this replaces omit TOPMOST, which is the flag their own docstring
         # calls the point.
