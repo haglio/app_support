@@ -53,9 +53,9 @@ class TestFindViolations:
         assert find_violations("a two   word phrase", ["two word"])
 
     def test_matches_a_term_a_line_wrap_has_split(self):
-        """A per-line scan cannot see this. A real title hid behind a docstring's
-        line break through every scan, and only surfaced when a history rewrite
-        matched on the whole blob and put it back together.
+        """A per-line scan cannot see this. A real title, broken over a
+        docstring's line break, survived every scan, and only surfaced when a
+        history rewrite matched on the whole blob and put it back together.
         """
         found = find_violations("a title like *two\n    word* would match", ["two word"])
         assert [v.line for v in found] == [1]  # reported where the match starts
