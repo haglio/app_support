@@ -240,7 +240,7 @@ UNREAD_ARGUMENT_RULES = ("ARG001",)
 
 
 def assert_nothing_is_imported_or_assigned_and_left_unread(root, *targets) -> None:
-    """The hole vulture cannot see: deadness local to one module.
+    """The blind spot vulture has: deadness local to one module.
 
     vulture resolves names across the whole tree it is handed, so an import
     unused HERE but live in a sibling module never reports. ruff answers per

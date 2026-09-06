@@ -191,7 +191,7 @@ class TestTheGuardPlugin:
     ):
         """A pass that scanned no files says the same word as a pass that
         scanned the tree, and the second is the only one worth anything. The
-        blocklist half of that hole is handled where the terms are resolved;
+        blocklist half of that gap is handled where the terms are resolved;
         this is the other half -- terms in hand, and a walk that came back with
         nothing to read.
         """

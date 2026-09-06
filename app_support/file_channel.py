@@ -16,7 +16,7 @@ starts late, restarts, or drops a verb still reads the flag and lands correctly.
 
 This was ``player_core.file_channel``, which re-exports it so the players are
 untouched.  It moved because the broker, which is no player, had grown its own
-consumer that read the file and then truncated it -- a hole one verb wide that a
+consumer that read the file and then truncated it -- a gap one verb wide that a
 verb written into it fell through -- and because the files' names were spelled
 by hand in four repos (see :mod:`app_support.state_files`).  Standard library
 only.

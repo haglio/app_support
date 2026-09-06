@@ -187,7 +187,7 @@ def test_a_package_the_gate_does_not_name_is_reported(tmp_path):
 
 
 def test_an_import_unused_in_its_own_file_is_reported_even_if_a_sibling_uses_the_name(tmp_path):
-    """The hole vulture cannot see: it resolves names across the whole tree, so an
+    """The blind spot vulture has: it resolves names across the whole tree, so an
     import unused HERE but live in a sibling module never reports. ruff answers
     per file."""
     (tmp_path / "pkg").mkdir()
