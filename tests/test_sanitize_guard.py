@@ -89,8 +89,8 @@ class TestFindViolations:
         for form in ("badterms", "badterm's", "badtermed", "badterming"):
             assert find_violations(f"the {form} here", ["badterm"]), form
         # `es` is its own branch: the bare `s` alternative cannot reach a
-        # sibilant's plural, so without it `boxes` walks past `box`.
-        assert find_violations("all the boxes here", ["box"])
+        # sibilant's plural, so without it `foxes` walks past `fox`.
+        assert find_violations("all the foxes here", ["fox"])
 
     def test_an_entry_written_in_the_plural_matches_its_own_stem(self):
         """`badterms` on the list matched `badterms` and let `badterm` through:
@@ -99,7 +99,7 @@ class TestFindViolations:
         """
         assert find_violations("one badterm here", ["badterms"])
         assert find_violations("the badterms here", ["badterms"])
-        assert find_violations("one box here", ["boxes"])
+        assert find_violations("one fox here", ["foxes"])
         assert find_violations("a bad phrase here", ["bad phrases"])
 
     def test_a_word_that_merely_ends_in_s_is_not_stemmed(self):
