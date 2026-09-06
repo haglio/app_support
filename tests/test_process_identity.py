@@ -294,7 +294,7 @@ class TestNamedExe:
     ):
         # The usual reason a refresh fails is that the last run's copy is still
         # running and Windows will not overwrite a running image.  One label
-        # behind beats going back to an unidentifiable process.
+        # out of date beats going back to an unidentifiable process.
         source = _stub_interpreter(tmp_path)
         resources = _FakeResources()
         existing = Path(ProcessNamer("Clipper", stamp=resources.stamp,
