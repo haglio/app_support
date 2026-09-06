@@ -45,7 +45,7 @@ def sibling_checkout(name: str, *, near: Path) -> Path:
 
 
 def _really_importable(name: str) -> bool:
-    """Whether *name* resolves to a package with a file behind it.
+    """Whether *name* resolves to a package with a file backing it.
 
     A checkout laid out beside this one answers ``find_spec`` without being the
     package at all: the repo directory shares the package's name, so with the

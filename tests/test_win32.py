@@ -114,7 +114,7 @@ def _guid_to_uuid(guid) -> uuid.UUID:
 
 class TestTheShortcutProperty:
     def test_it_is_the_property_the_taskbar_reads(self):
-        # The one failure in this module with no HRESULT behind it: a wrong
+        # The one failure in this module with no HRESULT backing it: a wrong
         # property key writes a real value into the shortcut, reports success,
         # and leaves the second taskbar button this whole module exists to
         # prevent. The key is System.AppUserModel.ID, documented as
