@@ -17,7 +17,7 @@ dead code:" and then nothing. A repo asks for the gate in a few lines instead::
     def test_no_dead_code():
         assert_no_dead_code(ROOT / "the_package", whitelist=ROOT / "vulture_whitelist.py")
 
-Name the production directories rather than scanning ``.`` behind an
+Name the production directories rather than scanning ``.`` under an
 ``--exclude`` list. vulture matches those patterns against absolute paths, and
 an agent's checkout lives at ``<repo>/.claude/worktrees/<name>`` -- so
 ``--exclude .claude`` matches the root of the tree being scanned and excludes
