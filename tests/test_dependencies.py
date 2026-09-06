@@ -31,8 +31,8 @@ class TestDeclaredDependencies:
         assert declared_dependencies(root / "pyproject.toml") == {"examplelib", "other-thing", "third"}
 
     def test_an_extra_is_a_declaration_too(self, tmp_path: Path):
-        # A feature behind `pip install repo[voice]` is declared; installing it is
-        # the launcher's business.
+        # A feature that arrives with `pip install repo[voice]` is declared;
+        # installing it is the launcher's business.
         root = _repo(tmp_path, source="")
         pyproject = (
             "[project]\n"

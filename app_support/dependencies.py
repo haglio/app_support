@@ -62,7 +62,7 @@ def _normalized(name: str) -> str:
 def declared_dependencies(pyproject: Path) -> set[str]:
     """The distributions ``[project.dependencies]`` and every optional extra name, normalized.
 
-    An extra is a declaration too: a feature whose imports sit behind
+    An extra is a declaration too: a feature whose imports arrive with
     ``pip install repo[voice]`` is declared, and installing the feature is the
     launcher's business, not this gate's.
     """
