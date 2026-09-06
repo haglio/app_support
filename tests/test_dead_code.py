@@ -21,7 +21,7 @@ from pathlib import Path
 from app_support.dead_code import assert_no_dead_code, assert_whitelist_is_live
 
 ROOT = Path(__file__).resolve().parent.parent
-# Named one by one rather than scanning `.` behind an `--exclude` list: vulture
+# Named one by one rather than scanning `.` under an `--exclude` list: vulture
 # matches those patterns against absolute paths, and this checkout may itself be
 # `<repo>/.claude/worktrees/<name>`, where `--exclude .claude` matches the root
 # of the tree being scanned and quietly excludes every file in it.

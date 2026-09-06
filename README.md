@@ -152,7 +152,7 @@ def test_no_dead_code():
 Add `vulture` to the repo's `[dev]` extra — it is the *scanning* repo's dev
 dependency, never this package's, which installs into every app's venv.
 
-**Name the production directories; never scan `.` behind an `--exclude` list.**
+**Name the production directories; never scan `.` under an `--exclude` list.**
 vulture matches those patterns against absolute paths, and an agent's checkout
 lives at `<repo>/.claude/worktrees/<name>` — so `--exclude .claude` matches the
 root of the tree being scanned and excludes every file in it. Three repos here
