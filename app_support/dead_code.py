@@ -191,7 +191,7 @@ def assert_whitelist_is_live(
     was deleted is not merely tidy-able: it is a standing exemption for whatever
     name happens to match it next. One repo in this family reached 31 dead
     entries out of 45, 23 of them naming symbols the family no longer contains,
-    and its gate could not see what its own deletions left behind.
+    and its gate could not see what its own deletions had made stale.
     """
     _refuse_a_whitelist_inside_the_scan(targets, whitelist)
     report = _reports(targets, None, min_confidence, each_alone)
