@@ -14,11 +14,11 @@ dependencies = []
 dev = [
     "pytest",
     "pytest-timeout",
-    # The scanner behind app_support.dead_code. A dev dependency of every repo
+    # The scanner powering app_support.dead_code. A dev dependency of every repo
     # that asks for that gate, including this one -- never a dependency of the
     # package, which installs into every app's venv.
     "vulture",
-    # The linter behind app_support.lint, at the one version the family's gate
+    # The linter powering app_support.lint, at the one version the family's gate
     # accepts (lint.RUFF_VERSION): a dev dependency of every repo that asks for
     # that gate, this one included, never of the package.
     "ruff==0.16.6",
