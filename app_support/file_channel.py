@@ -59,7 +59,7 @@ def publish_whole(
         except OSError:
             if attempt < attempts - 1:
                 time.sleep(delay_s)
-    # Nothing landed, so nothing is left behind: the temp file lives in the
+    # Nothing landed, so nothing stays on disk: the temp file lives in the
     # state directory beside the real one, where a stray copy per failed publish
     # would accumulate and read as a file some component owns.
     tmp.unlink(missing_ok=True)

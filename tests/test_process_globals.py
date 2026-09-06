@@ -7,7 +7,7 @@ under -- a thread that dies is written to a file in a `tmp_path` pytest has
 already deleted instead of reaching pytest's own reporting, and a native crash
 prints no traceback at all because faulthandler was switched off on the way out.
 
-These read whatever the tests before them left behind, so they are green on
+These read whatever the tests before them left over, so they are green on
 their own and red exactly when something has leaked.
 """
 from __future__ import annotations

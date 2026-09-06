@@ -4,7 +4,7 @@ vulture counts an assignment as a use, so it never reports a module constant not
 measures against, a constructor parameter stored on ``self`` and never read, a
 dataclass field every build writes and nobody reads, or an ``argparse`` option the
 parser declares and the app never consults. It is pointed at packages, so a helper
-left behind in a test file accumulates unseen. Two repos wrote these scans for
+left over in a test file accumulates unseen. Two repos wrote these scans for
 themselves; they are published here so every repo asks the same questions::
 
     from app_support import unread
