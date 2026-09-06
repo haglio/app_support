@@ -278,7 +278,7 @@ class TestNamedExe:
                             read_field=resources.read_field) \
             .named_exe(source, "Broker") == str(source)
 
-    def test_leaves_nothing_behind_when_it_cannot_describe_the_copy(self, tmp_path: Path):
+    def test_leaves_no_copy_when_it_cannot_describe_one(self, tmp_path: Path):
         # A copy that names nothing is a file added to the venv for no benefit,
         # and a launcher pointed at it would report a process it cannot identify.
         source = _stub_interpreter(tmp_path)

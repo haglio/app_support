@@ -419,7 +419,7 @@ def is_mutex_held(name: str, *, kernel32=_kernel32) -> bool:
     """Report whether some process is holding *name*.
 
     Opens rather than creates, so probing a free name cannot leave a mutex
-    behind -- a created-then-closed handle would, for those few microseconds,
+    in place -- a created-then-closed handle would, for those few microseconds,
     make an instance starting alongside believe another one was already up.
     ``SYNCHRONIZE`` is asked for because it is the least this can ask for and
     still be told whether the name exists.
