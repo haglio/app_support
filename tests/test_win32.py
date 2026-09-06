@@ -305,7 +305,7 @@ class TestTryAcquireMutex:
         assert kernel32.CreateMutexW.calls == [
             (None, False, "Global\\ExampleApp.dce3a7c5ad9e")]
 
-    def test_the_handle_is_not_closed_behind_the_caller(self):
+    def test_the_handle_is_not_closed_out_from_under_the_caller(self):
         kernel32 = _FakeKernel32(handle=WIDE_HANDLE)
 
         try_acquire_mutex("Global\\ExampleApp.dce3a7c5ad9e",
