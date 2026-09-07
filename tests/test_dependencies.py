@@ -7,10 +7,12 @@ from pathlib import Path
 import pytest
 
 from app_support.dependencies import (
+    assert_every_dependency_is_bounded,
     assert_every_import_is_declared,
     assert_the_declared_floor_is_the_one_the_gate_runs,
     declared_dependencies,
     third_party_imports,
+    unbounded_requirements,
     undeclared_imports,
 )
 
@@ -128,7 +130,55 @@ class TestTheDeclaredPythonFloor:
                 root / "pyproject.toml", self._gate(root, "3.12", "3.14"))
 
 
+class TestUpperBounds:
+    def _pyproject(self, tmp_path: Path, body: str) -> Path:
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text('[project]\nname = "someapp"\n' + body, encoding="utf-8")
+        return pyproject
+
+    def test_a_ceiling_a_pin_and_a_compatible_release_all_bound_it(self, tmp_path: Path):
+        pyproject = self._pyproject(
+            tmp_path, 'dependencies = ["a>=1,<2", "b==3.1", "c~=4.2", "d<=5"]\n')
+
+        assert unbounded_requirements(pyproject) == []
+
+    def test_a_bare_name_and_a_floor_alone_are_both_unbounded(self, tmp_path: Path):
+        pyproject = self._pyproject(tmp_path, 'dependencies = ["examplelib", "other>=2"]\n')
+
+        assert unbounded_requirements(pyproject) == [
+            "examplelib (dependencies)", "other>=2 (dependencies)"]
+
+    def test_an_extra_is_read_and_named_by_its_group(self, tmp_path: Path):
+        pyproject = self._pyproject(
+            tmp_path,
+            'dependencies = []\n[project.optional-dependencies]\nvoice = ["speechlib"]\n')
+
+        assert unbounded_requirements(pyproject) == ["speechlib (voice)"]
+
+    def test_a_marker_does_not_hide_the_missing_ceiling(self, tmp_path: Path):
+        requirement = 'winlib ; sys_platform == "win32"'
+        pyproject = self._pyproject(tmp_path, f"dependencies = ['{requirement}']\n")
+
+        assert unbounded_requirements(pyproject) == [f"{requirement} (dependencies)"]
+
+    def test_a_name_the_repo_allows_is_left_alone(self, tmp_path: Path):
+        pyproject = self._pyproject(tmp_path, 'dependencies = ["examplelib"]\n')
+
+        assert unbounded_requirements(pyproject, allowing=("examplelib",)) == []
+
+    def test_the_assertion_names_every_one(self, tmp_path: Path):
+        pyproject = self._pyproject(tmp_path, 'dependencies = ["examplelib"]\n')
+
+        with pytest.raises(AssertionError, match="examplelib"):
+            assert_every_dependency_is_bounded(pyproject)
+
+
 def test_this_repos_declared_floor_is_the_one_its_gate_runs():
     root = Path(__file__).resolve().parent.parent
     assert_the_declared_floor_is_the_one_the_gate_runs(
         root / "pyproject.toml", root / ".github" / "workflows" / "merge-gate.yml")
+
+
+def test_this_repos_own_requirements_are_bounded():
+    assert_every_dependency_is_bounded(Path(__file__).resolve().parent.parent / "pyproject.toml")
+

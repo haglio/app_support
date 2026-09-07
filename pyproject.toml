@@ -13,13 +13,18 @@ requires-python = ">=3.12"
 dependencies = []
 
 [project.optional-dependencies]
+# Every requirement carries a ceiling, here and in the ten consumers: without one
+# each run installs whatever PyPI served that morning, which is how the family's
+# gates came to run a major version of the imaging stack past the one the
+# developer machines have. The floors are what the machines actually hold today;
+# tests/test_dependencies.py refuses a requirement with no upper bound.
 dev = [
-    "pytest",
-    "pytest-timeout",
+    "pytest>=9,<10",
+    "pytest-timeout>=2.4,<3",
     # The scanner powering app_support.dead_code. A dev dependency of every repo
     # that asks for that gate, including this one -- never a dependency of the
     # package, which installs into every app's venv.
-    "vulture",
+    "vulture>=2.16,<3",
     # The linter powering app_support.lint, at the one version the family's gate
     # accepts (lint.RUFF_VERSION): a dev dependency of every repo that asks for
     # that gate, this one included, never of the package.

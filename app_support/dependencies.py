@@ -146,6 +146,48 @@ def assert_every_import_is_declared(
         "Third-party imports no [project.dependencies] entry provides:\n  " + "\n  ".join(missing))
 
 
+_CEILING = re.compile(r"(<|~=|==)")
+
+
+def _requirements(pyproject: Path) -> list[tuple[str, str]]:
+    """Every requirement the project declares, with the group that declares it."""
+    with Path(pyproject).open("rb") as handle:
+        project = tomllib.load(handle).get("project", {})
+    found = [("dependencies", requirement) for requirement in project.get("dependencies", [])]
+    for extra, requirements in project.get("optional-dependencies", {}).items():
+        found.extend((extra, requirement) for requirement in requirements)
+    return found
+
+
+def unbounded_requirements(pyproject: Path, *, allowing: Iterable[str] = ()) -> list[str]:
+    """Every declared requirement that nothing stops from taking a new major version.
+
+    A ceiling, an exact pin and a compatible-release clause all bound one; a bare
+    name and a floor alone do not, and both let a Tuesday's release become what
+    the next run installs.  *allowing* names the ones a repo has decided to leave
+    open, which is a decision that then has a place to be written down.
+    """
+    exempt = {_normalized(name) for name in allowing}
+    return [
+        f"{requirement} ({group})"
+        for group, requirement in _requirements(pyproject)
+        if not _CEILING.search(requirement.split(";")[0])
+        and _normalized(_DIST_NAME.match(requirement).group(1)) not in exempt
+    ]
+
+
+def assert_every_dependency_is_bounded(pyproject: Path, *, allowing: Iterable[str] = ()) -> None:
+    """No upper bound anywhere means each run installs whatever PyPI serves that morning.
+
+    That is not hypothetical here: the gates installed a major version of the
+    imaging stack past the one the developer machines run, and nothing said so.
+    """
+    unbounded = unbounded_requirements(pyproject, allowing=allowing)
+    assert not unbounded, (
+        "Requirements with no upper bound, so a new major version lands unasked:\n  "
+        + "\n  ".join(unbounded))
+
+
 _FLOOR = re.compile(r"^>=(\d+)\.(\d+)$")
 _GATE_VERSION = re.compile(r'python-version:\s*"(\d+)\.(\d+)"')
 
