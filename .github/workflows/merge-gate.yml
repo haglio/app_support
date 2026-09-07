@@ -21,6 +21,19 @@ jobs:
       python-version: "3.12"
       timeout-minutes: 3
 
+  # A consumer built against the candidate. This package installs editable into
+  # every app's venv, so a change here lands in ten repos the moment it merges --
+  # with no version to bump and nothing but this repo's own suite deciding it
+  # may. broker is the cheapest repo that uses it as an application does.
+  consumer:
+    uses: haglio/.github/.github/workflows/merge-gate.yml@main
+    with:
+      repo: broker
+      siblings: "shared_ui"
+      python-version: "3.12"
+      timeout-minutes: 8
+      reverse: false
+
   # What the machine this is developed on would say. It runs 3.14 and the gate
   # runs 3.12, and the two evaluate annotations differently (PEP 649), so a
   # branch can be green here and fail to collect there -- or the reverse, once
