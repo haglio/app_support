@@ -2,6 +2,7 @@
 declares, and what is left over.  Every package and dependency here is invented."""
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,7 @@ from app_support.dependencies import (
     assert_every_sibling_is_declared,
     assert_the_declared_floor_is_the_one_the_gate_runs,
     declared_dependencies,
+    inherited_siblings,
     third_party_imports,
     unbounded_requirements,
     undeclared_imports,
@@ -226,15 +228,28 @@ class TestUpperBounds:
 
 
 class TestDeclaredSiblings:
-    def _repo(self, tmp_path: Path, *, source: str, siblings: str = "", addopts: str = "") -> Path:
-        package = tmp_path / "someapp"
-        package.mkdir()
+    def _repo(self, tmp_path: Path, *, source: str, siblings: str = "", addopts: str = "",
+              beside: Iterable[str] = ()) -> Path:
+        """A checkout under *tmp_path*, with *beside* laid out as its siblings.
+
+        The layout matters: what a declared sibling needs in turn is read off
+        that sibling's own checkout, and one that is not there cannot be asked.
+        """
+        checkout = tmp_path / "someapp-checkout"
+        package = checkout / "someapp"
+        package.mkdir(parents=True)
+        (package / "__init__.py").write_text("", encoding="utf-8")
         (package / "app.py").write_text(source, encoding="utf-8")
         pytest_table = f'[tool.pytest.ini_options]\naddopts = "{addopts}"\n' if addopts else ""
-        (tmp_path / "pyproject.toml").write_text(
+        (checkout / "pyproject.toml").write_text(
             f'[project]\nname = "someapp"\n[tool.haglio]\nsiblings = [{siblings}]\n{pytest_table}',
             encoding="utf-8")
-        return tmp_path
+        for name in beside:
+            (tmp_path / name / name).mkdir(parents=True)
+            (tmp_path / name / name / "__init__.py").write_text("", encoding="utf-8")
+            (tmp_path / name / "pyproject.toml").write_text(
+                f'[project]\nname = "{name}"\n', encoding="utf-8")
+        return checkout
 
     def test_a_sibling_the_tree_imports_and_the_pyproject_names_is_settled(self, tmp_path: Path):
         root = self._repo(tmp_path, source="from shared_ui.colors import INK\n",
@@ -248,13 +263,13 @@ class TestDeclaredSiblings:
         assert undeclared_siblings(root, [root / "someapp"], root / "pyproject.toml") == [
             "app_support is imported by someapp/app.py and declared nowhere"]
 
-    def test_a_declared_sibling_nothing_imports_is_reported_too(self, tmp_path: Path):
+    def test_a_declared_sibling_nothing_needs_is_reported_too(self, tmp_path: Path):
         # It costs a clone and an install on every run of the gate, and it reads
         # as a dependency to anyone deciding what may safely change.
-        root = self._repo(tmp_path, source="", siblings='"player_core"')
+        root = self._repo(tmp_path, source="", siblings='"player_core"', beside=["player_core"])
 
         assert undeclared_siblings(root, [root / "someapp"], root / "pyproject.toml") == [
-            "player_core is declared and imported nowhere"]
+            "player_core is declared, imported nowhere, and needed by nothing declared"]
 
     def test_a_sibling_the_pytest_config_loads_as_a_plugin_counts_as_imported(self, tmp_path: Path):
         # `-p app_support.sanitize.pytest_plugin` is what makes the guard run;
@@ -288,3 +303,38 @@ def test_this_repo_declares_the_siblings_it_imports():
     root = Path(__file__).resolve().parent.parent
     assert_every_sibling_is_declared(
         root, [root / "app_support", root / "tests"], root / "pyproject.toml")
+
+
+class TestASiblingsOwnSiblings:
+    def _checkout(self, parent: Path, name: str, *, siblings: str = "") -> Path:
+        checkout = parent / name
+        (checkout / name).mkdir(parents=True)
+        (checkout / name / "__init__.py").write_text("", encoding="utf-8")
+        (checkout / "pyproject.toml").write_text(
+            f'[project]\nname = "{name}"\n[tool.haglio]\nsiblings = [{siblings}]\n',
+            encoding="utf-8")
+        return checkout
+
+    def test_what_a_declared_sibling_needs_is_needed_too(self, tmp_path: Path):
+        # genau's shape: it imports no shared_ui module and cannot run a line
+        # without it, because the player_core HUDs it does import are painted
+        # in the family's colors.
+        self._checkout(tmp_path, "shared_ui")
+        self._checkout(tmp_path, "player_core", siblings='"shared_ui"')
+
+        assert inherited_siblings(["player_core"], tmp_path / "player_core") == {"shared_ui"}
+
+    def test_the_closure_is_followed_all_the_way_down(self, tmp_path: Path):
+        self._checkout(tmp_path, "app_support")
+        self._checkout(tmp_path, "shared_ui", siblings='"app_support"')
+        self._checkout(tmp_path, "player_core", siblings='"shared_ui"')
+
+        assert inherited_siblings(["player_core"], tmp_path / "player_core") == {
+            "shared_ui", "app_support"}
+
+    def test_siblings_that_are_not_on_disk_cannot_be_asked(self, tmp_path: Path):
+        # A public clone has none of them beside it. Reading that as "they need
+        # nothing" would call every inherited requirement unused.
+        (tmp_path / "somewhere").mkdir()
+
+        assert inherited_siblings(["player_core"], tmp_path / "somewhere") is None

@@ -46,6 +46,8 @@ import tomllib
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 
+from app_support.siblings import sibling_checkout
+
 # Import names that differ from the distribution that provides them, across the
 # family; a repo adds its own on top.
 FAMILY_IMPORT_NAMES: Mapping[str, str] = {
@@ -260,23 +262,65 @@ def _some_of(files: list[str], *, most: int = 3) -> str:
     return shown if len(files) <= most else f"{shown} and {len(files) - most} more"
 
 
+def _what_a_sibling_needs(name: str, near: Path) -> set[str] | None:
+    """What the *name* checkout beside this one declares, or None if it is not there.
+
+    None is not "nothing": a public clone with no siblings on disk cannot be
+    asked, and a check that read that as an empty answer would call every
+    inherited requirement unused.
+    """
+    try:
+        checkout = sibling_checkout(name, near=near)
+    except RuntimeError:
+        return None
+    return declared_siblings(checkout / "pyproject.toml")
+
+
+def inherited_siblings(declared: Iterable[str], near: Path) -> set[str] | None:
+    """Everything the *declared* siblings need in turn, or None if they cannot be read.
+
+    A sibling is installed for what it imports as well as for itself: genau
+    imports no shared_ui module and cannot run a line without it, because the
+    player_core HUDs it does import are painted in the family's colors.  So the
+    set a repo has to install is the closure, not the direct imports.
+    """
+    inherited: set[str] = set()
+    pending = list(declared)
+    while pending:
+        name = pending.pop()
+        needs = _what_a_sibling_needs(name, near)
+        if needs is None:
+            return None
+        for found in needs - inherited:
+            inherited.add(found)
+            pending.append(found)
+    return inherited
+
+
 def undeclared_siblings(root: Path, packages: Iterable[Path], pyproject: Path) -> list[str]:
     """Where the siblings a repo needs and the siblings it declares disagree, both ways."""
     needed = sibling_imports(root, packages, pyproject)
     declared = declared_siblings(pyproject)
-    missing = [f"{name} is imported by {_some_of(files)} and declared nowhere"
-               for name, files in needed.items() if name not in declared]
-    return missing + [f"{name} is declared and imported nowhere"
-                      for name in sorted(declared - set(needed))]
+    wrong = [f"{name} is imported by {_some_of(files)} and declared nowhere"
+             for name, files in needed.items() if name not in declared]
+    inherited = inherited_siblings(declared, Path(root))
+    if inherited is None:
+        return wrong
+    wrong += [f"{name} is what {'/'.join(sorted(declared - {name}))} needs and declared nowhere"
+              for name in sorted(inherited - declared)]
+    return wrong + [f"{name} is declared, imported nowhere, and needed by nothing declared"
+                    for name in sorted(declared - set(needed) - inherited)]
 
 
 def assert_every_sibling_is_declared(root: Path, packages: Iterable[Path], pyproject: Path) -> None:
     """The siblings a repo is installed beside are the ones it says, exactly.
 
     Both directions: an undeclared one leaves the CI workflow as the only record
-    of what a checkout needs, and a declared one nothing imports costs a clone
-    and an install on every run while reading as a dependency to anyone deciding
-    what may safely change.
+    of what a checkout needs, and a declared one nothing needs costs a clone and
+    an install on every run while reading as a dependency to anyone deciding what
+    may safely change.  What a declared sibling needs in turn counts as needed --
+    installing player_core without shared_ui gets a checkout that cannot import
+    a HUD.
     """
     wrong = undeclared_siblings(root, packages, pyproject)
     assert not wrong, "[tool.haglio] siblings is not what the tree needs:\n  " + "\n  ".join(wrong)
