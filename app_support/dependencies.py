@@ -144,3 +144,42 @@ def assert_every_import_is_declared(
     missing = undeclared_imports(root, packages, pyproject, local=local, import_names=import_names)
     assert not missing, (
         "Third-party imports no [project.dependencies] entry provides:\n  " + "\n  ".join(missing))
+
+
+_FLOOR = re.compile(r"^>=(\d+)\.(\d+)$")
+_GATE_VERSION = re.compile(r'python-version:\s*"(\d+)\.(\d+)"')
+
+
+def declared_floor(pyproject: Path) -> tuple[int, int]:
+    """The ``requires-python`` floor, as (major, minor)."""
+    with Path(pyproject).open("rb") as handle:
+        declared = tomllib.load(handle).get("project", {}).get("requires-python", "")
+    match = _FLOOR.match(declared.strip())
+    assert match, f"{pyproject} says requires-python = {declared!r}; the family writes >=X.Y"
+    return int(match.group(1)), int(match.group(2))
+
+
+def proven_floor(workflow: Path) -> tuple[int, int]:
+    """The lowest Python any leg of the merge gate runs the suite on.
+
+    Lowest, not first: a gate may run a second, later version to read what it
+    says, and what the floor has to match is the oldest one anything is
+    actually collected on.
+    """
+    found = _GATE_VERSION.findall(Path(workflow).read_text(encoding="utf-8"))
+    assert found, f"{workflow} names no python-version, so nothing proves a floor"
+    return min((int(major), int(minor)) for major, minor in found)
+
+
+def assert_the_declared_floor_is_the_one_the_gate_runs(pyproject: Path, workflow: Path) -> None:
+    """``requires-python`` promises a version; only a run proves one.
+
+    A floor below every version the gate runs is a promise nothing has tested
+    and the tree can contradict outright -- syntax or a stdlib module younger
+    than the number -- so the two places that state it are held together and
+    neither can drift alone.
+    """
+    declared, proven = declared_floor(pyproject), proven_floor(workflow)
+    assert declared == proven, (
+        f"{pyproject.name} says >={declared[0]}.{declared[1]} and the gate proves "
+        f"{proven[0]}.{proven[1]}; the floor is whatever is actually run")

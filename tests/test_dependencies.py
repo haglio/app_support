@@ -8,19 +8,22 @@ import pytest
 
 from app_support.dependencies import (
     assert_every_import_is_declared,
+    assert_the_declared_floor_is_the_one_the_gate_runs,
     declared_dependencies,
     third_party_imports,
     undeclared_imports,
 )
 
 
-def _repo(tmp_path: Path, *, source: str, dependencies: str = '["examplelib>=1", "Other_Thing"]') -> Path:
+def _repo(tmp_path: Path, *, source: str, dependencies: str = '["examplelib>=1", "Other_Thing"]',
+          requires_python: str = ">=3.12") -> Path:
     package = tmp_path / "someapp"
     package.mkdir()
     (package / "__init__.py").write_text("", encoding="utf-8")
     (package / "app.py").write_text(source, encoding="utf-8")
     (tmp_path / "pyproject.toml").write_text(
-        f'[project]\nname = "someapp"\ndependencies = {dependencies}\n', encoding="utf-8")
+        f'[project]\nname = "someapp"\nrequires-python = "{requires_python}"\n'
+        f"dependencies = {dependencies}\n", encoding="utf-8")
     return tmp_path
 
 
@@ -98,3 +101,34 @@ class TestUndeclaredImports:
 
         with pytest.raises(AssertionError, match="nowhere"):
             assert_every_import_is_declared(root, [root / "someapp"], root / "pyproject.toml")
+
+
+class TestTheDeclaredPythonFloor:
+    def _gate(self, root: Path, *versions: str) -> Path:
+        jobs = "\n".join(
+            f'  job{index}:\n    with:\n      python-version: "{version}"\n'
+            for index, version in enumerate(versions))
+        workflow = root / "merge-gate.yml"
+        workflow.write_text(f"jobs:\n{jobs}", encoding="utf-8")
+        return workflow
+
+    def test_the_floor_is_the_lowest_version_the_gate_proves(self, tmp_path: Path):
+        root = _repo(tmp_path, source="", requires_python=">=3.12")
+
+        assert_the_declared_floor_is_the_one_the_gate_runs(
+            root / "pyproject.toml", self._gate(root, "3.12", "3.14"))
+
+    def test_a_floor_no_run_proves_is_named_with_both_numbers(self, tmp_path: Path):
+        # >=3.10 while every leg runs 3.12 says the package installs on a
+        # version nothing has ever collected it on.
+        root = _repo(tmp_path, source="", requires_python=">=3.10")
+
+        with pytest.raises(AssertionError, match=r"3\.10.*3\.12"):
+            assert_the_declared_floor_is_the_one_the_gate_runs(
+                root / "pyproject.toml", self._gate(root, "3.12", "3.14"))
+
+
+def test_this_repos_declared_floor_is_the_one_its_gate_runs():
+    root = Path(__file__).resolve().parent.parent
+    assert_the_declared_floor_is_the_one_the_gate_runs(
+        root / "pyproject.toml", root / ".github" / "workflows" / "merge-gate.yml")
