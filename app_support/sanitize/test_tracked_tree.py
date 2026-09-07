@@ -6,13 +6,28 @@ keeping a copy of it. See that module for why it is opt-in.
 """
 from __future__ import annotations
 
+import re
 import subprocess
 import warnings
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
 
-from app_support.sanitize.guard import blocklist_path, load_blocklist, scan_files
+from app_support.sanitize.guard import (
+    blocklist_path,
+    find_violations,
+    load_blocklist,
+    scan_files,
+)
+
+# A whole word of letters, with a non-word character on each side.  Both halves
+# are what keep the control clear of the matcher's edges rather than sitting on
+# them: `_term_pattern` puts a word boundary around a term whose first and last
+# characters are word characters, so a control taken from inside a longer word
+# would be refused by the very rule being proved, and a run of letters carries
+# none of the separator collapsing a term with digits or punctuation in it does.
+_A_WHOLE_WORD = re.compile(r"(?<!\w)[A-Za-z]{4,}(?!\w)")
 
 
 def _repo_under_test(rootpath: Path) -> Path:
@@ -58,6 +73,37 @@ def _say_the_tree_was_not_scanned(blocklist: Path) -> None:
     pytest.skip(unscanned)
 
 
+def _a_control_word_from(paths: Sequence[Path], terms: Sequence[str]) -> str | None:
+    """A word the consumer's own tracked tree carries, to plant in the scan.
+
+    The check's own negative control, and the one thing it could not otherwise
+    have: the shipped file lives in an installed package that appears in no
+    consumer's ``git ls-files``, so a term planted in *this* source proves only
+    that this source was read.  A word taken out of the tree under test cannot
+    come back from a walk that stopped reading that tree.
+
+    Chosen to sit well inside the matcher's rules rather than on their edges
+    (:data:`_A_WHOLE_WORD`), and never a word ending in ``s``: a term in the
+    plural is compiled from its stem, so the string the scan looks for would
+    stop being the string read here.  A word that itself carries a blocklisted
+    term is passed over, so a real hit can never be mistaken for the control.
+
+    ``None`` when no tracked file could be read at all -- which is the state
+    this control exists to tell apart from a clean tree.
+    """
+    for path in paths:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        for match in _A_WHOLE_WORD.finditer(text):
+            word = match.group()
+            if word.lower().endswith("s") or find_violations(word, terms):
+                continue
+            return word
+    return None
+
+
 def test_no_blocklisted_terms_in_the_tracked_tree(pytestconfig):
     """Enforcement: with the real (git-ignored) blocklist present, no tracked
     file may contain a banned term — reintroducing one fails the suite.
@@ -76,13 +122,25 @@ def test_no_blocklisted_terms_in_the_tracked_tree(pytestconfig):
         ["git", "-C", str(repo), "ls-files", "-z"],
         capture_output=True, text=True, check=True,
     ).stdout
-    tracked = [rel for rel in listed.split("\0") if rel]
+    tracked = [repo / rel for rel in listed.split("\0") if rel]
     # A walk that read nothing reports "passed" in the same words as a walk that
     # read the tree, and only one of them means anything. git having succeeded is
     # not enough: an empty list is the shape a scan of nothing arrives in.
     assert tracked, "the tracked-tree walk saw no files at all"
-    violations = scan_files((repo / rel for rel in tracked), terms, root=repo)
+    control = _a_control_word_from(tracked, terms)
+    assert control is not None, (
+        f"the tracked-tree walk read no text at all: git named {len(tracked)} "
+        f"files under {repo} and none of them could be read"
+    )
+    violations = scan_files(tracked, [*terms, control], root=repo)
+    # The control goes through the same scan as the real terms, so what is
+    # proved is the scan that reported, not a second one run beside it.
+    assert any(v.term == control for v in violations), (
+        f"the scan came back without the control word carried out of {repo}, "
+        "so it did not read the tree it is reporting on"
+    )
     # Print only the redacted excerpt, never the matched term itself.
-    assert not violations, "blocklisted terms in tracked files:\n" + "\n".join(
-        f"  {v.path}:{v.line}  {v.excerpt}" for v in violations[:20]
+    real = [v for v in violations if v.term != control]
+    assert not real, "blocklisted terms in tracked files:\n" + "\n".join(
+        f"  {v.path}:{v.line}  {v.excerpt}" for v in real[:20]
     )
