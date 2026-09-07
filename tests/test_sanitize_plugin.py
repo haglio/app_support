@@ -16,7 +16,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from app_support.sanitize import blocklist_path, pytest_plugin
+from app_support.sanitize import blocklist_path, pytest_plugin, test_tracked_tree
 
 APP_SUPPORT = Path(__file__).resolve().parents[1]
 TERM = "plantedterm"
@@ -87,6 +87,59 @@ class TestWhichRunsAreEnforced:
         pytest_plugin.pytest_configure(config)
 
         assert len(config.args) == 2, config.args
+
+
+class TestTheControlWordTheCheckCarries:
+    """Which word is taken out of the consumer's tree, and which are passed over.
+
+    The end-to-end cases prove a tree that cannot be read is refused; these
+    prove the word chosen out of one that can is a word the scan will find.
+    """
+
+    def _file(self, tmp_path: Path, text: str) -> Path:
+        path = tmp_path / "notes.md"
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    def test_the_first_whole_word_of_four_letters_is_taken(self, tmp_path: Path):
+        path = self._file(tmp_path, "a bc def ordinary prose here")
+
+        assert test_tracked_tree._a_control_word_from([path], []) == "ordinary"
+
+    def test_a_word_inside_a_longer_one_is_not_taken(self, tmp_path: Path):
+        """`_term_pattern` puts a word boundary around a term, so a control
+        taken from inside a longer word would be refused by the rule it is
+        there to prove."""
+        path = self._file(tmp_path, "unremarkable_compound plain")
+
+        assert test_tracked_tree._a_control_word_from([path], []) == "plain"
+
+    def test_a_word_in_the_plural_is_passed_over(self, tmp_path: Path):
+        """A term ending in a plural is compiled from its stem, so the string
+        the scan looks for stops being the string read here."""
+        path = self._file(tmp_path, "notes belong here")
+
+        assert test_tracked_tree._a_control_word_from([path], []) == "belong"
+
+    def test_a_word_carrying_a_blocked_term_is_passed_over(self, tmp_path: Path):
+        """Otherwise a real hit and the control arrive under one name, and the
+        real one is filtered out as the control."""
+        path = self._file(tmp_path, f"{TERM} and something ordinary")
+
+        assert test_tracked_tree._a_control_word_from([path], [TERM]) == "something"
+
+    def test_a_file_that_cannot_be_read_is_passed_over(self, tmp_path: Path):
+        gone = tmp_path / "gone.md"
+        readable = self._file(tmp_path, "ordinary prose")
+
+        assert test_tracked_tree._a_control_word_from([gone, readable], []) == "ordinary"
+
+    def test_a_tree_with_nothing_readable_in_it_yields_no_control(self, tmp_path: Path):
+        binary = tmp_path / "mark.ico"
+        binary.write_bytes(bytes(range(256)))
+
+        assert test_tracked_tree._a_control_word_from(
+            [tmp_path / "gone.md", binary], []) is None
 
 
 class TestTheGuardPlugin:
@@ -224,6 +277,35 @@ class TestTheGuardPlugin:
         done = self._pytest(repo)
 
         assert done.returncode != 0, done.stdout
+
+    def test_a_walk_that_could_read_none_of_the_tree_is_refused_not_reported_clean(
+        self, tmp_path: Path,
+    ):
+        """git naming files is not the same as the scan having read any of them.
+        Every way of losing the tree ends here -- a root resolved one directory
+        off, a sparse or partial checkout, names that no longer exist -- and
+        each one reads, to the run, exactly like a repository with nothing to
+        find. The check carries a control word out of the tree to tell the two
+        apart.
+        """
+        repo = tmp_path / "family" / "gone"
+        repo.mkdir(parents=True)
+        _arm(repo, f"{TERM}\n")
+        # Untracked, so `git ls-files` never names it and pytest still finds it.
+        (repo / "pyproject.toml").write_text(PYPROJECT, encoding="utf-8")
+        (repo / "notes.md").write_text(
+            f"this has {TERM} in it\n", encoding="utf-8")
+        _git(repo, "init", "-b", "main")
+        _git(repo, "config", "user.email", "guard@example.test")
+        _git(repo, "config", "user.name", "Guard Test")
+        _git(repo, "add", "notes.md")
+        _git(repo, "commit", "-m", "seed", "--no-verify")
+        (repo / "notes.md").unlink()
+
+        done = self._pytest(repo)
+
+        assert done.returncode != 0, done.stdout
+        assert "read no text at all" in done.stdout
 
     def test_a_directory_run_is_still_a_run_of_the_whole_tree(self, tmp_path: Path):
         """`pytest tests/` is the command this family's own instructions give,
