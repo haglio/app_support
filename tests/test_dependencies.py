@@ -8,6 +8,7 @@ import pytest
 
 from app_support.dependencies import (
     assert_every_dependency_is_bounded,
+    assert_every_dependency_is_imported,
     assert_every_import_is_declared,
     assert_every_sibling_is_declared,
     assert_the_declared_floor_is_the_one_the_gate_runs,
@@ -16,6 +17,7 @@ from app_support.dependencies import (
     unbounded_requirements,
     undeclared_imports,
     undeclared_siblings,
+    unimported_dependencies,
 )
 
 
@@ -105,6 +107,54 @@ class TestUndeclaredImports:
 
         with pytest.raises(AssertionError, match="nowhere"):
             assert_every_import_is_declared(root, [root / "someapp"], root / "pyproject.toml")
+
+
+class TestUnimportedDependencies:
+    def test_a_dependency_something_imports_is_not_reported(self, tmp_path: Path):
+        root = _repo(tmp_path, source="import examplelib\nimport other_thing\n")
+
+        assert unimported_dependencies(root, [root / "someapp"], root / "pyproject.toml") == []
+
+    def test_a_dependency_nothing_imports_is_reported(self, tmp_path: Path):
+        root = _repo(tmp_path, source="import examplelib\n")
+
+        assert unimported_dependencies(root, [root / "someapp"], root / "pyproject.toml") == [
+            "Other_Thing"]
+
+    def test_an_import_name_that_differs_from_the_distribution_is_matched(self, tmp_path: Path):
+        root = _repo(tmp_path, source="import cv2\n", dependencies='["opencv-python>=4.8,<5"]')
+
+        assert unimported_dependencies(root, [root / "someapp"], root / "pyproject.toml") == []
+
+    def test_an_optional_import_counts_as_an_import(self, tmp_path: Path):
+        # The other direction may ignore a `try`, because an import inside one
+        # is optional by construction. This direction may not: the package is
+        # still fetched by every install, and something still reaches for it.
+        root = _repo(tmp_path, source="try:\n    import examplelib\nexcept ImportError:\n    pass\n",
+                     dependencies='["examplelib>=1,<2"]')
+
+        assert unimported_dependencies(root, [root / "someapp"], root / "pyproject.toml") == []
+
+    def test_an_extra_is_not_read(self, tmp_path: Path):
+        # A dev extra's test runner is a dependency nothing imports on purpose.
+        root = _repo(tmp_path, source="import examplelib\nimport other_thing\n")
+        (root / "pyproject.toml").write_text(
+            '[project]\nname = "someapp"\ndependencies = ["examplelib"]\n'
+            '[project.optional-dependencies]\ndev = ["testrunner"]\n', encoding="utf-8")
+
+        assert unimported_dependencies(root, [root / "someapp"], root / "pyproject.toml") == []
+
+    def test_a_name_the_repo_allows_is_left_alone(self, tmp_path: Path):
+        root = _repo(tmp_path, source="import examplelib\n")
+
+        assert unimported_dependencies(root, [root / "someapp"], root / "pyproject.toml",
+                                       allowing=("Other_Thing",)) == []
+
+    def test_the_assertion_names_every_one(self, tmp_path: Path):
+        root = _repo(tmp_path, source="import examplelib\n")
+
+        with pytest.raises(AssertionError, match="Other_Thing"):
+            assert_every_dependency_is_imported(root, [root / "someapp"], root / "pyproject.toml")
 
 
 class TestTheDeclaredPythonFloor:
