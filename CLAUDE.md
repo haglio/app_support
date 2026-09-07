@@ -9,11 +9,16 @@ per rule. If editing this file, remove or consolidate — never just append.
 ## Running tests
 
 This repo has no venv of its own. Use any consumer's — all have this package
-installed editable:
+installed editable — and point `PYTHONPATH` at the checkout under test:
 
 ```bash
-"C:/path/to/fun_time/.venv/Scripts/python.exe" -m pytest tests/
+PYTHONPATH="<checkout>" "C:/path/to/fun_time/.venv/Scripts/python.exe" -m pytest "<checkout>/tests"
 ```
+
+Without it a worktree's suite imports `app_support` from the **primary**
+checkout, because that is where every consumer's editable install points — so
+it goes green about code the branch never ran, and only a module the primary
+lacks entirely fails loudly. `tests/conftest.py` refuses such a run.
 
 ## Installing
 

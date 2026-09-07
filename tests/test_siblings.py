@@ -1,14 +1,17 @@
 """Where the other checkouts are: the walk that finds a sibling from a clone and
-from a worktree alike, the sys.path rule, and the overlay's project roots.
+from a worktree alike, the sys.path rule, the overlay's project roots, and the
+refusal of a suite that imported its package from a different checkout.
 Every checkout here is a fabricated tree under tmp_path."""
 from __future__ import annotations
 
 import sys
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
 from app_support.siblings import (
+    assert_imported_from_checkout,
     ensure_sibling_importable,
     project_dir,
     project_roots,
@@ -107,3 +110,40 @@ class TestProjectDir:
 
     def test_a_sibling_nobody_has_is_a_path_under_the_first_root_not_a_crash(self, tmp_path: Path):
         assert project_dir("someapp", (tmp_path / "new", tmp_path / "old")) == tmp_path / "new" / "someapp"
+
+
+def _imported(name: str, file: Path | None) -> ModuleType:
+    """A module object standing in for one already imported; ``None`` is what a
+    namespace package reports for its file."""
+    module = ModuleType(name)
+    module.__file__ = None if file is None else str(file)
+    return module
+
+
+class TestTheCheckoutUnderTest:
+    def test_refuses_a_package_imported_from_another_checkout(self, tmp_path: Path):
+        # A worktree's suite that resolves the package from the primary is green
+        # about code the branch never changed.
+        family = _family(tmp_path)
+        primary = family / "widgetlib" / "widgetlib" / "__init__.py"
+        worktree = family / "widgetlib" / ".claude" / "worktrees" / "feature"
+
+        with pytest.raises(RuntimeError, match="PYTHONPATH"):
+            assert_imported_from_checkout(_imported("widgetlib", primary), checkout=worktree)
+
+    def test_accepts_the_package_that_lives_in_this_checkout(self, tmp_path: Path):
+        family = _family(tmp_path)
+        checkout = family / "widgetlib"
+
+        assert_imported_from_checkout(
+            _imported("widgetlib", checkout / "widgetlib" / "__init__.py"), checkout=checkout)
+
+    def test_refuses_a_namespace_package_which_is_no_checkout_at_all(self, tmp_path: Path):
+        # The checkout directory shares the package's name, so with the family's
+        # parent on the path the name resolves to an empty namespace portion and
+        # every submodule under it comes from somewhere else.
+        family = _family(tmp_path)
+
+        with pytest.raises(RuntimeError, match="PYTHONPATH"):
+            assert_imported_from_checkout(_imported("widgetlib", None),
+                                          checkout=family / "widgetlib")
