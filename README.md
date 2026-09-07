@@ -60,6 +60,12 @@ Two more things every repo in the family needs, and used to keep its own copy of
   that keeps a revival from arguing with a quit the user meant. The marker's path
   is spelled there once because its writer and its reader are different
   applications with no import between them.
+- **`provenance`** — what made a file, in seven keys an app writes beside its
+  own output: which app, at which commit, with which tree state, under which
+  recipe at which version of it, and when. The checkout is read once per
+  process, and a fact nobody knows is an explicit `None` rather than a missing
+  key, so an artifact found years later can still say what would have to be
+  re-run to remake it.
 
 Standard library only, on purpose: this is installed into every app's venv, so a
 dependency here becomes a dependency everywhere.
