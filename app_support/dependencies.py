@@ -193,8 +193,8 @@ def unimported_dependencies(
     names = {**FAMILY_IMPORT_NAMES, **(import_names or {})}
     spellings: dict[str, set[str]] = {}
     for imported, distribution in names.items():
-        spellings.setdefault(_normalized(distribution), set()).add(imported)
-    reached = set(_imported_names(root, packages, optional=True))
+        spellings.setdefault(_normalized(distribution), set()).add(_normalized(imported))
+    reached = {_normalized(name) for name in _imported_names(root, packages, optional=True)}
     exempt = {_normalized(name) for name in allowing}
     with Path(pyproject).open("rb") as handle:
         declared = tomllib.load(handle).get("project", {}).get("dependencies", [])
@@ -203,7 +203,7 @@ def unimported_dependencies(
         distribution = _normalized(_DIST_NAME.match(requirement).group(1))
         if distribution in exempt:
             continue
-        if not (spellings.get(distribution, {distribution.replace("-", "_")}) & reached):
+        if not (spellings.get(distribution, {distribution}) & reached):
             unimported.append(requirement)
     return unimported
 

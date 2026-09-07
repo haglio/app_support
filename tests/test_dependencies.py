@@ -128,6 +128,16 @@ class TestUnimportedDependencies:
 
         assert unimported_dependencies(root, [root / "someapp"], root / "pyproject.toml") == []
 
+    def test_a_distribution_spelled_in_another_case_is_the_same_package(self, tmp_path: Path):
+        # `PyQt6` is imported `PyQt6`, declared `PyQt6` in six repos, and pip
+        # treats `pyqt6` as the same name -- so a comparison that normalized one
+        # side and not the other called the family's most-used package unused,
+        # in every repo that has a window.
+        root = _repo(tmp_path, source="from PyQt6.QtWidgets import QWidget\n",
+                     dependencies='["pyqt6>=6,<7"]')
+
+        assert unimported_dependencies(root, [root / "someapp"], root / "pyproject.toml") == []
+
     def test_an_optional_import_counts_as_an_import(self, tmp_path: Path):
         # The other direction may ignore a `try`, because an import inside one
         # is optional by construction. This direction may not: the package is
