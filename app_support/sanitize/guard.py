@@ -23,6 +23,7 @@ import subprocess
 import sys
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
+from functools import cache
 from pathlib import Path
 
 _MAX_EXCERPT = 160
@@ -75,8 +76,13 @@ class Violation:
     excerpt: str
 
 
+@cache
 def _term_pattern(term: str) -> re.Pattern[str]:
     """Case-insensitive matcher for *term*, in the forms text actually uses.
+
+    Memoized on the term: the scan rebuilds a whole list twice per file (once
+    for the name, once for the contents) and a matcher depends on nothing but
+    its term, so one build serves every file. The cache is bounded by the list.
 
     A term whose first/last character is a word character gets a word-boundary
     guard on that side, so ``cat`` does not fire inside ``concatenate`` while a
