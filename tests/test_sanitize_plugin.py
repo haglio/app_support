@@ -208,6 +208,23 @@ class TestTheGuardPlugin:
         assert done.returncode != 0, done.stdout
         assert "no files at all" in done.stdout
 
+    def test_a_tracked_name_with_a_space_in_it_is_one_file_and_is_scanned(
+        self, tmp_path: Path,
+    ):
+        """The tracked list was split on whitespace, so such a name became two
+        paths, neither of which exists -- and an unreadable path is skipped in
+        silence, which made the file invisible to the scan while the run stayed
+        green."""
+        repo = self._repo(tmp_path, blocklist=f"{TERM}\n", tracked="perfectly clean\n")
+        (repo / "release notes.md").write_text(
+            f"this has {TERM} in it\n", encoding="utf-8")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "notes", "--no-verify")
+
+        done = self._pytest(repo)
+
+        assert done.returncode != 0, done.stdout
+
     def test_a_directory_run_is_still_a_run_of_the_whole_tree(self, tmp_path: Path):
         """`pytest tests/` is the command this family's own instructions give,
         and it has narrowed nothing -- so it enforces, exactly as a bare run

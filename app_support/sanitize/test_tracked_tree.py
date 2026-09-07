@@ -67,10 +67,16 @@ def test_no_blocklisted_terms_in_the_tracked_tree(pytestconfig):
     terms = load_blocklist(blocklist) if blocklist.exists() else []
     if not terms:
         _say_the_tree_was_not_scanned(blocklist)
-    tracked = subprocess.run(
-        ["git", "-C", str(repo), "ls-files"],
+    # NUL-separated, and never split on whitespace: a tracked name carrying a
+    # space became two paths that way, neither of which exists -- and a path
+    # that cannot be read is skipped in silence, so the file was invisible to
+    # the scan while the run stayed green.  `-z` also drops git's own quoting
+    # of such a name, which would have been the next way to miss it.
+    listed = subprocess.run(
+        ["git", "-C", str(repo), "ls-files", "-z"],
         capture_output=True, text=True, check=True,
-    ).stdout.split()
+    ).stdout
+    tracked = [rel for rel in listed.split("\0") if rel]
     # A walk that read nothing reports "passed" in the same words as a walk that
     # read the tree, and only one of them means anything. git having succeeded is
     # not enough: an empty list is the shape a scan of nothing arrives in.
