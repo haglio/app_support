@@ -47,7 +47,9 @@ Two more things every repo in the family needs, and used to keep its own copy of
   against its reader. **`json_store`** is the same idea for a JSON document
   several processes edit rather than publish: a lock file around the read, the
   change and the write, so the second writer cannot erase the first one's field.
-  See below.
+  See below. **`ports`** does for the family's port numbers what `state_files`
+  does for its file names: one list, each saying who listens and who sends, in
+  place of a compiled-in default in five repos' configs.
 - **`win32`** — what a windowed process says about itself to Windows: its
   taskbar identity, the same identity stamped onto (and read back off) a
   shortcut through COM, the named mutex that answers whether it may run, and
