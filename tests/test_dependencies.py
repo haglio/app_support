@@ -9,11 +9,13 @@ import pytest
 from app_support.dependencies import (
     assert_every_dependency_is_bounded,
     assert_every_import_is_declared,
+    assert_every_sibling_is_declared,
     assert_the_declared_floor_is_the_one_the_gate_runs,
     declared_dependencies,
     third_party_imports,
     unbounded_requirements,
     undeclared_imports,
+    undeclared_siblings,
 )
 
 
@@ -173,6 +175,52 @@ class TestUpperBounds:
             assert_every_dependency_is_bounded(pyproject)
 
 
+class TestDeclaredSiblings:
+    def _repo(self, tmp_path: Path, *, source: str, siblings: str = "", addopts: str = "") -> Path:
+        package = tmp_path / "someapp"
+        package.mkdir()
+        (package / "app.py").write_text(source, encoding="utf-8")
+        pytest_table = f'[tool.pytest.ini_options]\naddopts = "{addopts}"\n' if addopts else ""
+        (tmp_path / "pyproject.toml").write_text(
+            f'[project]\nname = "someapp"\n[tool.haglio]\nsiblings = [{siblings}]\n{pytest_table}',
+            encoding="utf-8")
+        return tmp_path
+
+    def test_a_sibling_the_tree_imports_and_the_pyproject_names_is_settled(self, tmp_path: Path):
+        root = self._repo(tmp_path, source="from shared_ui.colors import INK\n",
+                          siblings='"shared_ui"')
+
+        assert undeclared_siblings(root, [root / "someapp"], root / "pyproject.toml") == []
+
+    def test_an_imported_sibling_no_pyproject_names_is_reported_with_its_files(self, tmp_path: Path):
+        root = self._repo(tmp_path, source="import app_support.cli\n")
+
+        assert undeclared_siblings(root, [root / "someapp"], root / "pyproject.toml") == [
+            "app_support is imported by someapp/app.py and declared nowhere"]
+
+    def test_a_declared_sibling_nothing_imports_is_reported_too(self, tmp_path: Path):
+        # It costs a clone and an install on every run of the gate, and it reads
+        # as a dependency to anyone deciding what may safely change.
+        root = self._repo(tmp_path, source="", siblings='"player_core"')
+
+        assert undeclared_siblings(root, [root / "someapp"], root / "pyproject.toml") == [
+            "player_core is declared and imported nowhere"]
+
+    def test_a_sibling_the_pytest_config_loads_as_a_plugin_counts_as_imported(self, tmp_path: Path):
+        # `-p app_support.sanitize.pytest_plugin` is what makes the guard run;
+        # a repo can need the package without a line of its own importing it.
+        root = self._repo(tmp_path, source="", siblings='"app_support"',
+                          addopts="-p app_support.sanitize.pytest_plugin --timeout=60")
+
+        assert undeclared_siblings(root, [root / "someapp"], root / "pyproject.toml") == []
+
+    def test_the_assertion_names_every_one(self, tmp_path: Path):
+        root = self._repo(tmp_path, source="import shared_ui.fonts\n")
+
+        with pytest.raises(AssertionError, match="shared_ui"):
+            assert_every_sibling_is_declared(root, [root / "someapp"], root / "pyproject.toml")
+
+
 def test_this_repos_declared_floor_is_the_one_its_gate_runs():
     root = Path(__file__).resolve().parent.parent
     assert_the_declared_floor_is_the_one_the_gate_runs(
@@ -182,3 +230,11 @@ def test_this_repos_declared_floor_is_the_one_its_gate_runs():
 def test_this_repos_own_requirements_are_bounded():
     assert_every_dependency_is_bounded(Path(__file__).resolve().parent.parent / "pyproject.toml")
 
+
+
+def test_this_repo_declares_the_siblings_it_imports():
+    """It should never have one: standard library only, and nothing here may
+    reach for the two packages that install beside it."""
+    root = Path(__file__).resolve().parent.parent
+    assert_every_sibling_is_declared(
+        root, [root / "app_support", root / "tests"], root / "pyproject.toml")

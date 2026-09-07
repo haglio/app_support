@@ -1,21 +1,38 @@
-"""Every third-party import a package makes is a dependency its pyproject declares.
+"""What a repo needs is what its pyproject says, in all four of the ways it says it.
 
 A launcher that imports a package nobody declared works on the machine that
 happened to have it and dies on the next one -- and on the merge gate, which
-installs exactly what the pyproject says.  One repo of eleven had this check;
-this is that check, for all of them::
+installs exactly what the pyproject says.  The same is true of a version nobody
+bounded, a sibling checkout nobody recorded, and a Python floor no run proves.
+Four gates, adopted a line each::
 
-    from app_support.dependencies import assert_every_import_is_declared
+    from app_support.dependencies import (
+        assert_every_dependency_is_bounded, assert_every_import_is_declared,
+        assert_every_sibling_is_declared,
+        assert_the_declared_floor_is_the_one_the_gate_runs)
 
     def test_every_third_party_import_is_declared():
         assert_every_import_is_declared(
             ROOT, [ROOT / "the_package"], ROOT / "pyproject.toml",
             local=("the_package",))
 
+    def test_every_requirement_is_bounded():
+        assert_every_dependency_is_bounded(ROOT / "pyproject.toml")
+
+    def test_every_sibling_is_declared():
+        assert_every_sibling_is_declared(
+            ROOT, [ROOT / "the_package", ROOT / "tests"], ROOT / "pyproject.toml")
+
+    def test_the_declared_floor_is_the_one_the_gate_runs():
+        assert_the_declared_floor_is_the_one_the_gate_runs(
+            ROOT / "pyproject.toml", ROOT / ".github" / "workflows" / "merge-gate.yml")
+
 An import inside a ``try`` is optional by construction and not counted; the
-standard library and the packages named *local* -- the repo's own, and the
-siblings installed editable from beside it, which a pyproject deliberately does
-not declare -- are not either.  Standard library only.
+standard library and the packages named *local* -- the repo's own -- are not
+either.  The three siblings are not third-party, because none is published and a
+pyproject that named one would send pip to PyPI; they are declared instead in
+``[tool.haglio] siblings``, which is what the third gate reads.  Standard
+library only.
 """
 from __future__ import annotations
 
@@ -102,13 +119,12 @@ def _sources(package: Path) -> list[Path]:
     return [package] if package.is_file() else sorted(package.rglob("*.py"))
 
 
-def third_party_imports(root: Path, packages: Iterable[Path], *, local: Iterable[str] = ()) -> dict[str, list[str]]:
-    """Every third-party name the *packages* import unconditionally, with the files that do.
+def _imported_names(root: Path, packages: Iterable[Path]) -> dict[str, list[str]]:
+    """Every top-level name the *packages* import unconditionally, with the files that do.
 
     A package is a directory, or a single root-level module -- an entry point,
     a config -- named as a file; a repo that keeps modules at its root has both.
     """
-    skip = set(sys.stdlib_module_names) | set(local) | set(FAMILY_SIBLINGS)
     found: dict[str, set[str]] = {}
     for package in packages:
         for path in _sources(package):
@@ -118,9 +134,16 @@ def third_party_imports(root: Path, packages: Iterable[Path], *, local: Iterable
                 continue
             imports = _UnconditionalImports()
             imports.visit(tree)
-            for name in imports.names - skip:
+            for name in imports.names:
                 found.setdefault(name, set()).add(path.relative_to(root).as_posix())
     return {name: sorted(files) for name, files in sorted(found.items())}
+
+
+def third_party_imports(root: Path, packages: Iterable[Path], *, local: Iterable[str] = ()) -> dict[str, list[str]]:
+    """Every third-party name the *packages* import, with the files that do."""
+    skip = set(sys.stdlib_module_names) | set(local) | set(FAMILY_SIBLINGS)
+    return {name: files for name, files in _imported_names(root, packages).items()
+            if name not in skip}
 
 
 def undeclared_imports(
@@ -144,6 +167,70 @@ def assert_every_import_is_declared(
     missing = undeclared_imports(root, packages, pyproject, local=local, import_names=import_names)
     assert not missing, (
         "Third-party imports no [project.dependencies] entry provides:\n  " + "\n  ".join(missing))
+
+
+_PLUGIN = re.compile(r"-p\s+([A-Za-z_][A-Za-z0-9_]*)")
+
+
+def declared_siblings(pyproject: Path) -> set[str]:
+    """The family checkouts a repo says it is installed beside.
+
+    ``[project.dependencies]`` cannot hold them -- none of the three is
+    published, so pip would go looking on PyPI -- and for years the record was a
+    comment, which decayed: of the nine consumers, three named a sibling they no
+    longer import and four named none at all while importing two.
+    """
+    with Path(pyproject).open("rb") as handle:
+        table = tomllib.load(handle).get("tool", {}).get("haglio", {})
+    return set(table.get("siblings", ()))
+
+
+def sibling_imports(root: Path, packages: Iterable[Path], pyproject: Path) -> dict[str, list[str]]:
+    """The siblings the *packages* need, with what needs them.
+
+    A pytest plugin the config loads by name counts: ``-p
+    app_support.sanitize.pytest_plugin`` is what arms the content guard, and a
+    repo can need the package without a line of its own importing it.  A library
+    importing itself does not: its own name is read off the project.
+    """
+    with Path(pyproject).open("rb") as handle:
+        project = tomllib.load(handle)
+    itself = _normalized(project.get("project", {}).get("name", ""))
+    wanted = {name for name in FAMILY_SIBLINGS if _normalized(name) != itself}
+    needed = {name: files for name, files in _imported_names(root, packages).items()
+              if name in wanted}
+    addopts = project.get("tool", {}).get("pytest", {}).get("ini_options", {}).get("addopts", "")
+    for name in _PLUGIN.findall(addopts):
+        if name in wanted:
+            needed.setdefault(name, []).append(f"{Path(pyproject).name} (as a pytest plugin)")
+    return {name: sorted(files) for name, files in sorted(needed.items())}
+
+
+def _some_of(files: list[str], *, most: int = 3) -> str:
+    shown = ", ".join(files[:most])
+    return shown if len(files) <= most else f"{shown} and {len(files) - most} more"
+
+
+def undeclared_siblings(root: Path, packages: Iterable[Path], pyproject: Path) -> list[str]:
+    """Where the siblings a repo needs and the siblings it declares disagree, both ways."""
+    needed = sibling_imports(root, packages, pyproject)
+    declared = declared_siblings(pyproject)
+    missing = [f"{name} is imported by {_some_of(files)} and declared nowhere"
+               for name, files in needed.items() if name not in declared]
+    return missing + [f"{name} is declared and imported nowhere"
+                      for name in sorted(declared - set(needed))]
+
+
+def assert_every_sibling_is_declared(root: Path, packages: Iterable[Path], pyproject: Path) -> None:
+    """The siblings a repo is installed beside are the ones it says, exactly.
+
+    Both directions: an undeclared one leaves the CI workflow as the only record
+    of what a checkout needs, and a declared one nothing imports costs a clone
+    and an install on every run while reading as a dependency to anyone deciding
+    what may safely change.
+    """
+    wrong = undeclared_siblings(root, packages, pyproject)
+    assert not wrong, "[tool.haglio] siblings is not what the tree needs:\n  " + "\n  ".join(wrong)
 
 
 _CEILING = re.compile(r"(<|~=|==)")
