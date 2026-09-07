@@ -20,6 +20,9 @@ two answers:
     is :func:`project_roots` and :func:`project_dir`, for the apps that reach a
     sibling's *files* rather than its package.
 
+The same question asked about *this* checkout is
+:func:`assert_imported_from_checkout`, which a suite calls on itself.
+
 Standard library only.
 """
 from __future__ import annotations
@@ -28,6 +31,7 @@ import importlib.util
 import sys
 from collections.abc import Iterable, Sequence
 from pathlib import Path
+from types import ModuleType
 
 
 def sibling_checkout(name: str, *, near: Path) -> Path:
@@ -100,3 +104,14 @@ def project_dir(name: str, roots: Sequence[Path]) -> Path:
         if candidate.is_dir():
             return candidate
     return Path(roots[0]) / name
+
+
+def assert_imported_from_checkout(package: ModuleType, *, checkout: Path) -> None:
+    """Refuse a suite that imported *package* from somewhere other than *checkout*."""
+    origin = getattr(package, "__file__", None)
+    if origin is not None and Path(origin).resolve().is_relative_to(Path(checkout).resolve()):
+        return
+    raise RuntimeError(
+        f"{package.__name__} was imported from {origin}, not from {checkout}. "
+        f"Set PYTHONPATH={checkout} so the suite tests the checkout it is in."
+    )

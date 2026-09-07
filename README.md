@@ -35,8 +35,9 @@ Two more things every repo in the family needs, and used to keep its own copy of
   **`config_reader`** — the JSON config loader's helpers, each refusal naming the
   dotted key and the file. **`siblings`** — where the other checkouts are, asked
   one way: the walk that finds a sibling from a clone and a worktree alike, the
-  sys.path rule that never shadows the app's own packages, and the overlay's
-  project roots. **`dependencies`** — the gate that every third-party import a
+  sys.path rule that never shadows the app's own packages, the overlay's
+  project roots, and the check that a suite is testing the checkout it sits in
+  rather than the primary a consumer's editable install points at. **`dependencies`** — the gate that every third-party import a
   package makes is a dependency its pyproject declares.
 - **`file_channel`** — the files one process steers another through and the
   files it publishes back: a command queue appended to and claimed whole, a flag

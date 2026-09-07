@@ -16,6 +16,23 @@ import threading
 
 import pytest
 
+import app_support
+from app_support.siblings import assert_imported_from_checkout
+
+
+def pytest_configure(config):
+    """Refuse a run that is testing a different checkout than the one it is in.
+
+    This repo's directory is named for the package inside it, and every consumer
+    installs the package editable from the primary checkout -- so from a
+    worktree, ``python -m pytest`` resolves ``app_support`` to the primary and
+    the suite goes green about code the branch never touched.  It is silent:
+    only a module the primary does not have at all fails, and an edit to one it
+    does have passes while never being run.  ``PYTHONPATH=<this checkout>``
+    is the fix, and the message says so.
+    """
+    assert_imported_from_checkout(app_support, checkout=config.rootpath)
+
 
 def pytest_collection_modifyitems(items):
     """Collect in a different order when asked, so a test that leans on the ones
