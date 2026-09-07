@@ -44,7 +44,10 @@ Two more things every repo in the family needs, and used to keep its own copy of
   age, a `key=value` record, and the whole-or-nothing publish under all of them.
   **`state_files`** spells the names of the files two repos meet at, once, with
   who writes each, who reads it and what it holds; its tests run each writer
-  against its reader.
+  against its reader. **`json_store`** is the same idea for a JSON document
+  several processes edit rather than publish: a lock file around the read, the
+  change and the write, so the second writer cannot erase the first one's field.
+  See below.
 - **`win32`** — what a windowed process says about itself to Windows: its
   taskbar identity, the same identity stamped onto (and read back off) a
   shortcut through COM, the named mutex that answers whether it may run, and
@@ -233,6 +236,50 @@ trees ruff scans -- the root's own files are always in, `.` never is, since a
 gate checks out sibling repos beside or inside this one -- refuses a tree it
 scanned nothing under, and treats a missing ruff, another version, or a refused
 configuration as a scan that did not happen.
+
+## The shared-document lock
+
+`app_support.json_store` is for the one JSON document several *applications*
+edit — the metadata sidecar tree. `file_channel.publish_whole` already makes a
+write whole, which is enough where one process owns a file and the others only
+read it. It is not enough here: three writers each read the document, change one
+field and write it back, so the one that writes second hands back a document it
+read before the first one's edit, and the first one's field is gone. Nothing
+reports it — both writes succeed.
+
+```python
+from app_support.json_store import locked_update, read_json
+
+
+def strike_the_act(sidecar):
+    struck = ""
+
+    def edit(payload):
+        nonlocal struck
+        video = payload.get("video")
+        if not isinstance(video, dict):
+            return None          # nothing to change; the file is not rewritten
+        struck = str(video.pop("action", "") or "")
+        return payload if struck else None
+
+    locked_update(sidecar, edit)
+    return struck
+```
+
+`locked_update` holds a `<document>.lock` beside the file for the read, the
+change and the write. The change returns the document to write, or `None` to
+write nothing at all. It raises `TimeoutError` rather than skipping the write
+when the lock stays held, and it raises rather than starting from an empty
+document when the file is there but cannot be read as a JSON object — this
+document is somebody else's record too, and reading it as empty would replace
+theirs with ours.
+
+A lock older than `STALE_S` is taken over: its holder died mid-update, since a
+live one's lock is milliseconds old when the next writer arrives.
+
+**Who this is for.** evolver's `util/sidecar.py`, fun_time's
+`media_metadata.reject_action`, and genau's `nau/clip_match` recorder — the
+three writers of that tree. Each is atomic today and none of them locks.
 
 ## Tests
 
