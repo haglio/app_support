@@ -18,7 +18,7 @@ from app_support.sanitize import (
     load_blocklist,
     scan_files,
 )
-from app_support.sanitize.guard import Violation
+from app_support.sanitize.guard import Violation, _term_pattern
 
 
 class TestViolation:
@@ -163,6 +163,22 @@ class TestScanFiles:
     def test_skips_undecodable_binary_files(self, tmp_path: Path):
         (tmp_path / "img.bin").write_bytes(b"\x00\xff\xfe badterm \x00")
         assert scan_files([tmp_path / "img.bin"], ["badterm"], root=tmp_path) == []
+
+    def test_a_terms_matcher_is_built_once_however_many_files_are_scanned(
+            self, tmp_path: Path):
+        """Compiling a list of this size is a twentieth of a second, and the
+        scan rebuilt the whole list twice per file -- once for the name, once
+        for the contents -- so the family's largest tracked tree paid it 780
+        times and spent 43 s of a 191 s check re-answering the same question.
+        That check runs under a 240 s ceiling, so the waste was the difference
+        between reliably green and randomly timed out."""
+        for name in ("a.txt", "b.txt", "c.txt"):
+            (tmp_path / name).write_text("clean", encoding="utf-8")
+        built = _term_pattern.cache_info().misses
+
+        scan_files(sorted(tmp_path.iterdir()), ["badterm", "other term"], root=tmp_path)
+
+        assert _term_pattern.cache_info().misses - built <= 2
 
     def test_flags_a_file_named_after_a_term(self, tmp_path: Path):
         """The path was passed through as a label and never scanned, so a file
