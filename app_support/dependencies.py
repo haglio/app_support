@@ -27,6 +27,9 @@ Four gates, adopted a line each::
         assert_the_declared_floor_is_the_one_the_gate_runs(
             ROOT / "pyproject.toml", ROOT / ".github" / "workflows" / "merge-gate.yml")
 
+``assert_every_dependency_is_imported`` is the first gate's converse, for the
+dependency nothing reaches for that every install fetches anyway.
+
 An import inside a ``try`` is optional by construction and not counted; the
 standard library and the packages named *local* -- the repo's own -- are not
 either.  The three siblings are not third-party, because none is published and a
@@ -96,14 +99,16 @@ def declared_dependencies(pyproject: Path) -> set[str]:
     return found
 
 
-class _UnconditionalImports(ast.NodeVisitor):
-    """The top-level names imported outside any ``try``."""
+class _TopLevelImports(ast.NodeVisitor):
+    """The top-level names a module imports, optionally skipping those in a ``try``."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, optional: bool = False) -> None:
         self.names: set[str] = set()
+        self._optional = optional
 
     def visit_Try(self, node: ast.Try) -> None:
-        return  # optional by construction
+        if self._optional:
+            self.generic_visit(node)
 
     def visit_Import(self, node: ast.Import) -> None:
         self.names.update(alias.name.split(".")[0] for alias in node.names)
@@ -119,11 +124,13 @@ def _sources(package: Path) -> list[Path]:
     return [package] if package.is_file() else sorted(package.rglob("*.py"))
 
 
-def _imported_names(root: Path, packages: Iterable[Path]) -> dict[str, list[str]]:
-    """Every top-level name the *packages* import unconditionally, with the files that do.
+def _imported_names(root: Path, packages: Iterable[Path], *,
+                    optional: bool = False) -> dict[str, list[str]]:
+    """Every top-level name the *packages* import, with the files that do.
 
     A package is a directory, or a single root-level module -- an entry point,
     a config -- named as a file; a repo that keeps modules at its root has both.
+    An import inside a ``try`` is counted only when *optional* is asked for.
     """
     found: dict[str, set[str]] = {}
     for package in packages:
@@ -132,7 +139,7 @@ def _imported_names(root: Path, packages: Iterable[Path]) -> dict[str, list[str]
                 tree = ast.parse(path.read_text(encoding="utf-8"))
             except (SyntaxError, UnicodeDecodeError):
                 continue
-            imports = _UnconditionalImports()
+            imports = _TopLevelImports(optional=optional)
             imports.visit(tree)
             for name in imports.names:
                 found.setdefault(name, set()).add(path.relative_to(root).as_posix())
@@ -167,6 +174,48 @@ def assert_every_import_is_declared(
     missing = undeclared_imports(root, packages, pyproject, local=local, import_names=import_names)
     assert not missing, (
         "Third-party imports no [project.dependencies] entry provides:\n  " + "\n  ".join(missing))
+
+
+def unimported_dependencies(
+    root: Path, packages: Iterable[Path], pyproject: Path, *,
+    import_names: Mapping[str, str] | None = None, allowing: Iterable[str] = (),
+) -> list[str]:
+    """Every runtime dependency no module reaches for, fetched by every install anyway.
+
+    The converse of :func:`undeclared_imports`, and the two disagree about a
+    ``try`` on purpose: an import inside one is optional by construction and
+    needs no declaration, but a package something reaches for *is* used, however
+    guarded.  Extras are not read -- a dev extra's test runner is a dependency
+    nothing imports by design.
+    """
+    names = {**FAMILY_IMPORT_NAMES, **(import_names or {})}
+    spellings: dict[str, set[str]] = {}
+    for imported, distribution in names.items():
+        spellings.setdefault(_normalized(distribution), set()).add(imported)
+    reached = set(_imported_names(root, packages, optional=True))
+    exempt = {_normalized(name) for name in allowing}
+    with Path(pyproject).open("rb") as handle:
+        declared = tomllib.load(handle).get("project", {}).get("dependencies", [])
+    unimported = []
+    for requirement in declared:
+        distribution = _normalized(_DIST_NAME.match(requirement).group(1))
+        if distribution in exempt:
+            continue
+        if not (spellings.get(distribution, {distribution.replace("-", "_")}) & reached):
+            unimported.append(requirement)
+    return unimported
+
+
+def assert_every_dependency_is_imported(
+    root: Path, packages: Iterable[Path], pyproject: Path, *,
+    import_names: Mapping[str, str] | None = None, allowing: Iterable[str] = (),
+) -> None:
+    """A dependency nothing imports is fetched by every install and every CI run."""
+    unimported = unimported_dependencies(
+        root, packages, pyproject, import_names=import_names, allowing=allowing)
+    assert not unimported, (
+        "Declared and imported nowhere, so every install fetches it for nothing:\n  "
+        + "\n  ".join(unimported))
 
 
 _PLUGIN = re.compile(r"-p\s+([A-Za-z_][A-Za-z0-9_]*)")
