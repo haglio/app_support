@@ -241,3 +241,30 @@ def test_a_write_that_landed_says_nothing(tmp_path: Path):
     assert write_whole(path, '{"act": "alpha"}\n') is None
 
     assert path.read_text(encoding="utf-8") == '{"act": "alpha"}\n'
+def test_a_write_makes_the_directory_it_writes_into(tmp_path: Path):
+    """A tree of records laid out to match a tree of files grows a folder the
+    first time something is written into it, so every writer would otherwise
+    carry the same guard."""
+    path = tmp_path / "not" / "yet" / "record.json"
+
+    write_whole(path, "{}")
+
+    assert path.is_file()
+
+
+def test_a_write_that_dies_part_way_leaves_the_old_file_whole(tmp_path: Path):
+    """The reason the write goes through a rename at all: these documents are
+    read by other processes while one writes them, so a reader sees the old one
+    or the new one and never half of either -- and never a leftover beside it
+    that reads as a file some component owns."""
+    path = tmp_path / "record.json"
+    path.write_text("the old one", encoding="utf-8")
+
+    with (
+        patch("app_support.file_channel.os.replace", side_effect=OSError("interrupted")),
+        pytest.raises(OSError),
+    ):
+        write_whole(path, "the new one", attempts=1)
+
+    assert path.read_text(encoding="utf-8") == "the old one"
+    assert [entry.name for entry in tmp_path.iterdir()] == ["record.json"]
