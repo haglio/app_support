@@ -111,7 +111,7 @@ class TestNaming:
         # A suffix that is not .exe, so an assumed .exe cannot pass this.
         assert ProcessNamer("Genau").exe_name("python.com", "Genau").endswith(".com")
 
-    @pytest.mark.parametrize("role", ["Audio Companion", "audio-companion", "../evil", "", "Nau2"])
+    @pytest.mark.parametrize("role", ["Audio Companion", "audio-companion", "../evil", "", "MainPlayer2"])
     def test_refuses_a_role_that_is_not_plain_letters(self, role: str):
         # The role becomes a file name beside the interpreter, so anything with
         # a separator in it is a write somewhere nobody asked for.
@@ -120,7 +120,7 @@ class TestNaming:
 
     def test_the_description_leads_with_the_app(self):
         # This string, not the file name, is what the Processes tab displays.
-        assert ProcessNamer("Fun Time").description("Nau") == "Fun Time – Nau"
+        assert ProcessNamer("Fun Time").description("MainPlayer") == "Fun Time – Main Player"
 
     def test_the_description_splits_the_role_back_into_words(self):
         assert ProcessNamer("Fun Time").description("AudioCompanion") == "Fun Time – Audio Companion"
@@ -427,7 +427,7 @@ class TestProcessNamePattern:
         # the user's own apps -- or another of his -- is the worst failure this
         # module can have.
         pattern = ProcessNamer("Fun Time").process_name_pattern
-        for name in ("notepad.exe", "mypythonw.exe", "FunTimeOther.exe", "Genau-Nau.exe"):
+        for name in ("notepad.exe", "mypythonw.exe", "FunTimeOther.exe", "Genau-MainPlayer.exe"):
             assert not re.match(pattern, name), name
 
 
@@ -442,7 +442,7 @@ class TestOwnsExeName:
         # One rule, two answers: a name this namer hands out has to be a name
         # it owns, or a sweep and the launcher disagree about which processes
         # belong to the app.
-        for role in ("Dashboard", "AudioCompanion", "Nau"):
+        for role in ("Dashboard", "AudioCompanion", "MainPlayer"):
             name = self.NAMER.exe_name("pythonw.exe", role)
             assert self.NAMER.owns_exe_name(name), name
 
@@ -454,7 +454,7 @@ class TestOwnsExeName:
             assert not self.NAMER.owns_exe_name(name), name
 
     def test_does_not_claim_a_name_that_merely_starts_the_same(self):
-        for name in ("FunTimeSetup.msi", "FunTimeOther.exe", "Genau-Nau.exe", "notepad.exe"):
+        for name in ("FunTimeSetup.msi", "FunTimeOther.exe", "Genau-MainPlayer.exe", "notepad.exe"):
             assert not self.NAMER.owns_exe_name(name), name
 
 

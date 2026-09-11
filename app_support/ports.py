@@ -21,7 +21,7 @@ cannot collide.
 from __future__ import annotations
 
 TCODE_UDP = 50557
-"""The broker listens; Fun Time, Genau, Nau and Origenerator send.
+"""The broker listens; Fun Time, Genau, the main player and Origenerator send.
 
 The device protocol: position-and-duration lines the broker relays over serial
 to the hardware.  ``player_core.tcode.UdpTCodeSink`` is the socket all four

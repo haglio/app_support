@@ -14,7 +14,7 @@ who reads it and what it holds -- the schema the files never had -- and
 ``tests/test_state_files.py`` runs each one's writer against its reader through
 the :mod:`app_support.file_channel` calls both sides use.
 
-A file one repo alone spells -- the satellites' channels, Nau's, the hosted
+A file one repo alone spells -- the satellites' channels, the main player's, the hosted
 Origenerator's -- stays in that repo's config: one owner already.
 """
 from __future__ import annotations
@@ -55,7 +55,7 @@ GENAU_PAUSED = "genau_paused.txt"
 """Fun Time -> Genau.  ``"1"`` while paused (``read_paused_state``)."""
 
 GENAU_DRIVE = "genau_drive.txt"
-"""Genau -> Nau.  The drive readout, published whole; its lines are
+"""Genau -> the main player.  The drive readout, published whole; its lines are
 ``player_core.drive_readout``'s."""
 
 GENAU_STATUS = "genau_status.txt"

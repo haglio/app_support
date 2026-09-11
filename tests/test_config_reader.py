@@ -55,8 +55,8 @@ class TestRequireSection:
             require_section({"paths": "C:/x"}, "paths", SOURCE)
 
     def test_the_context_says_where_in_the_file(self):
-        with pytest.raises(ValueError, match=r"config\.paths\.nau"):
-            require_section({}, "nau", SOURCE, context="config.paths")
+        with pytest.raises(ValueError, match=r"config\.paths\.main_player"):
+            require_section({}, "main_player", SOURCE, context="config.paths")
 
 
 class TestOptionalSection:

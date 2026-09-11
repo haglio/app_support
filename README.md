@@ -287,7 +287,7 @@ A lock older than `STALE_S` is taken over: its holder died mid-update, since a
 live one's lock is milliseconds old when the next writer arrives.
 
 **Who this is for.** evolver's `util/sidecar.py`, fun_time's
-`media_metadata.reject_action`, and genau's `nau/clip_match` recorder — the
+`media_metadata.reject_action`, and evolver's `tasks/clip_match` recorder — the
 three writers of that tree. Each is atomic today and none of them locks.
 
 ## Tests
