@@ -27,10 +27,15 @@ Always `--config-settings editable_mode=compat`; the README says why, and
 
 ## What belongs here
 
-- **Nothing that knows a domain.** No video, no devices, no app names in a
-  module's reason for existing. If explaining a module requires naming an app,
-  it belongs to that app. Playback sharing is `../player_core`; Qt widgets are
-  `../shared_ui`.
+- **Nothing that knows a domain, with one exception that was decided.** No
+  video, no devices, no app names in a module's reason for existing. If
+  explaining a module requires naming an app, it belongs to that app. Playback
+  sharing is `../player_core`; Qt widgets are `../shared_ui`. The exception is
+  an on-disk format several apps agree on and none owns — the funscript
+  document, the rule pairing a tree of records with the tree it mirrors, the
+  state-file names — which the owner put here rather than in a library only
+  some of them install (audit Q11). A format, not behavior: what the bytes are,
+  never what an app does with them.
 - **Standard library only.** This installs into every app's venv, so a
   dependency here is a dependency everywhere.
 - **Only what a second repo needs.** One caller means it stays with its caller.
