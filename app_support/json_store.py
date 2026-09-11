@@ -9,7 +9,7 @@ edit, and neither could see the other.
 
 A lock file beside the document closes that: the read, the change and the write
 happen with nobody else in the file, and the write itself lands whole
-(:func:`app_support.file_channel.publish_whole`), so a reader that is not
+(:func:`app_support.file_channel.write_whole`), so a reader that is not
 updating still sees the old document or the new one and never half of either.
 """
 from __future__ import annotations
@@ -20,7 +20,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from app_support.file_channel import publish_whole
+from app_support.file_channel import write_whole
 
 LOCK_SUFFIX = ".lock"
 
@@ -114,8 +114,7 @@ def locked_update(
         payload = mutate(read_json(path))
         if payload is None:
             return None
-        if not publish_whole(path, json.dumps(payload, indent=2) + "\n"):
-            raise OSError(f"could not replace {path}")
+        write_whole(path, json.dumps(payload, indent=2) + "\n")
         return payload
     finally:
         os.close(handle)

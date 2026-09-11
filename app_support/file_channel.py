@@ -30,7 +30,12 @@ from pathlib import Path
 
 
 def publish_whole(
-    path: Path, text: str, *, attempts: int = 5, delay_s: float = 0.005,
+    path: Path,
+    text: str,
+    *,
+    newline: str | None = None,
+    attempts: int = 5,
+    delay_s: float = 0.005,
 ) -> bool:
     """Write *text* to *path* so a concurrent poller reads all of it or none.
 
@@ -45,11 +50,18 @@ def publish_whole(
     with a sharing violation.  Retrying turns that into a sub-millisecond wait;
     a file locked for longer reports False, leaving the previous whole record in
     place for the next tick to replace — never a half-published one.
+
+    *newline* is the line-ending rule, passed through to ``open``: None
+    translates a newline to the platform's, "" leaves the text exactly as
+    given.  A format that terminates its own lines — the comma-separated one
+    the standard library's ``csv`` writes — asks for the second, because
+    translating those a second time doubles every one of them.
     """
     tmp = path.with_suffix(".tmp")
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp.write_text(text, encoding="utf-8")
+        with tmp.open("w", encoding="utf-8", newline=newline) as handle:
+            handle.write(text)
     except OSError:
         return False
     for attempt in range(attempts):
@@ -64,6 +76,28 @@ def publish_whole(
     # would accumulate and read as a file some component owns.
     tmp.unlink(missing_ok=True)
     return False
+
+
+def write_whole(
+    path: Path,
+    text: str,
+    *,
+    newline: str | None = None,
+    attempts: int = 5,
+    delay_s: float = 0.005,
+) -> None:
+    """:func:`publish_whole` for a caller that must not miss a failed write.
+
+    The same write, and the opposite contract on failure.  ``publish_whole``
+    answers a run loop, which has a frame to draw and nothing useful to do
+    about a file held open for a moment; a stage rewriting a document — its
+    own, or another app's — is the opposite case, and a False it forgot to
+    read is a rewrite everybody downstream believes happened.
+    """
+    if not publish_whole(
+        path, text, newline=newline, attempts=attempts, delay_s=delay_s
+    ):
+        raise OSError(f"could not replace {path}")
 
 
 def append_command(

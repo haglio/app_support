@@ -5,11 +5,14 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from app_support.file_channel import (
     append_command,
     consume_command_file,
     publish_whole,
     read_paused_state,
+    write_whole,
 )
 
 
@@ -201,3 +204,40 @@ def test_publish_retries_past_a_reader_holding_the_file_open(tmp_path: Path):
 
     assert len(calls) == 2
     assert path.read_text(encoding="utf-8") == "new\n"
+
+
+def test_a_publish_keeps_the_line_endings_the_format_asks_for(tmp_path: Path):
+    """A format that terminates its own lines must not have them translated again.
+
+    The comma-separated favorites file writes its own carriage returns, so a
+    publish that translated a newline a second time would put two of them at the
+    end of every row -- a file the spreadsheet reads as blank lines between the
+    favorites."""
+    path = tmp_path / "rows.csv"
+
+    assert publish_whole(path, "one\r\ntwo\r\n", newline="") is True
+
+    assert path.read_bytes() == b"one\r\ntwo\r\n"
+
+
+def test_a_write_that_could_not_land_raises_rather_than_reporting_it(tmp_path: Path):
+    """A stage rewriting another app's file has to stop when the write fails.
+
+    :func:`publish_whole` answers a run loop, which has a frame to draw and
+    nothing useful to do about a failure; a pipeline stage is the opposite case,
+    and a False it forgot to read is a rewrite everybody believes happened."""
+    path = tmp_path / "session.json"
+
+    with (
+        patch("app_support.file_channel.os.replace", side_effect=OSError("held")),
+        pytest.raises(OSError),
+    ):
+        write_whole(path, "{}", attempts=1)
+
+
+def test_a_write_that_landed_says_nothing(tmp_path: Path):
+    path = tmp_path / "session.json"
+
+    assert write_whole(path, '{"act": "alpha"}\n') is None
+
+    assert path.read_text(encoding="utf-8") == '{"act": "alpha"}\n'
