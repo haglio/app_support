@@ -72,20 +72,25 @@ def _claim(lock: Path, *, wait_s: float, stale_s: float) -> int:
         try:
             return os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         except FileExistsError:
-            pass
-        try:
-            abandoned = time.time() - lock.stat().st_mtime > stale_s
-        except OSError:
-            abandoned = False
-        if abandoned:
-            # Whoever held this is gone; a live holder's lock is milliseconds
-            # old.  Missing already means another writer got here first, which
-            # is the same outcome.
-            lock.unlink(missing_ok=True)
-            continue
-        if time.monotonic() >= deadline:
-            raise TimeoutError(f"{lock} was held for longer than {wait_s}s")
+            if _abandoned(lock, stale_s):
+                # Whoever held this is gone; a live holder's lock is milliseconds
+                # old.  Missing already means another writer got here first, which
+                # is the same outcome.
+                lock.unlink(missing_ok=True)
+                continue
+            if time.monotonic() >= deadline:
+                raise TimeoutError(f"{lock} was held for longer than {wait_s}s") from None
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise
         time.sleep(_POLL_S)
+
+
+def _abandoned(lock: Path, stale_s: float) -> bool:
+    try:
+        return time.time() - lock.stat().st_mtime > stale_s
+    except OSError:
+        return False
 
 
 def locked_update(
