@@ -113,6 +113,42 @@ def test_a_lock_its_holder_still_owns_is_waited_for_and_then_refused(tmp_path):
     assert read_json(path) == {"video": {"act": "alpha"}}
 
 
+def test_a_writer_refused_the_lock_while_its_last_holder_is_still_deleting_it_waits(
+    tmp_path, monkeypatch
+):
+    path = tmp_path / "clip.json"
+    _write(path, {"video": {"act": "alpha"}})
+    real_open = os.open
+    refusals = iter([PermissionError(13, "Permission denied")])
+
+    def open_while_the_delete_is_pending(*args, **kwargs):
+        refusal = next(refusals, None)
+        if refusal is not None:
+            raise refusal
+        return real_open(*args, **kwargs)
+
+    monkeypatch.setattr(os, "open", open_while_the_delete_is_pending)
+
+    written = locked_update(path, lambda payload: {**payload, "beta": 2})
+
+    assert written == {"video": {"act": "alpha"}, "beta": 2}
+
+
+def test_a_refusal_that_outlasts_the_wait_is_raised_as_itself_not_as_a_held_lock(
+    tmp_path, monkeypatch
+):
+    path = tmp_path / "clip.json"
+    _write(path, {"video": {"act": "alpha"}})
+
+    def refuse(*_args, **_kwargs):
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr(os, "open", refuse)
+
+    with pytest.raises(PermissionError):
+        locked_update(path, lambda payload: {**payload, "beta": 2}, wait_s=0.05)
+
+
 def test_a_change_that_raises_still_gives_the_lock_back(tmp_path):
     path = tmp_path / "clip.json"
     _write(path, {"video": {"act": "alpha"}})
