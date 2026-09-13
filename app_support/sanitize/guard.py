@@ -62,7 +62,7 @@ def _stem(word: str) -> str:
 
 @dataclass(frozen=True)
 class Violation:
-    """One blocklisted term found at a location.
+    """One blocklisted term found at a location, or a file the scan could not read.
 
     The term stays out of the repr: a failing check reprints its violations
     through pytest's assertion introspection, into the terminal and into any
@@ -259,13 +259,17 @@ def _scan_name(path: str, matchers: Sequence[_Matcher]) -> tuple[str, list[Viola
     return shown, [Violation(shown, 0, m.term, "(in the file's name)") for m in hits]
 
 
-def _scan(named_texts: Iterable[tuple[str, str | None]], terms: Iterable[str]) -> list[Violation]:
+def _scan(
+    named_texts: Iterable[tuple[str, str | OSError | None]], terms: Iterable[str],
+) -> list[Violation]:
     matchers = _compile(terms)
     out: list[Violation] = []
     for name, text in named_texts:
         shown, in_name = _scan_name(name, matchers)
         out.extend(in_name)
-        if text is not None:
+        if isinstance(text, OSError):
+            out.append(Violation(shown, 0, "", f"(could not be read: {type(text).__name__})"))
+        elif text is not None:
             out.extend(_violations_in(text, matchers, shown))
     return out
 
@@ -287,11 +291,13 @@ def scan_files(
                   for path in paths), terms)
 
 
-def _text_of(path: Path) -> str | None:
+def _text_of(path: Path) -> str | OSError | None:
     try:
         return path.read_text(encoding="utf-8")
-    except (UnicodeDecodeError, OSError):
+    except (UnicodeDecodeError, FileNotFoundError):
         return None
+    except OSError as refused:
+        return refused
 
 
 # --------------------------------------------------------------------------

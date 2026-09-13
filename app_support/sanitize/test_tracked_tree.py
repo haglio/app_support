@@ -141,6 +141,7 @@ def test_no_blocklisted_terms_in_the_tracked_tree(pytestconfig):
     )
     # Print only the redacted excerpt, never the matched term itself.
     real = [v for v in violations if v.term != control]
-    assert not real, "blocklisted terms in tracked files:\n" + "\n".join(
-        f"  {v.path}:{v.line}  {v.excerpt}" for v in real[:20]
+    assert not real, (
+        "tracked files that carry a blocklisted term or could not be read:\n"
+        + "\n".join(f"  {v.path}:{v.line}  {v.excerpt}" for v in real[:20])
     )

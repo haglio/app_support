@@ -26,6 +26,21 @@ PYPROJECT = """\
 addopts = "-p no:cacheprovider -p app_support.sanitize.pytest_plugin"
 """
 
+CONFTEST_REFUSING_LOCKED_MD = """\
+from pathlib import Path
+
+_open = Path.open
+
+
+def _refuse_locked_md(path, *args, **kwargs):
+    if path.name == "locked.md":
+        raise PermissionError(13, "Permission denied", str(path))
+    return _open(path, *args, **kwargs)
+
+
+Path.open = _refuse_locked_md
+"""
+
 
 def _git(cwd: Path, *args: str) -> None:
     subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True)
@@ -306,6 +321,18 @@ class TestTheGuardPlugin:
 
         assert done.returncode != 0, done.stdout
         assert "read no text at all" in done.stdout
+
+    def test_a_tracked_file_that_cannot_be_opened_fails_the_run(self, tmp_path: Path):
+        repo = self._repo(tmp_path, blocklist=f"{TERM}\n", tracked="perfectly clean\n")
+        (repo / "locked.md").write_text("ordinary prose\n", encoding="utf-8")
+        _git(repo, "add", "locked.md")
+        _git(repo, "commit", "-m", "locked", "--no-verify")
+        (repo / "conftest.py").write_text(CONFTEST_REFUSING_LOCKED_MD, encoding="utf-8")
+
+        done = self._pytest(repo)
+
+        assert done.returncode != 0, done.stdout
+        assert "locked.md:0  (could not be read: PermissionError)" in done.stdout
 
     def test_a_directory_run_is_still_a_run_of_the_whole_tree(self, tmp_path: Path):
         """`pytest tests/` is the command this family's own instructions give,
