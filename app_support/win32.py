@@ -10,11 +10,11 @@ family ends up doing and had all grown its own spelling of:
     identity derived from its executable -- which for a family of apps sharing
     one interpreter means they land under whatever unrelated application
     registered that path first, wearing its icon and its name.
-  * **stamping that identity onto a shortcut.**  A ``.lnk`` written by
-    ``WScript.Shell`` or by PowerShell carries no ``System.AppUserModel.ID``,
-    so clicking the pin starts a process Windows treats as a different
-    application, and a second taskbar button opens beside the pin it was
-    launched from.  Nothing but COM can write that property.
+  * **stamping that identity onto a shortcut**, or writing a shortcut that
+    carries it.  A ``.lnk`` written by ``WScript.Shell`` carries no
+    ``System.AppUserModel.ID``, so clicking the pin starts a process Windows
+    treats as a different application, and a second taskbar button opens beside
+    the pin it was launched from.  Nothing but COM can write that property.
   * **asking whether it is the only instance**, through a named mutex -- and
     holding the handle that is the answer, because Windows lets the mutex go
     when the last handle to it closes.
@@ -35,9 +35,12 @@ keyword-only seam a test hands a fake to and no consumer ever passes.
 """
 from __future__ import annotations
 
+import contextlib
 import ctypes
 import hashlib
+import os
 import uuid
+from collections.abc import Iterable
 from ctypes import wintypes
 from pathlib import Path
 
@@ -126,17 +129,12 @@ def set_app_user_model_id(app_id: str, *, shell32=_shell32) -> None:
         raise _hresult("SetCurrentProcessExplicitAppUserModelID", hr)
 
 
-# --- Stamping the identity onto a shortcut, through COM ----------------------
+# --- A shortcut and the identity it carries, through COM ---------------------
 #
-# Everything from here to the end of ``_set_lnk_aumid`` is the block that two
-# repos already run byte-identically -- 136 consecutive lines that ``diff``
-# reports no difference in -- carried across as it stands rather than rewritten,
-# because only Windows can say whether a change to it is right.  Four things
-# were changed and nothing else: the plumbing names took an underscore, so this
-# package's public surface stays the six calls above and below; ``ole32`` is
-# passed in rather than bound at import; the HRESULT messages go through
-# ``_hresult``; and ``set_shortcut_app_user_model_id`` is the copy that reads
-# ``CoInitializeEx``'s answer.
+# The vtable indices below are each interface's methods counted in the order
+# its header declares them, which is the one thing here Windows reports no
+# error for getting wrong -- so every call is proven by the tests that write a
+# real shortcut and read it back.
 
 _COINIT_APARTMENTTHREADED = 0x2
 _CLSCTX_ALL = 0x17
@@ -191,6 +189,10 @@ _STGM_READ = 0x00000000
 _STGM_READWRITE = 0x00000002
 _VTBL_QI = 0
 _VTBL_RELEASE = 2
+_VTBL_ISL_SET_WORKING_DIRECTORY = 9
+_VTBL_ISL_SET_ARGUMENTS = 11
+_VTBL_ISL_SET_ICON_LOCATION = 17
+_VTBL_ISL_SET_PATH = 20
 _VTBL_IPF_LOAD = 5
 _VTBL_IPF_SAVE = 6
 _VTBL_IPS_GET_VALUE = 5
@@ -220,8 +222,9 @@ def _query_interface(obj_addr: int, iid: _GUID) -> int:
     return out.value
 
 
-def set_shortcut_app_user_model_id(lnk_path: str, app_id: str, *, ole32=_ole32) -> None:
-    """Write *app_id* into the shortcut at *lnk_path* as its AppUserModelID.
+@contextlib.contextmanager
+def _apartment(ole32):
+    """The COM apartment a shortcut is written or read in, given back after.
 
     Only an initialisation that succeeded gets undone.  ``CoInitializeEx``
     answers ``S_OK`` when it opened the apartment and ``S_FALSE`` when the thread
@@ -230,19 +233,19 @@ def set_shortcut_app_user_model_id(lnk_path: str, app_id: str, *, ole32=_ole32) 
     something else put this thread in the other concurrency model first.
     Uninitialising anyway would decrement *that* initialisation's count, and the
     apartment its owner is holding objects in can close under them -- while the
-    stamping below would be asking for a shell link with no apartment of its own.
+    work inside would be asking for a shell link with no apartment of its own.
     """
     com = ole32()
     hr = com.CoInitializeEx(None, _COINIT_APARTMENTTHREADED)
     if hr < 0:
         raise _hresult("CoInitializeEx", hr)
     try:
-        _set_lnk_aumid(lnk_path, app_id, com)
+        yield com
     finally:
         com.CoUninitialize()
 
 
-def _set_lnk_aumid(lnk_path: str, app_id: str, com) -> None:
+def _create_shell_link(com) -> int:
     shell_link = ctypes.c_void_p()
     hr = com.CoCreateInstance(
         ctypes.byref(_CLSID_ShellLink), None, _CLSCTX_ALL,
@@ -250,86 +253,123 @@ def _set_lnk_aumid(lnk_path: str, app_id: str, com) -> None:
     )
     if hr < 0:
         raise _hresult("CoCreateInstance(ShellLink)", hr)
+    return shell_link.value
+
+
+def _load_shortcut(persist_file: int, lnk_path: str, mode: int) -> None:
+    hr = _vtbl_call(persist_file, _VTBL_IPF_LOAD,
+                    ctypes.HRESULT, wintypes.LPCWSTR, ctypes.c_ulong)(
+        persist_file, lnk_path, mode)
+    if hr < 0:
+        raise _hresult("IPersistFile::Load", hr)
+
+
+def _save(shell_link: int, lnk_path: str) -> None:
+    persist_file = _query_interface(shell_link, _IID_IPersistFile)
     try:
-        persist_file = _query_interface(shell_link.value, _IID_IPersistFile)
-        try:
-            hr = _vtbl_call(persist_file, _VTBL_IPF_LOAD,
-                            ctypes.HRESULT, wintypes.LPCWSTR, ctypes.c_ulong)(
-                persist_file, lnk_path, _STGM_READWRITE)
-            if hr < 0:
-                raise _hresult("IPersistFile::Load", hr)
-
-            prop_store = _query_interface(shell_link.value, _IID_IPropertyStore)
-            try:
-                pv = _PROPVARIANT()
-                pv.vt = _VT_LPWSTR
-                pv.pwszVal = app_id
-
-                hr = _vtbl_call(prop_store, _VTBL_IPS_SET_VALUE,
-                                ctypes.HRESULT,
-                                ctypes.POINTER(_PROPERTYKEY),
-                                ctypes.POINTER(_PROPVARIANT))(
-                    prop_store,
-                    ctypes.byref(_PKEY_AppUserModel_ID),
-                    ctypes.byref(pv))
-                if hr < 0:
-                    raise _hresult("IPropertyStore::SetValue", hr)
-
-                hr = _vtbl_call(prop_store, _VTBL_IPS_COMMIT, ctypes.HRESULT)(prop_store)
-                if hr < 0:
-                    raise _hresult("IPropertyStore::Commit", hr)
-            finally:
-                _release(prop_store)
-
-            hr = _vtbl_call(persist_file, _VTBL_IPF_SAVE,
-                            ctypes.HRESULT, wintypes.LPCWSTR, wintypes.BOOL)(
-                persist_file, lnk_path, True)
-            if hr < 0:
-                raise _hresult("IPersistFile::Save", hr)
-        finally:
-            _release(persist_file)
+        hr = _vtbl_call(persist_file, _VTBL_IPF_SAVE,
+                        ctypes.HRESULT, wintypes.LPCWSTR, wintypes.BOOL)(
+            persist_file, lnk_path, True)
+        if hr < 0:
+            raise _hresult("IPersistFile::Save", hr)
     finally:
-        _release(shell_link.value)
+        _release(persist_file)
+
+
+def _store_app_id(shell_link: int, app_id: str) -> None:
+    prop_store = _query_interface(shell_link, _IID_IPropertyStore)
+    try:
+        pv = _PROPVARIANT()
+        pv.vt = _VT_LPWSTR
+        pv.pwszVal = app_id
+
+        hr = _vtbl_call(prop_store, _VTBL_IPS_SET_VALUE,
+                        ctypes.HRESULT,
+                        ctypes.POINTER(_PROPERTYKEY),
+                        ctypes.POINTER(_PROPVARIANT))(
+            prop_store,
+            ctypes.byref(_PKEY_AppUserModel_ID),
+            ctypes.byref(pv))
+        if hr < 0:
+            raise _hresult("IPropertyStore::SetValue", hr)
+
+        hr = _vtbl_call(prop_store, _VTBL_IPS_COMMIT, ctypes.HRESULT)(prop_store)
+        if hr < 0:
+            raise _hresult("IPropertyStore::Commit", hr)
+    finally:
+        _release(prop_store)
+
+
+def set_shortcut_app_user_model_id(lnk_path: str, app_id: str, *, ole32=_ole32) -> None:
+    """Write *app_id* into the shortcut at *lnk_path* as its AppUserModelID."""
+    with _apartment(ole32) as com:
+        shell_link = _create_shell_link(com)
+        try:
+            persist_file = _query_interface(shell_link, _IID_IPersistFile)
+            try:
+                _load_shortcut(persist_file, lnk_path, _STGM_READWRITE)
+            finally:
+                _release(persist_file)
+            _store_app_id(shell_link, app_id)
+            _save(shell_link, lnk_path)
+        finally:
+            _release(shell_link)
+
+
+def write_shortcut(lnk_path: str, *, target: str, arguments: str = "",
+                   working_directory: str = "", icon: str = "", app_id: str | None = None,
+                   ole32=_ole32) -> None:
+    """Write a shortcut at *lnk_path* that starts *target*, over whatever is there.
+
+    *app_id* goes in with the same save, so the shortcut never exists without the
+    identity its app claims.
+    """
+    with _apartment(ole32) as com:
+        shell_link = _create_shell_link(com)
+        try:
+            for index, method, value in (
+                (_VTBL_ISL_SET_PATH, "SetPath", target),
+                (_VTBL_ISL_SET_ARGUMENTS, "SetArguments", arguments),
+                (_VTBL_ISL_SET_WORKING_DIRECTORY, "SetWorkingDirectory", working_directory),
+            ):
+                hr = _vtbl_call(shell_link, index, ctypes.HRESULT, wintypes.LPCWSTR)(
+                    shell_link, value)
+                if hr < 0:
+                    raise _hresult(f"IShellLinkW::{method}", hr)
+            if icon:
+                hr = _vtbl_call(shell_link, _VTBL_ISL_SET_ICON_LOCATION,
+                                ctypes.HRESULT, wintypes.LPCWSTR, ctypes.c_int)(
+                    shell_link, icon, 0)
+                if hr < 0:
+                    raise _hresult("IShellLinkW::SetIconLocation", hr)
+            if app_id is not None:
+                _store_app_id(shell_link, app_id)
+            _save(shell_link, lnk_path)
+        finally:
+            _release(shell_link)
 
 
 def read_shortcut_app_user_model_id(lnk_path: str, *, ole32=_ole32) -> str | None:
     """The AppUserModelID the shortcut at *lnk_path* carries, or ``None`` for none.
 
-    The inverse of :func:`set_shortcut_app_user_model_id`, in the same apartment
-    bracket for the same reason.  It exists because a stamp that reported
-    success still has to be read back to be believed -- the one failure in this
-    module Windows reports no error for is a wrong property key, which writes a
-    real value under the wrong name -- so this is what a test of the stamp asks,
-    and what a launcher asks of a pin it did not write.
+    It exists because a stamp that reported success still has to be read back to
+    be believed -- the one failure in this module Windows reports no error for is
+    a wrong property key, which writes a real value under the wrong name -- so
+    this is what a test of the stamp asks, and what a launcher asks of a pin it
+    did not write.
     """
-    com = ole32()
-    hr = com.CoInitializeEx(None, _COINIT_APARTMENTTHREADED)
-    if hr < 0:
-        raise _hresult("CoInitializeEx", hr)
-    try:
+    with _apartment(ole32) as com:
         return _get_lnk_aumid(lnk_path, com)
-    finally:
-        com.CoUninitialize()
 
 
 def _get_lnk_aumid(lnk_path: str, com) -> str | None:
-    shell_link = ctypes.c_void_p()
-    hr = com.CoCreateInstance(
-        ctypes.byref(_CLSID_ShellLink), None, _CLSCTX_ALL,
-        ctypes.byref(_IID_IShellLinkW), ctypes.byref(shell_link),
-    )
-    if hr < 0:
-        raise _hresult("CoCreateInstance(ShellLink)", hr)
+    shell_link = _create_shell_link(com)
     try:
-        persist_file = _query_interface(shell_link.value, _IID_IPersistFile)
+        persist_file = _query_interface(shell_link, _IID_IPersistFile)
         try:
-            hr = _vtbl_call(persist_file, _VTBL_IPF_LOAD,
-                            ctypes.HRESULT, wintypes.LPCWSTR, ctypes.c_ulong)(
-                persist_file, lnk_path, _STGM_READ)
-            if hr < 0:
-                raise _hresult("IPersistFile::Load", hr)
+            _load_shortcut(persist_file, lnk_path, _STGM_READ)
 
-            prop_store = _query_interface(shell_link.value, _IID_IPropertyStore)
+            prop_store = _query_interface(shell_link, _IID_IPropertyStore)
             try:
                 pv = _PROPVARIANT()
                 hr = _vtbl_call(prop_store, _VTBL_IPS_GET_VALUE,
@@ -354,7 +394,40 @@ def _get_lnk_aumid(lnk_path: str, com) -> str | None:
         finally:
             _release(persist_file)
     finally:
-        _release(shell_link.value)
+        _release(shell_link)
+
+
+def taskbar_pins() -> Path:
+    """The folder the taskbar keeps its own copy of every pinned shortcut in."""
+    return (Path(os.environ.get("APPDATA", "")) / "Microsoft" / "Internet Explorer"
+            / "Quick Launch" / "User Pinned" / "TaskBar")
+
+
+def stamp_pinned_shortcuts(app_id: str, names: Iterable[str], *, pins: Path | None = None,
+                           stamp=set_shortcut_app_user_model_id) -> dict[Path, OSError | None]:
+    """Stamp *app_id* onto each taskbar pin called one of *names*, case aside.
+
+    A whole name, never a prefix: a retired pin beside the live one would
+    otherwise be kept looking live.  Each pin answers for itself -- the refusal
+    Windows gave one is returned against it and the rest are still stamped --
+    because whether an unstamped pin matters is the app's to say, and every app
+    here goes on launching without one.
+    """
+    wanted = {name.lower() for name in names}
+    folder = taskbar_pins() if pins is None else pins
+    if not folder.is_dir():
+        return {}
+    results: dict[Path, OSError | None] = {}
+    for lnk in sorted(folder.glob("*.lnk")):
+        if lnk.stem.lower() not in wanted:
+            continue
+        try:
+            stamp(str(lnk), app_id)
+        except OSError as refusal:
+            results[lnk] = refusal
+        else:
+            results[lnk] = None
+    return results
 
 
 # --- May I run?  A named mutex, and the handle that answers ------------------
