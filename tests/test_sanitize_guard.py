@@ -184,6 +184,29 @@ class TestScanFiles:
         (tmp_path / "img.bin").write_bytes(b"\x00\xff\xfe badterm \x00")
         assert scan_files([tmp_path / "img.bin"], ["badterm"], root=tmp_path) == []
 
+    def test_a_file_that_refuses_to_open_is_reported_rather_than_skipped(
+            self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        locked = tmp_path / "locked.md"
+        locked.write_text("clean", encoding="utf-8")
+        opened = Path.open
+
+        def refuse_the_locked_file(path, *args, **kwargs):
+            if path == locked:
+                raise PermissionError(13, "Permission denied", str(path))
+            return opened(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "open", refuse_the_locked_file)
+
+        found = scan_files([locked], ["badterm"], root=tmp_path)
+
+        assert [(v.path, v.line) for v in found] == [("locked.md", 0)]
+        assert "could not be read" in found[0].excerpt
+
+    def test_a_file_gone_from_disk_is_judged_by_its_name_alone(self, tmp_path: Path):
+        found = scan_files([tmp_path / "badterm-gone.md"], ["badterm"], root=tmp_path)
+
+        assert [(v.line, v.excerpt) for v in found] == [(0, "(in the file's name)")]
+
     def test_a_terms_matcher_is_built_once_however_many_files_are_scanned(
             self, tmp_path: Path):
         """Compiling a list of this size is a twentieth of a second, and the
