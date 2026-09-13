@@ -9,7 +9,9 @@ those cases say so where they stop.
 from __future__ import annotations
 
 import ctypes
+import os
 import pathlib
+import subprocess
 import uuid
 
 import pytest
@@ -22,7 +24,10 @@ from app_support.win32 import (
     set_app_user_model_id,
     set_shortcut_app_user_model_id,
     show_error_popup,
+    stamp_pinned_shortcuts,
+    taskbar_pins,
     try_acquire_mutex,
+    write_shortcut,
 )
 
 # One real failure code, as Windows hands it over: a signed 32-bit value whose
@@ -200,29 +205,47 @@ class TestReadShortcutAppUserModelId:
         assert "CoCreateInstance" in str(raised.value)
 
 
+def _through_the_script_host(tmp_path: pathlib.Path, script: str, **env: str) -> str:
+    """Run *script* under the console script host, handing it *env*.
+
+    The paths ride in as environment variables rather than interpolated into
+    the script, so a quote in a temp path is never VBScript syntax.
+    """
+    path = tmp_path / f"probe-{uuid.uuid4().hex}.vbs"
+    path.write_text(script, encoding="ascii")
+    host = pathlib.Path(os.environ.get("SYSTEMROOT", r"C:\Windows")) / "System32" / "cscript.exe"
+    finished = subprocess.run([str(host), "//Nologo", str(path)], check=True,
+                              capture_output=True, text=True, env={**os.environ, **env})
+    assert "Microsoft VBScript" not in finished.stdout + finished.stderr, finished.stdout
+    return finished.stdout
+
+
 def _a_shortcut(tmp_path: pathlib.Path) -> pathlib.Path:
     """A real .lnk, written the way the family's launchers write theirs --
-    through WScript.Shell, which carries no AppUserModelID.  The paths ride in
-    as environment variables rather than interpolated into the script, so a
-    quote in a temp path is never PowerShell syntax."""
-    import os
-    import subprocess
-
+    through WScript.Shell, which carries no AppUserModelID."""
     lnk = tmp_path / "Example.lnk"
-    script = (
-        "$ws = New-Object -ComObject WScript.Shell; "
-        "$s = $ws.CreateShortcut($env:LNK_PATH); "
-        "$s.TargetPath = $env:LNK_TARGET; "
-        "$s.Save()"
-    )
-    subprocess.run(
-        ["powershell.exe", "-NoProfile", "-Command", script],
-        check=True, capture_output=True,
-        env={**os.environ, "LNK_PATH": str(lnk),
-             "LNK_TARGET": os.environ.get("COMSPEC", "cmd.exe")},
-    )
+    _through_the_script_host(
+        tmp_path,
+        'Set shell = CreateObject("WScript.Shell")\n'
+        'Set link = shell.CreateShortcut(shell.Environment("Process")("LNK_PATH"))\n'
+        'link.TargetPath = shell.Environment("Process")("LNK_TARGET")\n'
+        "link.Save\n",
+        LNK_PATH=str(lnk), LNK_TARGET=os.environ.get("COMSPEC", "cmd.exe"))
     assert lnk.is_file()
     return lnk
+
+
+def _what_the_shell_reads_off(tmp_path: pathlib.Path, lnk: pathlib.Path) -> dict[str, str]:
+    output = _through_the_script_host(
+        tmp_path,
+        'Set shell = CreateObject("WScript.Shell")\n'
+        'Set link = shell.CreateShortcut(shell.Environment("Process")("LNK_PATH"))\n'
+        'WScript.Echo "target=" & link.TargetPath\n'
+        'WScript.Echo "arguments=" & link.Arguments\n'
+        'WScript.Echo "directory=" & link.WorkingDirectory\n'
+        'WScript.Echo "icon=" & link.IconLocation\n',
+        LNK_PATH=str(lnk))
+    return dict(line.split("=", 1) for line in output.splitlines() if "=" in line)
 
 
 @pytest.mark.skipif(not hasattr(ctypes, "windll"), reason="COM: only Windows can say")
@@ -248,6 +271,127 @@ class TestTheStampOnARealShortcut:
         set_shortcut_app_user_model_id(str(lnk), "Example.Other")
 
         assert read_shortcut_app_user_model_id(str(lnk)) == "Example.Other"
+
+
+class TestStampPinnedShortcuts:
+    def _pins(self, tmp_path: pathlib.Path, *names: str) -> pathlib.Path:
+        pins = tmp_path / "TaskBar"
+        pins.mkdir()
+        for name in names:
+            (pins / name).write_bytes(b"")
+        return pins
+
+    def test_a_pin_by_one_of_the_names_is_stamped_whatever_its_case(self, tmp_path: pathlib.Path):
+        pins = self._pins(tmp_path, "example app.lnk")
+        stamped: list[tuple[str, str]] = []
+
+        result = stamp_pinned_shortcuts("Example.App", ["Example App"], pins=pins,
+                                        stamp=lambda path, app_id: stamped.append((path, app_id)))
+
+        assert stamped == [(str(pins / "example app.lnk"), "Example.App")]
+        assert result == {pins / "example app.lnk": None}
+
+    def test_a_pin_whose_name_only_begins_the_same_is_left_alone(self, tmp_path: pathlib.Path):
+        # A retired "Example App VR.lnk" still in the pin folder would be kept
+        # looking live by a stamp meant for the pin beside it.
+        pins = self._pins(tmp_path, "Example App VR.lnk", "Other.lnk", "Example App.txt")
+        stamped: list[str] = []
+
+        result = stamp_pinned_shortcuts("Example.App", ["Example App"], pins=pins,
+                                        stamp=lambda path, app_id: stamped.append(path))
+
+        assert stamped == []
+        assert result == {}
+
+    def test_a_refusal_is_held_against_its_own_shortcut_and_the_rest_are_still_stamped(
+        self, tmp_path: pathlib.Path,
+    ):
+        pins = self._pins(tmp_path, "Example.lnk", "Example Too.lnk")
+        refusal = OSError("IPersistFile::Save failed: HRESULT 0x80070005")
+
+        def stamp(path: str, app_id: str) -> None:
+            if path.endswith("Example.lnk"):
+                raise refusal
+
+        result = stamp_pinned_shortcuts("Example.App", ["Example", "Example Too"], pins=pins,
+                                        stamp=stamp)
+
+        assert result == {pins / "Example.lnk": refusal, pins / "Example Too.lnk": None}
+
+    def test_a_machine_with_no_pin_folder_has_nothing_to_stamp(self, tmp_path: pathlib.Path):
+        assert stamp_pinned_shortcuts("Example.App", ["Example"], pins=tmp_path / "absent",
+                                      stamp=lambda path, app_id: None) == {}
+
+    def test_the_pins_are_where_the_taskbar_keeps_them(self, monkeypatch, tmp_path: pathlib.Path):
+        monkeypatch.setenv("APPDATA", str(tmp_path))
+
+        assert taskbar_pins() == (tmp_path / "Microsoft" / "Internet Explorer" / "Quick Launch"
+                                  / "User Pinned" / "TaskBar")
+
+
+class TestWriteShortcut:
+    def test_an_apartment_it_never_opened_is_not_given_back(self):
+        ole32 = _FakeOle32(init=RPC_E_CHANGED_MODE)
+
+        with pytest.raises(OSError) as raised:
+            write_shortcut("C:/example/Example.lnk", target="C:/example/pythonw.exe",
+                           ole32=lambda: ole32)
+
+        assert ole32.CoUninitialize.calls == []
+        assert ole32.CoCreateInstance.calls == []
+        assert "CoInitializeEx" in str(raised.value)
+
+    def test_an_apartment_it_opened_is_given_back_even_when_the_write_fails(self):
+        ole32 = _FakeOle32(init=0, create=E_INVALIDARG)
+
+        with pytest.raises(OSError) as raised:
+            write_shortcut("C:/example/Example.lnk", target="C:/example/pythonw.exe",
+                           ole32=lambda: ole32)
+
+        assert len(ole32.CoUninitialize.calls) == 1
+        assert "CoCreateInstance" in str(raised.value)
+
+
+@pytest.mark.skipif(not hasattr(ctypes, "windll"), reason="COM: only Windows can say")
+class TestAShortcutWrittenOnWindows:
+    def test_the_shell_reads_back_what_was_written(self, tmp_path: pathlib.Path):
+        lnk = tmp_path / "Example.lnk"
+        target = pathlib.Path(os.environ.get("COMSPEC", r"C:\Windows\System32\cmd.exe"))
+
+        write_shortcut(str(lnk), target=str(target), arguments='-m example --flag "a b"',
+                       working_directory=str(tmp_path), icon=str(target))
+
+        read = _what_the_shell_reads_off(tmp_path, lnk)
+        # The shell hands a path back in the case the file system spells it.
+        icon, _, index = read["icon"].rpartition(",")
+        assert pathlib.PureWindowsPath(read["target"]) == pathlib.PureWindowsPath(target)
+        assert read["arguments"] == '-m example --flag "a b"'
+        assert pathlib.PureWindowsPath(read["directory"]) == pathlib.PureWindowsPath(tmp_path)
+        assert (pathlib.PureWindowsPath(icon), index) == (pathlib.PureWindowsPath(target), "0")
+
+    def test_the_identity_it_was_given_reads_back(self, tmp_path: pathlib.Path):
+        lnk = tmp_path / "Example.lnk"
+
+        write_shortcut(str(lnk), target=os.environ.get("COMSPEC", "cmd.exe"),
+                       app_id="Example.App")
+
+        assert read_shortcut_app_user_model_id(str(lnk)) == "Example.App"
+
+    def test_one_written_without_an_identity_carries_none(self, tmp_path: pathlib.Path):
+        lnk = tmp_path / "Example.lnk"
+
+        write_shortcut(str(lnk), target=os.environ.get("COMSPEC", "cmd.exe"))
+
+        assert read_shortcut_app_user_model_id(str(lnk)) is None
+
+    def test_writing_over_a_shortcut_replaces_it(self, tmp_path: pathlib.Path):
+        lnk = _a_shortcut(tmp_path)
+
+        write_shortcut(str(lnk), target=os.environ.get("COMSPEC", "cmd.exe"),
+                       arguments="/c exit", app_id="Example.App")
+
+        assert _what_the_shell_reads_off(tmp_path, lnk)["arguments"] == "/c exit"
+        assert read_shortcut_app_user_model_id(str(lnk)) == "Example.App"
 
 
 class TestMutexName:
