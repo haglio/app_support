@@ -23,7 +23,7 @@ from app_support.sanitize.guard import (
 
 # A whole word of letters, with a non-word character on each side.  Both halves
 # are what keep the control clear of the matcher's edges rather than sitting on
-# them: `_term_pattern` puts a word boundary around a term whose first and last
+# them: `_matcher` puts a word boundary around a term whose first and last
 # characters are word characters, so a control taken from inside a longer word
 # would be refused by the very rule being proved, and a run of letters carries
 # none of the separator collapsing a term with digits or punctuation in it does.

@@ -107,7 +107,7 @@ class TestTheControlWordTheCheckCarries:
         assert test_tracked_tree._a_control_word_from([path], []) == "ordinary"
 
     def test_a_word_inside_a_longer_one_is_not_taken(self, tmp_path: Path):
-        """`_term_pattern` puts a word boundary around a term, so a control
+        """`_matcher` puts a word boundary around a term, so a control
         taken from inside a longer word would be refused by the rule it is
         there to prove."""
         path = self._file(tmp_path, "unremarkable_compound plain")

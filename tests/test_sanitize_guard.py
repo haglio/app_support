@@ -7,7 +7,9 @@ publishable.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -18,7 +20,21 @@ from app_support.sanitize import (
     load_blocklist,
     scan_files,
 )
-from app_support.sanitize.guard import Violation, _term_pattern
+from app_support.sanitize.guard import Violation, _fold, _matcher
+
+
+class TestFold:
+    def test_it_never_parts_two_characters_ignorecase_matches_as_one(self):
+        cased = [ch for ch in map(chr, range(sys.maxunicode + 1))
+                 if ch.lower() != ch or ch.upper() != ch or ch.casefold() != ch]
+        images = "".join(ch.lower() + ch.upper() + ch.casefold() for ch in cased)
+        alphabet = "".join(sorted({*cased, *images}))
+
+        parted = [(x, match.group()) for x in alphabet
+                  for match in re.finditer(re.escape(x), alphabet, re.IGNORECASE)
+                  if _fold(match.group()) != _fold(x)]
+
+        assert parted == []
 
 
 class TestViolation:
@@ -41,6 +57,10 @@ class TestFindViolations:
 
     def test_is_case_insensitive(self):
         assert find_violations("FORBIDDENTERM", ["forbiddenterm"])
+
+    def test_a_letter_ignorecase_reads_as_the_plain_one_still_matches_it(self):
+        for spelled in ("mıſplacedterm", "MİSPLACEDTERM"):
+            assert find_violations(f"the {spelled} here", ["misplacedterm"]), spelled
 
     def test_word_boundary_prevents_substring_false_positive(self):
         assert find_violations("a concatenated list", ["cat"]) == []
@@ -174,11 +194,29 @@ class TestScanFiles:
         between reliably green and randomly timed out."""
         for name in ("a.txt", "b.txt", "c.txt"):
             (tmp_path / name).write_text("clean", encoding="utf-8")
-        built = _term_pattern.cache_info().misses
+        built = _matcher.cache_info().misses
 
         scan_files(sorted(tmp_path.iterdir()), ["badterm", "other term"], root=tmp_path)
 
-        assert _term_pattern.cache_info().misses - built <= 2
+        assert _matcher.cache_info().misses - built <= 2
+
+    def test_a_term_no_file_carries_is_never_matched_against_them(self, tmp_path: Path):
+        for name in ("a.txt", "b.txt"):
+            (tmp_path / name).write_text("perfectly clean\n", encoding="utf-8")
+        ran: list[str] = []
+
+        def note_each_pattern_run(_frame, event, arg):
+            if event == "c_call" and isinstance(getattr(arg, "__self__", None), re.Pattern):
+                ran.append(arg.__self__.pattern)
+
+        before = sys.getprofile()
+        sys.setprofile(note_each_pattern_run)
+        try:
+            scan_files(sorted(tmp_path.iterdir()), ["absentterm"], root=tmp_path)
+        finally:
+            sys.setprofile(before)
+
+        assert [pattern for pattern in ran if "absentterm" in pattern] == []
 
     def test_flags_a_file_named_after_a_term(self, tmp_path: Path):
         """The path was passed through as a label and never scanned, so a file

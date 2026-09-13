@@ -76,13 +76,36 @@ class Violation:
     excerpt: str
 
 
-@cache
-def _term_pattern(term: str) -> re.Pattern[str]:
-    """Case-insensitive matcher for *term*, in the forms text actually uses.
+# The lowercase letters re.IGNORECASE matches as one although str.lower() keeps
+# them apart (CPython's re._casefix), each group led by the letter the rest fold
+# to. And str.lower() turns U+0130 into two characters where re reads one "i".
+_SAME_LETTER = str.maketrans({
+    other: group[0]
+    for group in (
+        "iı", "sſ", "µμ", "ͅιι", "ΐΐ",
+        "ΰΰ", "βϐ", "εϵ", "θϑ", "κϰ",
+        "πϖ", "ρϱ", "ςσ", "φϕ", "вᲀ",
+        "дᲁ", "оᲂ", "сᲃ", "тᲄᲅ",
+        "ъᲆ", "ѣᲇ", "ᲈꙋ", "ṡẛ", "ﬅﬆ",
+    )
+    for other in group[1:]
+})
 
-    Memoized on the term: the scan rebuilds a whole list twice per file (once
-    for the name, once for the contents) and a matcher depends on nothing but
-    its term, so one build serves every file. The cache is bounded by the list.
+
+def _fold(text: str) -> str:
+    return text.replace("İ", "i").lower().translate(_SAME_LETTER)
+
+
+@dataclass(frozen=True)
+class _Matcher:
+    term: str
+    pattern: re.Pattern[str]
+    needles: tuple[str, ...]
+
+
+@cache
+def _matcher(term: str) -> _Matcher:
+    """Case-insensitive matcher for *term*, in the forms text actually uses.
 
     A term whose first/last character is a word character gets a word-boundary
     guard on that side, so ``cat`` does not fire inside ``concatenate`` while a
@@ -106,22 +129,31 @@ def _term_pattern(term: str) -> re.Pattern[str]:
     """
     stripped = term.strip()
     parts = stripped.split()
-    if parts and parts[-1].isalpha():
+    if parts[-1].isalpha():
         parts[-1] = _stem(parts[-1])
-    core = _SEPARATOR.join(re.escape(p) for p in parts) if parts else re.escape(stripped)
+    core = _SEPARATOR.join(re.escape(p) for p in parts)
     left = r"(?<!\w)" if stripped[:1].isalnum() or stripped[:1] == "_" else ""
     right = r"(?!\w)" if stripped[-1:].isalnum() or stripped[-1:] == "_" else ""
-    return re.compile(left + core + _INFLECTION + right, re.IGNORECASE)
+    return _Matcher(
+        stripped,
+        re.compile(left + core + _INFLECTION + right, re.IGNORECASE),
+        tuple(sorted(map(_fold, parts), key=len, reverse=True)),
+    )
 
 
-def _compile(terms: Iterable[str]) -> list[tuple[str, re.Pattern[str]]]:
-    return [(t.strip(), _term_pattern(t)) for t in terms if t.strip()]
+def _compile(terms: Iterable[str]) -> list[_Matcher]:
+    return [_matcher(t) for t in terms if t.strip()]
 
 
-def _redact(line: str, patterns: Sequence[tuple[str, re.Pattern[str]]]) -> str:
+def _present(matchers: Sequence[_Matcher], text: str) -> list[_Matcher]:
+    folded = _fold(text)
+    return [m for m in matchers if all(needle in folded for needle in m.needles)]
+
+
+def _redact(line: str, matchers: Sequence[_Matcher]) -> str:
     out = line
-    for _term, pat in patterns:
-        out = pat.sub("***", out)
+    for matcher in matchers:
+        out = matcher.pattern.sub("***", out)
     return out.strip()[:_MAX_EXCERPT]
 
 
@@ -143,7 +175,11 @@ def find_violations(
     The line reported is where the match *starts*, and the excerpt is that line,
     so a wrapped hit still points at somewhere useful to look.
     """
-    patterns = _compile(terms)
+    return _violations_in(text, _compile(terms), path)
+
+
+def _violations_in(text: str, matchers: Sequence[_Matcher], path: str) -> list[Violation]:
+    present = _present(matchers, text)
     lines = text.splitlines()
     # Offset of each line start, to turn a match position into a line number.
     starts, at = [], 0
@@ -151,11 +187,11 @@ def find_violations(
         starts.append(at)
         at += len(line) + 1
     out: list[Violation] = []
-    for term, pat in patterns:
-        for match in pat.finditer(text):
+    for matcher in present:
+        for match in matcher.pattern.finditer(text):
             lineno = bisect.bisect_right(starts, match.start())
-            excerpt = _redact(lines[lineno - 1], patterns) if lines else ""
-            out.append(Violation(path, lineno, term, excerpt))
+            excerpt = _redact(lines[lineno - 1], present) if lines else ""
+            out.append(Violation(path, lineno, matcher.term, excerpt))
     out.sort(key=lambda v: (v.line, v.term))
     return out
 
@@ -202,8 +238,13 @@ def load_blocklist(path: Path) -> list[str]:
     return terms
 
 
-def _safe_name(path: str, patterns: Sequence[tuple[str, re.Pattern[str]]]) -> str:
-    """*path* as a report may show it: itself, unless its name carries a term.
+def _scan_name(path: str, matchers: Sequence[_Matcher]) -> tuple[str, list[Violation]]:
+    """*path* as a report may show it, and every term in the file's name.
+
+    A name is text the repository publishes as surely as any file's contents,
+    and it used to be passed through as a label and never scanned -- which is
+    how a launcher named after a term cleared every guard and reached a
+    public ``main``.  A hit is reported at line 0.
 
     A name joins its words with ``_``, ``-`` and ``.``, which the matcher's word
     boundaries read as letters, so the name is judged with those as spaces --
@@ -211,23 +252,22 @@ def _safe_name(path: str, patterns: Sequence[tuple[str, re.Pattern[str]]]) -> st
     the report and pytest's introspection would otherwise print the term.
     """
     words = _NAME_JOINERS.sub(" ", path)
-    if any(pat.search(words) for _term, pat in patterns):
-        return _redact(words, patterns)
-    return path
+    hits = [m for m in _present(matchers, words) if m.pattern.search(words)]
+    if not hits:
+        return path, []
+    shown = _redact(words, hits)
+    return shown, [Violation(shown, 0, m.term, "(in the file's name)") for m in hits]
 
 
-def name_violations(path: str, terms: Iterable[str]) -> list[Violation]:
-    """Every blocklisted term in a file's *name*, reported at line 0.
-
-    A name is text the repository publishes as surely as any file's contents,
-    and it used to be passed through as a label and never scanned -- which is
-    how a launcher named after a term cleared every guard and reached a
-    public ``main``.  The path is reported redacted (:func:`_safe_name`).
-    """
-    patterns = _compile(terms)
-    words = _NAME_JOINERS.sub(" ", path)
-    return [Violation(_safe_name(path, patterns), 0, term, "(in the file's name)")
-            for term, pat in patterns if pat.search(words)]
+def _scan(named_texts: Iterable[tuple[str, str | None]], terms: Iterable[str]) -> list[Violation]:
+    matchers = _compile(terms)
+    out: list[Violation] = []
+    for name, text in named_texts:
+        shown, in_name = _scan_name(name, matchers)
+        out.extend(in_name)
+        if text is not None:
+            out.extend(_violations_in(text, matchers, shown))
+    return out
 
 
 def scan_files(
@@ -243,18 +283,15 @@ def scan_files(
     public repo by ``.gitignore``, not by this text guard — but every name is
     read.
     """
-    terms = list(terms)
-    patterns = _compile(terms)
-    out: list[Violation] = []
-    for path in paths:
-        display = str(path.relative_to(root)) if root else str(path)
-        out.extend(name_violations(display, terms))
-        try:
-            text = path.read_text(encoding="utf-8")
-        except (UnicodeDecodeError, OSError):
-            continue
-        out.extend(find_violations(text, terms, path=_safe_name(display, patterns)))
-    return out
+    return _scan(((str(path.relative_to(root)) if root else str(path), _text_of(path))
+                  for path in paths), terms)
+
+
+def _text_of(path: Path) -> str | None:
+    try:
+        return path.read_text(encoding="utf-8")
+    except (UnicodeDecodeError, OSError):
+        return None
 
 
 # --------------------------------------------------------------------------
@@ -286,21 +323,19 @@ def _staged_violations(repo: Path, terms: Sequence[str]) -> list[Violation]:
         ["git", "diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z"],
         cwd=repo, capture_output=True, text=True, check=True,
     ).stdout.split("\0")
-    patterns = _compile(terms)
-    out: list[Violation] = []
-    for rel in filter(None, names):
-        out.extend(name_violations(rel, terms))
-        blob = subprocess.run(
-            ["git", "show", f":{rel}"], cwd=repo, capture_output=True, check=False,
-        )
-        if blob.returncode:
-            continue
-        try:
-            text = blob.stdout.decode("utf-8")
-        except UnicodeDecodeError:
-            continue
-        out.extend(find_violations(text, terms, path=_safe_name(rel, patterns)))
-    return out
+    return _scan(((rel, _staged_text(repo, rel)) for rel in filter(None, names)), terms)
+
+
+def _staged_text(repo: Path, rel: str) -> str | None:
+    blob = subprocess.run(
+        ["git", "show", f":{rel}"], cwd=repo, capture_output=True, check=False,
+    )
+    if blob.returncode:
+        return None
+    try:
+        return blob.stdout.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
 
 
 def build_parser() -> argparse.ArgumentParser:
