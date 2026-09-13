@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   full-suite:
-    uses: haglio/.github/.github/workflows/merge-gate.yml@main
+    uses: haglio/.github/.github/workflows/merge-gate.yml@claude/random-test-order
     with:
       siblings: ""
       python-version: "3.12"
@@ -26,7 +26,7 @@ jobs:
   # with no version to bump and nothing but this repo's own suite deciding it
   # may. broker is the cheapest repo that uses it as an application does.
   consumer:
-    uses: haglio/.github/.github/workflows/merge-gate.yml@main
+    uses: haglio/.github/.github/workflows/merge-gate.yml@claude/random-test-order
     with:
       repo: broker
       siblings: "shared_ui"
@@ -40,7 +40,7 @@ jobs:
   # queue, so this reads without gating and nothing here can hold up a landing.
   next-python:
     if: github.event_name == 'push'
-    uses: haglio/.github/.github/workflows/merge-gate.yml@main
+    uses: haglio/.github/.github/workflows/merge-gate.yml@claude/random-test-order
     with:
       siblings: ""
       python-version: "3.14"
