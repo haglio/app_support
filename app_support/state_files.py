@@ -30,7 +30,12 @@ BROKER_HEARTBEAT = "broker_heartbeat.txt"
 second while the broker holds the serial port; read as an age (``stamp_age``)."""
 
 GENAU_MODE = "genau_mode.txt"
-"""Broker -> Fun Time.  ``"1"`` while Genau has the OSR2, ``"0"`` otherwise
+"""What :data:`BROKER_MODE` was called.  Spelled here only until the broker and
+Fun Time have both moved to that name; the broker renames the file it finds."""
+
+BROKER_MODE = "broker_mode.txt"
+"""Broker -> Fun Time.  ``"1"`` while the broker is running the OSR2 itself in
+auto mode, ``"0"`` while it holds the device under Fun Time's control
 (``write_flag`` / ``read_flag`` with a default of False)."""
 
 OSR2_SERIAL_RX = "osr2_serial_rx.txt"
