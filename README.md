@@ -24,6 +24,13 @@ Two more things every repo in the family needs, and used to keep its own copy of
   AST so a test can replay it in a fresh interpreter. A windowed launch has no
   console, so an import that fails inside one leaves the icon doing nothing and
   the suite entirely green.
+- **`launcher`** — every app's Windows launcher, the `.vbs` its shortcut runs,
+  rendered from a spec in its own `pyproject.toml` under
+  `[tool.haglio.launchers."<file>"]`. The venv's interpreter and never one off
+  `PATH`, nothing on `PYTHONPATH`, `Option Explicit`, one log convention, and a
+  dry run (`HAGLIO_LAUNCHER_DRY_RUN=1`) that reports what it would start, which
+  is how a suite runs each launcher under the real script host.
+  `python -m app_support.launcher --write` renders a checkout's launchers.
 - **`process_identity`** — the copy of its interpreter an app starts each of its
   processes through, named and described for the task list; `name_this_process`
   is the call at the top of every `main()`. **`process_identity_check`** runs an
