@@ -14,12 +14,20 @@ Windows, and each one had grown its own byte-identical copy of the same things:
 - **`subprocess_utils`** — `hidden_subprocess_kwargs`, so shelling out to ffprobe
   or PowerShell never flashes a console window over the video.
 
-Two more things every repo in the family needs, and used to keep its own copy of:
+More that every repo in the family needs, and used to keep its own copy of:
 
 - **`sanitize`** — the pre-publication content guard, plus the pytest plugin
   that enforces a clean tracked tree. See below.
 - **`dead_code`** — the family's vulture gate in one shape, so eleven repos stop
   keeping six. See below.
+- **`flake_gate`** — runs the tests a branch added or changed ten times on a
+  busy machine and refuses the branch if one fails even once, so a flaky test
+  is turned away before it lands instead of costing a session after.
+  **`changed_tests`** names those tests. From a checkout:
+  `python -m app_support.flake_gate --base origin/main`. It repeats only what
+  the repo's own suite would collect (its `testpaths` and `norecursedirs`);
+  `--only DIR` asks for a tree the suite leaves out instead, and `--python`
+  names the interpreter the tests run under.
 - **`launch_smoke`** — reads everything a launcher's entry point imports off its
   AST so a test can replay it in a fresh interpreter. A windowed launch has no
   console, so an import that fails inside one leaves the icon doing nothing and
