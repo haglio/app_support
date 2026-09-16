@@ -27,7 +27,11 @@ More that every repo in the family needs, and used to keep its own copy of:
   `python -m app_support.flake_gate --base origin/main`. It repeats only what
   the repo's own suite would collect (its `testpaths` and `norecursedirs`);
   `--only DIR` asks for a tree the suite leaves out instead, and `--python`
-  names the interpreter the tests run under.
+  names the interpreter the tests run under. The busy machine is one spinning
+  worker per core, below normal priority so it never takes the processor from
+  the person at the machine; `--dedicated-machine`, for a CI runner, has the
+  workers compete with the tests at the tests' own priority. The tests run at
+  the priority the gate was started with, never lower.
 - **`launch_smoke`** — reads everything a launcher's entry point imports off its
   AST so a test can replay it in a fresh interpreter. A windowed launch has no
   console, so an import that fails inside one leaves the icon doing nothing and

@@ -9,6 +9,7 @@ import sys
 import tomllib
 from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager, contextmanager
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -19,8 +20,9 @@ __all__ = ["assert_they_hold_up", "busy_machine", "main"]
 
 
 @contextmanager
-def busy_machine(*, workers: int) -> Iterator[list[subprocess.Popen]]:
-    spinning = [subprocess.Popen([sys.executable, "-c", "while True: pass"], **_giving_way())
+def busy_machine(*, workers: int, give_way: bool = True) -> Iterator[list[subprocess.Popen]]:
+    started_as = _giving_way() if give_way else hidden_subprocess_kwargs()
+    spinning = [subprocess.Popen([sys.executable, "-c", "while True: pass"], **started_as)
                 for _ in range(workers)]
     try:
         yield spinning
@@ -37,15 +39,15 @@ def assert_they_hold_up(root: Path, ids: list[str], *, runs: int, python: str = 
     with (load or _every_core_busy)():
         for run in range(1, runs + 1):
             done = subprocess.run([python, "-m", "pytest", "-q", "-p", "no:cacheprovider", *ids],
-                                  cwd=root, capture_output=True, text=True, **_giving_way())
+                                  cwd=root, capture_output=True, text=True, **hidden_subprocess_kwargs())
             if done.returncode != 0:
                 raise AssertionError(
                     f"a new or changed test failed on run {run} of {runs}; a test that fails "
                     f"even once is flaky and cannot land:\n{done.stdout}{done.stderr}")
 
 
-def _every_core_busy() -> AbstractContextManager:
-    return busy_machine(workers=os.cpu_count() or 1)
+def _every_core_busy(give_way: bool = True) -> AbstractContextManager:
+    return busy_machine(workers=os.cpu_count() or 1, give_way=give_way)
 
 
 def _giving_way() -> dict[str, Any]:
@@ -60,6 +62,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--runs", type=int, default=10)
     parser.add_argument("--only", action="append", default=[], metavar="DIR")
     parser.add_argument("--python", default=sys.executable)
+    parser.add_argument("--dedicated-machine", action="store_true")
     args = parser.parse_args(argv)
     root = Path.cwd()
     changed = changed_test_ids(root, args.base)
@@ -73,7 +76,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     print("\n".join(ids))
     try:
-        assert_they_hold_up(root, ids, runs=args.runs, python=args.python)
+        assert_they_hold_up(root, ids, runs=args.runs, python=args.python,
+                            load=partial(_every_core_busy, give_way=not args.dedicated_machine))
     except AssertionError as refusal:
         print(refusal, file=sys.stderr)
         return 1
