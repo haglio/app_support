@@ -1,10 +1,14 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=61.0", "setuptools-scm>=8,<9"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "app-support"
-version = "0.1.0"
+# The version is the tag on the landing, read by setuptools-scm -- see
+# [tool.setuptools_scm] and tests/test_version_source.py. Written down here it
+# said 0.1.0 for the life of the repo, which is no use to a consumer that wants
+# to name the copy of this package it was built against.
+dynamic = ["version"]
 # 3.12, not 3.10: every gate in the family runs 3.12 and nothing has ever
 # collected a suite on anything older, so >=3.10 was a promise no run backed.
 requires-python = ">=3.12"
@@ -31,11 +35,17 @@ dev = [
     "ruff==0.16.6",
 ]
 
-# Consumers install this editable from a local path (see README); it is never
-# published, so it must not appear in their own [project.dependencies] — pip
-# would go looking for it on PyPI.
+# Consumers name a tag of this repository in their own [project.dependencies],
+# so pip fetches the copy they were built against instead of resolving a name
+# PyPI has never heard of.
 [tool.setuptools.packages.find]
 include = ["app_support*"]
+
+# The version is `git describe` of the checkout being built: a landing's tag
+# exactly, and that tag plus a development suffix for a checkout sitting past
+# one. Nothing is written back into the tree, so a consumer's pin and this
+# package's own idea of its version can never disagree.
+[tool.setuptools_scm]
 
 [tool.pytest.ini_options]
 # A ceiling on a hang, not a performance budget. The slowest test on a
