@@ -91,33 +91,6 @@ class TestGenauMode:
         assert read_flag(tmp_path / state_files.GENAU_MODE, default=False) is False
 
 
-class TestGenauEnabled:
-    """A switch that is on until somebody turns it off."""
-
-    def test_nobody_having_thrown_it_reads_as_enabled(self, tmp_path: Path):
-        assert read_flag(tmp_path / state_files.GENAU_ENABLED, default=True) is True
-
-    def test_what_fun_time_throws_is_what_the_broker_reads(self, tmp_path: Path):
-        path = tmp_path / state_files.GENAU_ENABLED
-
-        write_flag(path, False)
-        assert read_flag(path, default=True) is False
-        write_flag(path, True)
-        assert read_flag(path, default=True) is True
-
-    def test_a_blank_or_torn_file_is_not_a_decision_to_turn_it_off(self, tmp_path: Path):
-        path = tmp_path / state_files.GENAU_ENABLED
-        path.write_text("", encoding="utf-8")
-
-        assert read_flag(path, default=True) is True
-
-    def test_a_powershell_writer_leaving_a_bom_is_still_read(self, tmp_path: Path):
-        path = tmp_path / state_files.GENAU_ENABLED
-        path.write_bytes(b"\xef\xbb\xbf0")
-
-        assert read_flag(path, default=True) is False
-
-
 class TestGenausChannel:
     def test_a_verb_fun_time_queues_is_the_verb_genau_drains(self, tmp_path: Path):
         path = tmp_path / state_files.GENAU_CMD

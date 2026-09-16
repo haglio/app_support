@@ -196,11 +196,10 @@ def read_flag(path: Path, *, default: bool, logger: logging.Logger | None = None
     """A one-character flag file: ``"1"`` is True, ``"0"`` is False, and anything
     else is *default* -- no file, a blank one, a torn one, one nobody here can read.
 
-    *default* is the caller's word for what the flag means when it says nothing.
-    ``genau_enabled.txt`` is on until somebody turns it off, so a missing or
-    half-written one reads as enabled; a paused flag is off until somebody sets
-    it, so the same file reads as running.  The test is always for the character
-    that means the switch was thrown, never for the absence of the other.
+    *default* is the caller's word for what the flag means when it says nothing:
+    a paused flag is off until somebody sets it, so a missing or half-written one
+    reads as running.  The test is always for the character that means the switch
+    was thrown, never for the absence of the other.
     """
     try:
         if not path.exists():
