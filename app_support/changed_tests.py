@@ -14,6 +14,7 @@ _MODULE_LEVEL = ""
 class _Module(NamedTuple):
     tests: dict[tuple[str, str], str]
     around: dict[str, list[str]]
+    imports: set[str]
 
 
 def changed_test_ids(root: Path, base: str) -> list[str]:
@@ -28,7 +29,9 @@ def changed_test_ids(root: Path, base: str) -> list[str]:
 
 
 def _around_changed(before: _Module, after: _Module, klass: str) -> bool:
-    return any(before.around.get(scope) != after.around.get(scope) for scope in {_MODULE_LEVEL, klass})
+    return (not before.imports <= after.imports
+            or any(before.around.get(scope) != after.around.get(scope)
+                   for scope in {_MODULE_LEVEL, klass}))
 
 
 def _changed_test_files(root: Path, base: str) -> list[str]:
@@ -39,8 +42,11 @@ def _changed_test_files(root: Path, base: str) -> list[str]:
 def _read(root: Path, revision_and_path: str) -> _Module:
     tests: dict[tuple[str, str], str] = {}
     around: dict[str, list[str]] = {_MODULE_LEVEL: []}
-    for node in ast.parse(_source(root, revision_and_path)).body:
-        if _is_test(node):
+    imports: set[str] = set()
+    for node in _without_docstring(ast.parse(_source(root, revision_and_path)).body):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            imports.add(ast.dump(node))
+        elif _is_test(node):
             tests[_MODULE_LEVEL, node.name] = ast.dump(node)
         elif isinstance(node, ast.ClassDef) and node.name.startswith("Test"):
             around[node.name] = []
@@ -51,7 +57,15 @@ def _read(root: Path, revision_and_path: str) -> _Module:
                     around[node.name].append(ast.dump(inner))
         else:
             around[_MODULE_LEVEL].append(ast.dump(node))
-    return _Module(tests, around)
+    return _Module(tests, around, imports)
+
+
+def _without_docstring(body: list[ast.stmt]) -> list[ast.stmt]:
+    first = body[0] if body else None
+    if (isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant)
+            and isinstance(first.value.value, str)):
+        return body[1:]
+    return body
 
 
 def _source(root: Path, revision_and_path: str) -> str:
