@@ -37,14 +37,33 @@ def assert_they_hold_up(root: Path, ids: list[str], *, runs: int, python: str = 
                         load: Callable[[], AbstractContextManager] | None = None) -> None:
     if not ids:
         return
+    command = [python, "-m", "pytest", "-q", "-p", "no:cacheprovider"]
     with (load or _every_core_busy)():
         for run in range(1, runs + 1):
-            done = subprocess.run([python, "-m", "pytest", "-q", "-p", "no:cacheprovider", *ids],
-                                  cwd=root, capture_output=True, text=True, **hidden_subprocess_kwargs())
-            if done.returncode != 0:
-                raise AssertionError(
-                    f"a new or changed test failed on run {run} of {runs}; a test that fails "
-                    f"even once is flaky and cannot land:\n{done.stdout}{done.stderr}")
+            for batch in _batches_one_command_line_holds(command, ids):
+                done = subprocess.run([*command, *batch], cwd=root, capture_output=True, text=True,
+                                      **hidden_subprocess_kwargs())
+                if done.returncode != 0:
+                    raise AssertionError(
+                        f"a new or changed test failed on run {run} of {runs}; a test that fails "
+                        f"even once is flaky and cannot land:\n{done.stdout}{done.stderr}")
+
+
+_LONGEST_COMMAND_LINE = 32_766  # CreateProcessW's limit, less its terminating null
+
+
+def _batches_one_command_line_holds(command: list[str], ids: list[str]) -> Iterator[list[str]]:
+    room = _LONGEST_COMMAND_LINE - len(subprocess.list2cmdline(command))
+    batch: list[str] = []
+    used = 0
+    for test in ids:
+        size = 1 + len(subprocess.list2cmdline([test]))
+        if batch and used + size > room:
+            yield batch
+            batch, used = [], 0
+        batch.append(test)
+        used += size
+    yield batch
 
 
 def _every_core_busy(give_way: bool = True) -> AbstractContextManager:
