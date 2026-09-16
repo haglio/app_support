@@ -54,6 +54,18 @@ def test_a_test_that_fails_on_one_run_of_several_is_refused(tmp_path: Path):
         assert_they_hold_up(tmp_path, ["test_flaky.py::test_sometimes"], runs=3, load=nullcontext)
 
 
+def test_more_tests_than_one_windows_command_line_can_name_are_all_run(tmp_path: Path):
+    names = [f"test_{n:02}_{'x' * 1000}" for n in range(40)]
+    (tmp_path / "test_many.py").write_text("from pathlib import Path\n" + "".join(
+        f"\n\ndef {name}():\n"
+        f"    with Path(__file__).with_name('ran.txt').open('a') as ran:\n"
+        f"        ran.write('{name}\\n')\n" for name in names), encoding="utf-8")
+
+    assert_they_hold_up(tmp_path, [f"test_many.py::{name}" for name in names], runs=1, load=nullcontext)
+
+    assert sorted((tmp_path / "ran.txt").read_text().split()) == names
+
+
 def test_every_run_happens_while_the_machine_is_kept_busy(tmp_path: Path):
     log = tmp_path / "log.txt"
     (tmp_path / "test_logged.py").write_text(
