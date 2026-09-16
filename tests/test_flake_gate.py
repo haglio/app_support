@@ -128,19 +128,28 @@ def test_the_workers_give_way_to_whatever_he_is_using():
 
 
 @windows_only
-def test_the_runs_give_way_too_so_they_compete_with_the_workers_and_not_with_him(tmp_path: Path):
+def test_on_a_machine_nobody_is_using_the_workers_compete_with_the_runs():
+    with busy_machine(workers=1, give_way=False) as workers:
+        assert _priority_class(workers[0].pid) == _priority_class(os.getpid())
+
+
+@windows_only
+def test_the_runs_keep_the_priority_the_gate_was_started_with(tmp_path: Path):
+    """Lowered, a test waiting on a child of its own was starved by the other
+    sessions' suites past its timeout, and the gate called it flaky.  A CI
+    runner starts the whole job below normal, which the runs keep too."""
     (tmp_path / "test_own_priority.py").write_text(OWN_PRIORITY, encoding="utf-8")
 
     assert_they_hold_up(tmp_path, ["test_own_priority.py::test_own_priority"], runs=1, load=nullcontext)
 
-    assert int((tmp_path / "priority.txt").read_text()) == subprocess.BELOW_NORMAL_PRIORITY_CLASS
+    assert int((tmp_path / "priority.txt").read_text()) == _priority_class(os.getpid())
 
 
 def test_unless_told_otherwise_it_keeps_every_core_busy(monkeypatch, tmp_path: Path):
     asked_for = []
 
     @contextmanager
-    def counting(*, workers):
+    def counting(*, workers, give_way):
         asked_for.append(workers)
         yield []
 
@@ -153,7 +162,7 @@ def test_unless_told_otherwise_it_keeps_every_core_busy(monkeypatch, tmp_path: P
 
 
 @contextmanager
-def _idle(*, workers):
+def _idle(*, workers, give_way):
     yield []
 
 
@@ -254,3 +263,21 @@ def test_a_test_outside_the_suites_test_paths_is_not_repeated(branch_from, monke
 
     assert flake_gate.main(["--base", "main", "--runs", "1"]) == 0
     assert capsys.readouterr().out.split() == ["tests/test_fast.py::test_fast"]
+
+
+def test_only_a_machine_named_dedicated_has_its_workers_compete(branch_from, monkeypatch):
+    branch = branch_from({"tests/test_things.py": OLD})
+    branch.commit({"tests/test_new.py": "def test_new():\n    assert True\n"})
+    monkeypatch.chdir(branch.path)
+    gave_way = []
+
+    @contextmanager
+    def recording(*, workers, give_way):
+        gave_way.append(give_way)
+        yield []
+
+    monkeypatch.setattr(flake_gate, "busy_machine", recording)
+
+    assert flake_gate.main(["--base", "main", "--runs", "1", "--dedicated-machine"]) == 0
+    assert flake_gate.main(["--base", "main", "--runs", "1"]) == 0
+    assert gave_way == [False, True]
