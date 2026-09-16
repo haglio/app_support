@@ -95,7 +95,14 @@ knows about:
 
 ## Install
 
-Each consuming project installs this editable into its own venv, from a local
+Each consuming project names a tag of this repo in its own
+`[project.dependencies]` (`"app-support @ git+https://github.com/haglio/app_support@v0.1.140"`),
+and pip fetches it; every landing here is tagged and the version this package
+reports is that tag, read by setuptools-scm. To try a change here inside a
+consumer, install this checkout over its pin and reinstall the consumer after.
+
+What follows is that editable install, which is still how this repo is put into
+a venv from a local
 path — this package is never published, so it must not appear in any project's
 `[project.dependencies]`:
 
