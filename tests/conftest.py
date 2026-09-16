@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import faulthandler
 import logging
+import subprocess
 import sys
 import threading
+from pathlib import Path
 
 import pytest
 
@@ -30,6 +32,39 @@ def pytest_configure(config):
     is the fix, and the message says so.
     """
     assert_imported_from_checkout(app_support, checkout=config.rootpath)
+
+
+class Branch:
+    """A git repository checked out on ``branch``, which forks from ``main``."""
+
+    def __init__(self, path: Path):
+        self.path = path
+
+    def git(self, *args: str) -> None:
+        subprocess.run(["git", "-C", str(self.path), *args], check=True, capture_output=True)
+
+    def commit(self, files: dict[str, str], message: str = "a change") -> None:
+        for name, text in files.items():
+            target = self.path / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text, encoding="utf-8")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", message)
+
+
+@pytest.fixture
+def branch_from(tmp_path):
+    """Make a repository whose ``main`` holds *files*, on a branch just made from it."""
+    def make(files: dict[str, str]) -> Branch:
+        branch = Branch(tmp_path / "repo")
+        branch.path.mkdir()
+        branch.git("init", "-q", "-b", "main")
+        branch.git("config", "user.email", "someone@example.com")
+        branch.git("config", "user.name", "Someone")
+        branch.commit(files, "the base")
+        branch.git("checkout", "-q", "-b", "branch")
+        return branch
+    return make
 
 
 @pytest.fixture(autouse=True)
