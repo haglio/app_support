@@ -3,8 +3,8 @@
 A launcher that imports a package nobody declared works on the machine that
 happened to have it and dies on the next one -- and on the merge gate, which
 installs exactly what the pyproject says.  The same is true of a version nobody
-bounded, a sibling checkout nobody recorded, and a Python floor no run proves.
-Four gates, adopted a line each::
+bounded, a sibling checkout nobody recorded, a sibling nobody pinned, a version
+nobody bumps, and a Python floor no run proves.  Six gates, adopted a line each::
 
     from app_support.dependencies import (
         assert_every_dependency_is_bounded, assert_every_import_is_declared,
@@ -26,6 +26,12 @@ Four gates, adopted a line each::
     def test_the_declared_floor_is_the_one_the_gate_runs():
         assert_the_declared_floor_is_the_one_the_gate_runs(
             ROOT / "pyproject.toml", ROOT / ".github" / "workflows" / "merge-gate.yml")
+
+    def test_every_sibling_is_pinned():           # a consumer
+        assert_every_sibling_is_pinned(ROOT / "pyproject.toml")
+
+    def test_the_version_comes_from_the_tag():    # a shared package
+        assert_the_version_comes_from_the_tag(ROOT / "pyproject.toml")
 
 ``assert_every_dependency_is_imported`` is the first gate's converse, for the
 dependency nothing reaches for that every install fetches anyway.
@@ -415,3 +421,60 @@ def assert_the_declared_floor_is_the_one_the_gate_runs(pyproject: Path, workflow
     assert declared == proven, (
         f"{pyproject.name} says >={declared[0]}.{declared[1]} and the gate proves "
         f"{proven[0]}.{proven[1]}; the floor is whatever is actually run")
+
+
+# A family repo named at a tag: `name @ git+https://github.com/haglio/repo@v0.1.138`.
+_SIBLING_PIN = re.compile(
+    r"^(?P<package>[A-Za-z0-9._-]+)\s*@\s*git\+https://github\.com/haglio/"
+    r"(?P<repo>[A-Za-z0-9._-]+)@(?P<tag>v[0-9]\S*)$"
+)
+
+
+def pinned_siblings(pyproject: Path) -> dict[str, str]:
+    """Which family repo each pinned requirement names, and at what tag."""
+    found = {}
+    for _group, requirement in _requirements(pyproject):
+        match = _SIBLING_PIN.match(requirement.strip())
+        if match:
+            found[match["repo"]] = match["tag"]
+    return found
+
+
+def assert_every_sibling_is_pinned(pyproject: Path) -> None:
+    """A consumer runs the copy of each sibling it was built against.
+
+    Unpinned, a sibling was whatever checkout happened to sit beside this one, so
+    a change landing in one repo reached every consumer the same minute -- and a
+    change whose other half had not landed turned all of them red at once, in
+    their own gates, with no cause in their own history.
+    """
+    with Path(pyproject).open("rb") as handle:
+        siblings = set(tomllib.load(handle).get("tool", {}).get("haglio", {}).get("siblings", []))
+    pinned = pinned_siblings(pyproject)
+    assert siblings <= set(pinned), (
+        "a sibling with no pin runs whatever copy sits beside this checkout: "
+        + ", ".join(sorted(siblings - set(pinned))))
+    assert set(pinned) <= siblings, (
+        "a pinned family repo that is not a declared sibling is one nobody counted: "
+        + ", ".join(sorted(set(pinned) - siblings)))
+
+
+def assert_the_version_comes_from_the_tag(pyproject: Path) -> None:
+    """A shared package's version is the tag on its landing, so a consumer can pin it.
+
+    A number written into `pyproject.toml` does not move: every one of these said
+    0.1.0 from the day its repo was made until the day pinning arrived, through
+    every landing in between.
+    """
+    with Path(pyproject).open("rb") as handle:
+        raw = tomllib.load(handle)
+    project = raw.get("project", {})
+    assert "version" not in project, (
+        "a version written here is a version nobody bumps; declare it dynamic and "
+        "let the tag say what it is")
+    assert "version" in project.get("dynamic", []), (
+        "nothing declares the version, so a build has none to report")
+    assert "setuptools_scm" in raw.get("tool", {}), (
+        "[tool.setuptools_scm] is what tells the build to read the tag")
+    assert any(req.startswith("setuptools-scm") for req in raw["build-system"]["requires"]), (
+        "the build cannot read the tag without setuptools-scm among its requires")

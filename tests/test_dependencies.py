@@ -12,7 +12,9 @@ from app_support.dependencies import (
     assert_every_dependency_is_imported,
     assert_every_import_is_declared,
     assert_every_sibling_is_declared,
+    assert_every_sibling_is_pinned,
     assert_the_declared_floor_is_the_one_the_gate_runs,
+    assert_the_version_comes_from_the_tag,
     declared_dependencies,
     inherited_siblings,
     third_party_imports,
@@ -363,3 +365,78 @@ class TestASiblingsOwnSiblings:
         (tmp_path / "somewhere").mkdir()
 
         assert inherited_siblings(["player_core"], tmp_path / "somewhere") is None
+
+
+class TestTheVersionComesFromTheTag:
+    """A shared package's version is the tag on its landing, so a consumer can pin it."""
+
+    def _pyproject(self, tmp_path: Path, body: str) -> Path:
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text(body, encoding="utf-8")
+        return pyproject
+
+    def test_a_dynamic_version_read_by_setuptools_scm_passes(self, tmp_path: Path):
+        pyproject = self._pyproject(tmp_path, (
+            '[build-system]\nrequires = ["setuptools>=61.0", "setuptools-scm>=8,<9"]\n'
+            '[project]\nname = "someapp"\ndynamic = ["version"]\n'
+            "[tool.setuptools_scm]\n"
+        ))
+
+        assert_the_version_comes_from_the_tag(pyproject)
+
+    def test_a_version_written_down_is_refused(self, tmp_path: Path):
+        pyproject = self._pyproject(tmp_path, (
+            '[build-system]\nrequires = ["setuptools>=61.0", "setuptools-scm>=8,<9"]\n'
+            '[project]\nname = "someapp"\nversion = "0.1.0"\n'
+            "[tool.setuptools_scm]\n"
+        ))
+
+        with pytest.raises(AssertionError, match="nobody bumps"):
+            assert_the_version_comes_from_the_tag(pyproject)
+
+    def test_a_dynamic_version_with_nothing_to_read_it_is_refused(self, tmp_path: Path):
+        pyproject = self._pyproject(tmp_path, (
+            '[build-system]\nrequires = ["setuptools>=61.0"]\n'
+            '[project]\nname = "someapp"\ndynamic = ["version"]\n'
+        ))
+
+        with pytest.raises(AssertionError, match=r"setuptools.scm"):
+            assert_the_version_comes_from_the_tag(pyproject)
+
+
+class TestEverySiblingIsPinned:
+    """A consumer names the copy of each sibling it was built against."""
+
+    def _pyproject(self, tmp_path: Path, dependencies: str, siblings: str) -> Path:
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text(
+            f'[project]\nname = "someapp"\ndependencies = [{dependencies}]\n'
+            f"[tool.haglio]\nsiblings = [{siblings}]\n",
+            encoding="utf-8")
+        return pyproject
+
+    def test_a_sibling_named_at_a_tag_passes(self, tmp_path: Path):
+        pyproject = self._pyproject(
+            tmp_path,
+            '"app-support @ git+https://github.com/haglio/app_support@v0.1.139"',
+            '"app_support"')
+
+        assert_every_sibling_is_pinned(pyproject)
+
+    def test_a_sibling_with_no_pin_is_refused(self, tmp_path: Path):
+        pyproject = self._pyproject(tmp_path, "", '"app_support"')
+
+        with pytest.raises(AssertionError, match="app_support"):
+            assert_every_sibling_is_pinned(pyproject)
+
+    def test_a_pin_naming_a_repo_that_is_not_a_sibling_is_refused(self, tmp_path: Path):
+        pyproject = self._pyproject(
+            tmp_path,
+            '"shared-ui @ git+https://github.com/haglio/shared_ui@v0.1.9"',
+            "")
+
+        with pytest.raises(AssertionError, match="shared_ui"):
+            assert_every_sibling_is_pinned(pyproject)
+
+    def test_a_repo_with_no_siblings_at_all_passes(self, tmp_path: Path):
+        assert_every_sibling_is_pinned(self._pyproject(tmp_path, "", ""))
