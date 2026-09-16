@@ -33,11 +33,6 @@ GENAU_MODE = "genau_mode.txt"
 """Broker -> Fun Time.  ``"1"`` while Genau has the OSR2, ``"0"`` otherwise
 (``write_flag`` / ``read_flag`` with a default of False)."""
 
-GENAU_ENABLED = "genau_enabled.txt"
-"""Fun Time and Origenerator -> broker.  ``"0"`` forbids the broker handing the
-OSR2 to Genau; absent or blank means allowed (``read_flag`` with a default of
-True), so the file is a switch that is on until somebody turns it off."""
-
 OSR2_SERIAL_RX = "osr2_serial_rx.txt"
 """Broker -> Fun Time and Origenerator.  A stamp of the device's last word: how
 the session knows the OSR2 is powered on."""
