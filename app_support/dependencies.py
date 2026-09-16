@@ -328,6 +328,11 @@ def assert_every_sibling_is_declared(root: Path, packages: Iterable[Path], pypro
 
 _CEILING = re.compile(r"(<|~=|==)")
 
+# A family repo named at a tag: `name @ git+https://github.com/haglio/repo@v0.1.138`.
+# One commit, so nothing can arrive under it -- tighter than any ceiling. A ref
+# that is not a version tag (a branch, `main`) is the opposite and is not matched.
+_TAG_PIN = re.compile(r"@\s*git\+https://\S+@v[0-9]\S*$")
+
 
 def _requirements(pyproject: Path) -> list[tuple[str, str]]:
     """Every requirement the project declares, with the group that declares it."""
@@ -342,18 +347,23 @@ def _requirements(pyproject: Path) -> list[tuple[str, str]]:
 def unbounded_requirements(pyproject: Path, *, allowing: Iterable[str] = ()) -> list[str]:
     """Every declared requirement that nothing stops from taking a new major version.
 
-    A ceiling, an exact pin and a compatible-release clause all bound one; a bare
-    name and a floor alone do not, and both let a Tuesday's release become what
-    the next run installs.  *allowing* names the ones a repo has decided to leave
-    open, which is a decision that then has a place to be written down.
+    A ceiling, an exact pin, a compatible-release clause and a family repo named
+    at a tag all bound one; a bare name, a floor alone and a repo named at a
+    branch do not, and each lets a Tuesday's release become what the next run
+    installs.  *allowing* names the ones a repo has decided to leave open, which
+    is a decision that then has a place to be written down.
     """
     exempt = {_normalized(name) for name in allowing}
     return [
         f"{requirement} ({group})"
         for group, requirement in _requirements(pyproject)
-        if not _CEILING.search(requirement.split(";")[0])
+        if not _bounded(requirement.split(";")[0])
         and _normalized(_DIST_NAME.match(requirement).group(1)) not in exempt
     ]
+
+
+def _bounded(requirement: str) -> bool:
+    return bool(_CEILING.search(requirement) or _TAG_PIN.search(requirement.strip()))
 
 
 def assert_every_dependency_is_bounded(pyproject: Path, *, allowing: Iterable[str] = ()) -> None:

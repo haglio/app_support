@@ -206,6 +206,21 @@ class TestUpperBounds:
 
         assert unbounded_requirements(pyproject) == []
 
+    def test_a_family_repo_named_at_a_tag_is_bounded(self, tmp_path: Path):
+        """A sibling pin names one commit, which is tighter than any ceiling."""
+        pyproject = self._pyproject(
+            tmp_path,
+            'dependencies = ["app-support @ git+https://github.com/haglio/app_support@v0.1.138"]\n')
+
+        assert unbounded_requirements(pyproject) == []
+
+    def test_a_repo_named_at_a_moving_branch_is_not(self, tmp_path: Path):
+        """A branch is whatever it holds this morning, which is what a ceiling is for."""
+        requirement = "app-support @ git+https://github.com/haglio/app_support@main"
+        pyproject = self._pyproject(tmp_path, f'dependencies = ["{requirement}"]\n')
+
+        assert unbounded_requirements(pyproject) == [f"{requirement} (dependencies)"]
+
     def test_a_bare_name_and_a_floor_alone_are_both_unbounded(self, tmp_path: Path):
         pyproject = self._pyproject(tmp_path, 'dependencies = ["examplelib", "other>=2"]\n')
 
