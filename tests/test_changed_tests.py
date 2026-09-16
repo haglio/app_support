@@ -73,3 +73,26 @@ def test_an_async_test_is_named_like_any_other(branch_from):
     branch.commit({"tests/test_things.py": BASE + "\n\nasync def test_later():\n    assert 1\n"})
 
     assert changed_test_ids(branch.path, "main") == ["tests/test_things.py::test_later"]
+
+
+def test_an_import_the_branch_added_for_its_new_test_names_only_that_test(branch_from):
+    branch = branch_from({"tests/test_things.py": BASE})
+    branch.commit({"tests/test_things.py": "import os\n\n\n" + BASE
+                   + "\n\ndef test_three():\n    assert os.sep\n"})
+
+    assert changed_test_ids(branch.path, "main") == ["tests/test_things.py::test_three"]
+
+
+def test_an_import_the_branch_changed_names_every_test_in_its_file(branch_from):
+    branch = branch_from({"tests/test_things.py": "from os import sep\n\n\n" + BASE})
+    branch.commit({"tests/test_things.py": "from posixpath import sep\n\n\n" + BASE})
+
+    assert changed_test_ids(branch.path, "main") == [
+        "tests/test_things.py::test_one", "tests/test_things.py::test_two"]
+
+
+def test_a_rewritten_file_docstring_names_nothing(branch_from):
+    branch = branch_from({"tests/test_things.py": '"""What these cover."""\n' + BASE})
+    branch.commit({"tests/test_things.py": '"""What these cover, said better."""\n' + BASE})
+
+    assert changed_test_ids(branch.path, "main") == []
