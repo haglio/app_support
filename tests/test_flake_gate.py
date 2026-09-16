@@ -121,6 +121,34 @@ OWN_PRIORITY = (
 )
 
 
+def _image_of(pid: int) -> str:
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32")
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.QueryFullProcessImageNameW.argtypes = [
+        wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD)]
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+    try:
+        name = ctypes.create_unicode_buffer(32768)
+        size = wintypes.DWORD(len(name))
+        assert kernel32.QueryFullProcessImageNameW(handle, 0, name, ctypes.byref(size))
+        return name.value
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+@windows_only
+def test_a_worker_is_the_interpreter_itself_so_ending_it_leaves_nothing_spinning():
+    """Started through a venv's python.exe, a worker was a launcher running the
+    spinning interpreter as its child, and one launcher ended moments after it
+    started left that child spinning with no parent."""
+    with busy_machine(workers=1) as workers:
+        assert Path(_image_of(workers[0].pid)).samefile(sys._base_executable)
+
+
 @windows_only
 def test_the_workers_give_way_to_whatever_he_is_using():
     with busy_machine(workers=1) as workers:

@@ -22,7 +22,8 @@ __all__ = ["assert_they_hold_up", "busy_machine", "main"]
 @contextmanager
 def busy_machine(*, workers: int, give_way: bool = True) -> Iterator[list[subprocess.Popen]]:
     started_as = _giving_way() if give_way else hidden_subprocess_kwargs()
-    spinning = [subprocess.Popen([sys.executable, "-c", "while True: pass"], **started_as)
+    interpreter = getattr(sys, "_base_executable", sys.executable)
+    spinning = [subprocess.Popen([interpreter, "-c", "while True: pass"], **started_as)
                 for _ in range(workers)]
     try:
         yield spinning
