@@ -82,6 +82,8 @@ def _is_test(node: ast.AST) -> bool:
 
 
 def _git(root: Path, *args: str) -> str:
-    done = subprocess.run(["git", "-C", str(root), *args],
-                          check=True, capture_output=True, text=True)
+    """Named encoding, not the machine's: a source file is UTF-8 wherever it is
+    read, and Windows' own code page cannot decode five of its bytes."""
+    done = subprocess.run(["git", "-C", str(root), *args], check=True,
+                          capture_output=True, text=True, encoding="utf-8")
     return done.stdout

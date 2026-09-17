@@ -96,3 +96,12 @@ def test_a_rewritten_file_docstring_names_nothing(branch_from):
     branch.commit({"tests/test_things.py": '"""What these cover, said better."""\n' + BASE})
 
     assert changed_test_ids(branch.path, "main") == []
+
+
+def test_a_curly_quote_in_the_file_does_not_stop_it_being_read(branch_from):
+    quoted = BASE.replace("assert True", 'assert "“one”"')
+    branch = branch_from({"tests/test_things.py": quoted})
+    branch.commit({"tests/test_things.py": quoted.replace("return 1", "return 2 - 1")})
+
+    assert changed_test_ids(branch.path, "main") == [
+        "tests/test_things.py::test_one", "tests/test_things.py::test_two"]
