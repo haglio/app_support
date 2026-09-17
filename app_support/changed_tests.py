@@ -82,6 +82,6 @@ def _is_test(node: ast.AST) -> bool:
 
 
 def _git(root: Path, *args: str) -> str:
-    done = subprocess.run(["git", "-C", str(root), *args],
-                          check=True, capture_output=True, text=True)
+    done = subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True,
+                          encoding="utf-8", errors="replace")
     return done.stdout

@@ -42,7 +42,7 @@ def assert_they_hold_up(root: Path, ids: list[str], *, runs: int, python: str = 
         for run in range(1, runs + 1):
             for batch in _batches_one_command_line_holds(command, ids):
                 done = subprocess.run([*command, *batch], cwd=root, capture_output=True, text=True,
-                                      **hidden_subprocess_kwargs())
+                                      errors="replace", **hidden_subprocess_kwargs())
                 if done.returncode != 0:
                     raise AssertionError(
                         f"a new or changed test failed on run {run} of {runs}; a test that fails "

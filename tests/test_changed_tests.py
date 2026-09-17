@@ -96,3 +96,13 @@ def test_a_rewritten_file_docstring_names_nothing(branch_from):
     branch.commit({"tests/test_things.py": '"""What these cover, said better."""\n' + BASE})
 
     assert changed_test_ids(branch.path, "main") == []
+
+
+def test_a_test_file_is_read_whatever_the_machine_s_code_page_is(branch_from):
+    """Git hands back bytes, and a machine whose code page is not UTF-8 -- every
+    Windows runner -- cannot decode a curly quote in one as that page."""
+    quoted = '"""What the player says: “no clip”."""\n' + BASE
+    branch = branch_from({"tests/test_things.py": quoted})
+    branch.commit({"tests/test_things.py": quoted + "\n\ndef test_three():\n    assert 3\n"})
+
+    assert changed_test_ids(branch.path, "main") == ["tests/test_things.py::test_three"]

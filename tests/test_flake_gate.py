@@ -321,3 +321,19 @@ def test_only_a_machine_named_dedicated_has_its_workers_compete(branch_from, mon
     assert flake_gate.main(["--base", "main", "--runs", "1", "--dedicated-machine"]) == 0
     assert flake_gate.main(["--base", "main", "--runs", "1"]) == 0
     assert gave_way == [False, True]
+
+
+def test_a_run_that_writes_utf_8_is_read_on_a_machine_whose_code_page_is_not(
+        tmp_path: Path, monkeypatch):
+    """The refusal carries pytest's own output.  A run told to write UTF-8 --
+    PYTHONIOENCODING is set in plenty of shells here -- writes bytes the
+    machine's own code page has no character for, and reading them as that page
+    raised instead of refusing the test."""
+    monkeypatch.setenv("PYTHONIOENCODING", "utf-8")
+    (tmp_path / "test_quoted.py").write_text(
+        'def test_quoted():\n    assert False, "no “clip” here"\n', encoding="utf-8")
+
+    with pytest.raises(AssertionError) as refused:
+        assert_they_hold_up(tmp_path, ["test_quoted.py::test_quoted"], runs=1, load=nullcontext)
+
+    assert "test_quoted" in str(refused.value)
