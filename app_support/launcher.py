@@ -36,7 +36,7 @@ VENVS = ("own", "primary")
 
 _KEYS = frozenset({
     "app", "run", "interpreter", "named-interpreter", "venv", "log", "watch",
-    "environment", "copy-from-primary", "checkout-argument",
+    "note", "environment", "copy-from-primary", "checkout-argument",
 })
 _CHECKOUT_KEYS = frozenset({"missing", "gone", "flags"})
 _FLAG_KEYS = frozenset({"app", "log"})
@@ -72,6 +72,7 @@ class Launcher:
     venv: str = "own"
     log: str | None = None
     watch: bool = False
+    note: str | None = None
     environment: tuple[tuple[str, str], ...] = ()
     copy_from_primary: tuple[str, ...] = ()
     checkout_argument: CheckoutArgument | None = None
@@ -105,6 +106,7 @@ def _launcher(file: str, spec: dict) -> Launcher:
         venv=spec.get("venv", "own"),
         log=spec.get("log"),
         watch=spec.get("watch", False),
+        note=spec.get("note"),
         environment=tuple(spec.get("environment", {}).items()),
         copy_from_primary=tuple(spec.get("copy-from-primary", ())),
         checkout_argument=_checkout_argument(refuse, spec.get("checkout-argument")),
@@ -157,6 +159,8 @@ def _refuse_contradictions(refuse, launcher: Launcher) -> None:
         raise refuse(f"venv must be one of {', '.join(VENVS)}")
     if launcher.watch and not launcher.log:
         raise refuse("watch needs a log: the launch is watched through files beside it")
+    if launcher.note and not launcher.watch:
+        raise refuse("note needs watch: the note is what a failed launch shows instead of the log")
     if launcher.copy_from_primary and launcher.venv != "primary":
         raise refuse("copy-from-primary needs venv = \"primary\"")
     logs = [launcher.log, *(flag.log for flag in _flags(launcher))]
@@ -237,6 +241,8 @@ def _declarations(launcher: Launcher) -> str:
         names.append("logPath")
     if launcher.watch:
         names += ["readyFile", "exitedFlag"]
+    if launcher.note:
+        names += ["notePath", "noteText"]
     return "Dim " + ", ".join(names)
 
 
@@ -273,14 +279,17 @@ def _path(base: str, relative: str) -> str:
     return f"fso.BuildPath({base}, {_text(relative)})"
 
 
-def _log_paths(base: str, log: str, watch: bool, indent: str) -> list[str]:
+def _log_paths(base: str, launcher: Launcher, log: str, indent: str) -> list[str]:
     lines = [f"{indent}logPath = {_path(base, log)}"]
-    if watch:
+    if launcher.watch:
         log_path = PureWindowsPath(log)
         lines += [
             f"{indent}readyFile = {_path(base, str(log_path.with_suffix('.ready')))}",
             f"{indent}exitedFlag = {_path(base, str(log_path.with_suffix('.exited')))}",
         ]
+    if launcher.note:
+        lines.append(
+            f"{indent}notePath = {_path(base, str(PureWindowsPath(log).with_name(launcher.note)))}")
     return lines
 
 
@@ -303,7 +312,7 @@ def _decide(launcher: Launcher) -> list[str]:
         lines.append("  primary = fso.GetParentFolderName("
                      "fso.GetParentFolderName(fso.GetParentFolderName(root)))")
     if launcher.log:
-        lines += _log_paths(base, launcher.log, launcher.watch, "  ")
+        lines += _log_paths(base, launcher, launcher.log, "  ")
     lines.append(f"  arguments = {_text(launcher.run, _variables(launcher))}")
     if launcher.checkout_argument:
         lines += _arguments_after_the_checkout(launcher, base)
@@ -326,7 +335,7 @@ def _arguments_after_the_checkout(launcher: Launcher, base: str) -> list[str]:
         if flag.app:
             lines.append(f"        app = {_text(flag.app)}")
         if flag.log:
-            lines += _log_paths(base, flag.log, launcher.watch, "        ")
+            lines += _log_paths(base, launcher, flag.log, "        ")
         lines.append(f"        arguments = arguments & {_text(' ' + flag.name)}")
     lines += [
         "      Case Else",
@@ -355,6 +364,8 @@ def _report(launcher: Launcher) -> list[str]:
         lines.append('  WScript.Echo "log: " & logPath')
     if launcher.watch:
         lines += ['  WScript.Echo "ready: " & readyFile', '  WScript.Echo "exited: " & exitedFlag']
+    if launcher.note:
+        lines.append('  WScript.Echo "note: " & notePath')
     for name, value in launcher.environment:
         lines.append(f'  WScript.Echo "environment: " & {_text(name)} & "=" & {_text(value)}')
     for name in launcher.copy_from_primary:
@@ -385,11 +396,29 @@ def _launch(launcher: Launcher) -> list[str]:
     if launcher.watch:
         lines += ["  If fso.FileExists(readyFile) Then fso.DeleteFile readyFile",
                   "  If fso.FileExists(exitedFlag) Then fso.DeleteFile exitedFlag"]
+    if launcher.note:
+        lines.append("  If fso.FileExists(notePath) Then fso.DeleteFile notePath")
     lines.append("  shell.Run Command(), 0, False")
     if launcher.watch:
-        lines += ["  If Not Started() Then", "    Refuse FailedStart(), vbCritical", "  End If"]
+        lines += ["  If Not Started() Then", *_refusal_of_a_launch_that_never_came_up(launcher),
+                  "  End If"]
     lines.append("End Sub")
     return lines
+
+
+def _refusal_of_a_launch_that_never_came_up(launcher: Launcher) -> list[str]:
+    """The log's last lines say where the app gave up; a note says why it could not
+    start at all, so a note that is there is the whole message and the log is a path."""
+    if not launcher.note:
+        return ["    Refuse FailedStart(), vbCritical"]
+    return [
+        "    noteText = LastLinesOf(notePath, 20)",
+        "    If Len(noteText) > 0 Then",
+        '      Refuse noteText & vbCrLf & "The full log is at:" & vbCrLf & logPath, vbExclamation',
+        "    Else",
+        "      Refuse FailedStart(), vbCritical",
+        "    End If",
+    ]
 
 
 def _command(launcher: Launcher) -> list[str]:
