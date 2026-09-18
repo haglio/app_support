@@ -14,3 +14,8 @@
 
 # --- pytest fixtures (collected by name, never called by our code) ---
 _the_process_is_given_back  # tests/conftest.py
+
+# --- pytest hooks (called by pytest, never by our code) ---
+pytest_collection_modifyitems  # app_support/coverage_gate.py
+pytest_terminal_summary  # app_support/coverage_gate.py
+cov_fail_under  # app_support/coverage_gate.py, set on pytest-cov's own namespace
