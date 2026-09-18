@@ -78,20 +78,17 @@ class TestTheDevicesLastWords:
         assert stamp_age(tmp_path / name, now=100.0) is None
 
 
-@pytest.mark.parametrize("name", [state_files.BROKER_MODE, state_files.GENAU_MODE])
 class TestBrokerMode:
-    """Under both names while the broker and Fun Time move from one to the other."""
-
-    def test_what_the_broker_writes_is_what_fun_time_reads(self, tmp_path: Path, name: str):
-        path = tmp_path / name
+    def test_what_the_broker_writes_is_what_fun_time_reads(self, tmp_path: Path):
+        path = tmp_path / state_files.BROKER_MODE
 
         write_flag(path, True)
         assert read_flag(path, default=False) is True
         write_flag(path, False)
         assert read_flag(path, default=False) is False
 
-    def test_no_broker_yet_means_the_broker_is_not_in_auto(self, tmp_path: Path, name: str):
-        assert read_flag(tmp_path / name, default=False) is False
+    def test_no_broker_yet_means_the_broker_is_not_in_auto(self, tmp_path: Path):
+        assert read_flag(tmp_path / state_files.BROKER_MODE, default=False) is False
 
 
 class TestGenausChannel:
