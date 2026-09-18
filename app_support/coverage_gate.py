@@ -9,16 +9,22 @@ A repo adopts both in a few lines::
     from app_support.coverage_gate import assert_config_is_the_familys
 
     ROOT = Path(__file__).resolve().parent.parent
-    SHIPPED = ("scripture",)
 
     def test_the_coverage_config_is_the_familys():
-        assert_config_is_the_familys(ROOT / ".coveragerc", SHIPPED)
+        assert_config_is_the_familys(ROOT / ".coveragerc")
 
-and commits the `.coveragerc` that `render_config` writes: the family's settings, the
-packages the repo ships, whatever it says it does not unit-test with the reason it
-gives, and its floor -- the number measured the day it adopted this, which the run
-refuses to go below. The floor is raised as coverage climbs and never lowered, so the
-config test refuses a file that drifted anywhere but there.
+and commits the `.coveragerc` that `render_config` writes: the family's settings,
+whatever the repo says it does not unit-test with the reason it gives, and its floor --
+the number measured the day it adopted this, which the run refuses to go below. The
+floor is raised as coverage climbs and never lowered, so the config test refuses a file
+that drifted anywhere but there.
+
+What is measured is the repo itself, less its tests: `source = .` reaches the root's
+own modules and every package under it, which a list of package names does not -- a
+root module is neither a package nor a directory, and coverage drops one silently,
+which is how a repo's entry point stops being part of its own number. Coverage skips
+dot-directories as it walks, so the agents' worktrees under `.claude`, the venv, the
+caches and the temporary roots a suite writes are all passed over without being named.
 
 The measuring rides the unit suite rather than a second pass over the tree: pytest-cov
 collects while the suite runs and this plugin decides whether the floor applies, which
@@ -63,22 +69,31 @@ _NARROWINGS = (
 )
 
 
-def render_config(shipped, not_unit_tested=(), floor=0.0) -> str:
-    """The `.coveragerc` a repo commits: the family's settings, the packages it
-    ships, what it does not unit-test with the reason, and its floor."""
-    omitted = "".join(f"    # {shell.because}\n    {shell.path}\n" for shell in not_unit_tested)
+_NOT_WHAT_A_REPO_SHIPS = (
+    NotUnitTested("tests/*", "the repo's own tests"),
+    NotUnitTested("vulture_whitelist.py", "names that quiet the dead-code scan, not code that runs"),
+)
+
+
+def render_config(not_unit_tested=(), floor=0.0) -> str:
+    """The `.coveragerc` a repo commits: the family's settings, what this repo does
+    not unit-test with the reason, and its floor."""
+    omitted = "".join(f"    # {shell.because}\n    {shell.path}\n"
+                      for shell in (*_NOT_WHAT_A_REPO_SHIPS, *not_unit_tested))
+    excluded = "".join(f"    {line}\n" for line in _EXCLUDED_LINES)
     return (
         "[run]\n"
         "source =\n"
-        + "".join(f"    {name}\n" for name in shipped)
-        + ("omit =\n" + omitted if omitted else "")
-        + "relative_files = true\n"
+        "    .\n"
+        "omit =\n"
+        f"{omitted}"
+        "relative_files = true\n"
         "\n"
         "[report]\n"
         "precision = 2\n"
         f"fail_under = {floor}\n"
         "exclude_also =\n"
-        + "".join(f"    {line}\n" for line in _EXCLUDED_LINES)
+        f"{excluded}"
     )
 
 
@@ -130,12 +145,12 @@ def floor_of(coveragerc) -> float:
     return parsed.getfloat("report", "fail_under")
 
 
-def assert_config_is_the_familys(coveragerc, shipped, not_unit_tested=()) -> None:
+def assert_config_is_the_familys(coveragerc, not_unit_tested=()) -> None:
     """*coveragerc* is `render_config` of its own floor, byte for byte, and every
-    path it names is still in the repo."""
+    file it excuses is still in the repo."""
     coveragerc = Path(coveragerc)
     written = coveragerc.read_text(encoding="utf-8")
-    expected = render_config(shipped, not_unit_tested, floor_of(coveragerc))
+    expected = render_config(not_unit_tested, floor_of(coveragerc))
     if written != expected:
         diff = "".join(difflib.unified_diff(
             expected.splitlines(keepends=True), written.splitlines(keepends=True),
@@ -143,9 +158,6 @@ def assert_config_is_the_familys(coveragerc, shipped, not_unit_tested=()) -> Non
         raise AssertionError(
             f"{coveragerc} is not the family's coverage config plus this repo's floor:\n{diff}")
     repo = coveragerc.parent
-    for name in shipped:
-        if not (repo / name).is_dir():
-            raise AssertionError(f"{coveragerc} measures {name}, which is not a directory in {repo}")
     for shell in not_unit_tested:
         if not (repo / shell.path).exists():
             raise AssertionError(f"{coveragerc} excuses {shell.path}, which {repo} no longer has")

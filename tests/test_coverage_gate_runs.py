@@ -101,7 +101,7 @@ class TestTheFloorAgainstARealRun:
         (tests / "test_mod.py").write_text(A_TEST, encoding="utf-8")
         (tmp_path / "pyproject.toml").write_text(pyproject, encoding="utf-8")
         (tmp_path / ".coveragerc").write_text(
-            coverage_gate.render_config(("pkg",), (), floor), encoding="utf-8")
+            coverage_gate.render_config((), floor), encoding="utf-8")
         return tmp_path
 
     def _run(self, repo: Path, *args: str) -> subprocess.CompletedProcess:

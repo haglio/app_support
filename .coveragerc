@@ -1,6 +1,11 @@
 [run]
 source =
-    app_support
+    .
+omit =
+    # the repo's own tests
+    tests/*
+    # names that quiet the dead-code scan, not code that runs
+    vulture_whitelist.py
 relative_files = true
 
 [report]
