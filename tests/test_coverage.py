@@ -7,12 +7,10 @@ from app_support.coverage_gate import assert_config_is_the_familys
 
 ROOT = Path(__file__).resolve().parent.parent
 
-SHIPPED = ("app_support",)
-
 # What this repo says it does not unit-test, with the reason it gives. One place,
 # never a pragma scattered through the tree.
 NOT_UNIT_TESTED = ()
 
 
 def test_the_coverage_config_is_the_familys():
-    assert_config_is_the_familys(ROOT / ".coveragerc", SHIPPED, NOT_UNIT_TESTED)
+    assert_config_is_the_familys(ROOT / ".coveragerc", NOT_UNIT_TESTED)
