@@ -90,6 +90,10 @@ class TestTheSpec:
         with pytest.raises(LauncherSpecError, match="watch"):
             launchers(_checkout(tmp_path, MINIMAL + "watch = true\n"))
 
+    def test_a_note_needs_the_watch_whose_failure_would_show_it(self, tmp_path: Path):
+        with pytest.raises(LauncherSpecError, match="note"):
+            launchers(_checkout(tmp_path, NOTED_WITHOUT_WATCH))
+
     def test_copying_from_the_primary_needs_the_primary_venv(self, tmp_path: Path):
         spec = MINIMAL + 'copy-from-primary = ["content.local.json"]\n'
 
@@ -255,6 +259,8 @@ windows_only = pytest.mark.skipif(sys.platform != "win32", reason="the Windows s
 
 LOGGED = MINIMAL + "log = 'state\\example.log'\n"
 WATCHED = LOGGED + "watch = true\n"
+NOTED = WATCHED + "note = 'out_of_date.txt'\n"
+NOTED_WITHOUT_WATCH = LOGGED + "note = 'out_of_date.txt'\n"
 WINDOWED = MINIMAL + 'interpreter = "pythonw.exe"\n'
 WORKTREE = MINIMAL + """venv = "primary"
 log = 'state\\example.log'
@@ -311,6 +317,16 @@ class TestADryRun:
         assert report.value("directory") == str(checkout)
         assert report.value("arguments") == "-m example"
         assert report.value("command") == f'"{interpreter}" -m example'
+
+    def test_a_watched_launch_can_name_a_note_to_show_in_place_of_the_log(self, tmp_path: Path):
+        """A launch that fails for a reason the app itself knows -- a copy older than
+        the code the launcher runs, say -- leaves that reason in a file beside the log,
+        and the dialog is that sentence rather than fifteen lines of traceback."""
+        checkout = _checkout(tmp_path, NOTED)
+
+        report = dry_run(_rendered(checkout))
+
+        assert report.value("note") == str(checkout / "state" / "out_of_date.txt")
 
     def test_it_takes_the_copy_named_for_the_app_when_one_is_there(self, tmp_path: Path):
         checkout = _checkout(tmp_path, MINIMAL + 'named-interpreter = "Example-Example.exe"\n')
@@ -521,6 +537,14 @@ CHILD_DIES = """\
 CHILD_DIES_LEAVING_BLANK_LINES = """\
     Set stream = fso.OpenTextFile(logPath, 2, True)
     stream.Write vbCrLf & vbCrLf
+    stream.Close
+    fso.CreateTextFile(exitedFlag, True).Close"""
+CHILD_DIES_LEAVING_A_NOTE = """\
+    Set stream = fso.OpenTextFile(logPath, 8, True)
+    stream.WriteLine "Traceback: the example app could not start"
+    stream.Close
+    Set stream = fso.CreateTextFile(notePath, True)
+    stream.WriteLine "This copy is 12 commits older than the Example you run."
     stream.Close
     fso.CreateTextFile(exitedFlag, True).Close"""
 
@@ -736,6 +760,33 @@ class TestALaunch:
         assert "Microsoft VBScript" not in run.output
         assert "dialog: Example failed to start." in run.output
         assert "Last lines of the log:" not in run.output
+
+    def test_a_launch_that_leaves_a_note_shows_it_in_place_of_the_log_tail(self, tmp_path: Path):
+        """The app knows why it could not start where the log's last lines only show
+        where it gave up, so the note is the whole dialog and the log is a path to read."""
+        checkout = _checkout(tmp_path, NOTED)
+        _venv(checkout, "python.exe")
+
+        run = _rehearse(_rendered(checkout), child=CHILD_DIES_LEAVING_A_NOTE)
+
+        assert run.returncode == 1
+        assert "Microsoft VBScript" not in run.output
+        assert "This copy is 12 commits older than the Example you run." in run.output
+        assert "Last lines of the log:" not in run.output
+        assert str(checkout / "state" / "example.log") in run.output
+
+    def test_a_note_from_an_earlier_launch_never_explains_this_one(self, tmp_path: Path):
+        checkout = _checkout(tmp_path, NOTED)
+        _venv(checkout, "python.exe")
+        (checkout / "state").mkdir(exist_ok=True)
+        (checkout / "state" / "out_of_date.txt").write_text(
+            "the launch before this one was the stale copy", encoding="utf-8")
+
+        run = _rehearse(_rendered(checkout), child=CHILD_DIES)
+
+        assert run.returncode == 1
+        assert "the launch before this one was the stale copy" not in run.output
+        assert "Last lines of the log:" in run.output
 
     def test_a_launch_from_a_shortcut_that_dies_says_which_branch_it_was(self, tmp_path: Path):
         primary = _checkout(tmp_path, BRANCH, name="primary")
