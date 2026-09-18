@@ -33,6 +33,10 @@ dev = [
     # accepts (lint.RUFF_VERSION): a dev dependency of every repo that asks for
     # that gate, this one included, never of the package.
     "ruff==0.16.6",
+    # The measuring app_support.coverage_gate asks for, collected while the unit
+    # suite runs rather than in a pass of its own. A dev dependency of every repo
+    # that asks for that gate, this one included, never of the package.
+    "pytest-cov>=7,<8",
 ]
 
 # Consumers name a tag of this repository in their own [project.dependencies],
@@ -57,5 +61,5 @@ include = ["app_support*"]
 # dumps the stack of the test that stopped, which turns a stalled required
 # check into a one-line diagnosis. tests/test_timeouts.py holds all three
 # halves of it.
-addopts = "-p no:cacheprovider -p app_support.sanitize.pytest_plugin --timeout=60 --timeout-method=thread"
+addopts = "-p no:cacheprovider -p app_support.sanitize.pytest_plugin -p app_support.coverage_gate --cov --cov-report= --timeout=60 --timeout-method=thread"
 testpaths = ["tests"]
