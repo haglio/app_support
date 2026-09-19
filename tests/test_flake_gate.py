@@ -97,6 +97,100 @@ def test_the_refusal_says_which_run_failed_and_carries_what_it_printed(tmp_path:
     assert "assert 2 != 2" in str(refused.value)
 
 
+class _Paced:
+    """Runs that cost what they would, on a clock nothing else moves.
+
+    The cap is arithmetic over measured seconds, and a suite cannot spend real
+    minutes proving it -- so these runs cost time without taking any, and the
+    gate reads the clock they move."""
+
+    def __init__(self, *, seconds_a_test: float, seconds_to_start: float = 0.0):
+        self.seconds_a_test = seconds_a_test
+        self.seconds_to_start = seconds_to_start
+        self.now = 0.0
+        self.runs: list[list[str]] = []
+
+    def run(self, argv, **kwargs):
+        named = [arg for arg in argv if "::" in arg]
+        self.now += self.seconds_to_start + self.seconds_a_test * len(named)
+        self.runs.append(named)
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    def install(self, monkeypatch):
+        monkeypatch.setattr(flake_gate.subprocess, "run", self.run)
+        monkeypatch.setattr(flake_gate, "monotonic", lambda: self.now)
+
+    def times_run(self, test: str) -> int:
+        return sum(test in run for run in self.runs)
+
+
+def _named(count: int) -> list[str]:
+    return [f"tests/test_many.py::test_{n:04}" for n in range(count)]
+
+
+def test_a_cap_too_small_for_them_all_repeats_what_fits_and_names_the_rest(
+        tmp_path: Path, monkeypatch):
+    paced = _Paced(seconds_a_test=1.0)
+    paced.install(monkeypatch)
+    ids = _named(400)
+
+    held = assert_they_hold_up(tmp_path, ids, runs=10, load=nullcontext, budget=300)
+
+    assert paced.now <= 300
+    assert held.repeated + held.skipped == ids
+    assert held.repeated != []
+    assert held.skipped != []
+    assert all(paced.times_run(test) == 10 for test in held.repeated)
+
+
+def test_a_run_that_would_end_past_the_cap_is_never_started(tmp_path: Path, monkeypatch):
+    """The cap is a ceiling, not a ceiling and one more run: what the gate is
+    capped below is the job's own clock, which stops it reporting anything."""
+    paced = _Paced(seconds_a_test=1.0)
+    paced.install(monkeypatch)
+
+    held = assert_they_hold_up(tmp_path, _named(400), runs=10, load=nullcontext, budget=150)
+
+    assert paced.now <= 150
+    assert held.repeated == []
+
+
+def test_a_cap_that_holds_them_all_leaves_nothing_out(tmp_path: Path, monkeypatch):
+    paced = _Paced(seconds_a_test=1.0)
+    paced.install(monkeypatch)
+    ids = _named(20)
+
+    held = assert_they_hold_up(tmp_path, ids, runs=10, load=nullcontext, budget=10_000)
+
+    assert held.repeated == ids
+    assert held.skipped == []
+
+
+def test_with_no_cap_at_all_every_test_is_repeated(tmp_path: Path, monkeypatch):
+    paced = _Paced(seconds_a_test=1.0)
+    paced.install(monkeypatch)
+    ids = _named(400)
+
+    held = assert_they_hold_up(tmp_path, ids, runs=10, load=nullcontext)
+
+    assert held.repeated == ids
+    assert held.skipped == []
+
+
+def test_a_cap_the_very_first_run_spends_leaves_every_test_unrepeated(
+        tmp_path: Path, monkeypatch):
+    """Nothing can be proved in the time left, and the gate says so rather than
+    running on past the job's own ceiling -- where it reports nothing at all."""
+    paced = _Paced(seconds_a_test=1.0, seconds_to_start=400.0)
+    paced.install(monkeypatch)
+    ids = _named(400)
+
+    held = assert_they_hold_up(tmp_path, ids, runs=10, load=nullcontext, budget=300)
+
+    assert held.repeated == []
+    assert held.skipped == ids
+
+
 def test_a_busy_machine_keeps_its_workers_spinning_until_it_is_left():
     with busy_machine(workers=2) as workers:
         assert len(workers) == 2
@@ -277,11 +371,40 @@ def test_the_command_runs_the_tests_with_the_interpreter_it_is_named(branch_from
     branch.commit({"tests/test_new.py": "def test_new():\n    assert True\n"})
     monkeypatch.chdir(branch.path)
     asked = {}
-    monkeypatch.setattr(flake_gate, "assert_they_hold_up",
-                        lambda root, ids, **kwargs: asked.update(kwargs))
+
+    def holding_up(root, ids, **kwargs):
+        asked.update(kwargs)
+        return flake_gate.Repeats(ids, [])
+
+    monkeypatch.setattr(flake_gate, "assert_they_hold_up", holding_up)
 
     assert flake_gate.main(["--base", "main", "--python", r"C:\suite\python.exe"]) == 0
     assert asked["python"] == r"C:\suite\python.exe"
+
+
+def test_the_command_says_how_many_it_repeated(branch_from, monkeypatch, capsys):
+    branch = branch_from({"tests/test_things.py": OLD})
+    branch.commit({"tests/test_new.py": "def test_new():\n    assert True\n"})
+    monkeypatch.chdir(branch.path)
+    monkeypatch.setattr(flake_gate, "busy_machine", _idle)
+
+    assert flake_gate.main(["--base", "main", "--runs", "2"]) == 0
+    assert "repeated 1 of 1 tests, 2 times each" in capsys.readouterr().err
+
+
+def test_the_command_names_every_test_a_cap_left_unrepeated(branch_from, monkeypatch, capsys):
+    """A cap the runs cannot fit in turns nothing away -- it says what it could
+    not get to, so the gap is read rather than guessed at."""
+    branch = branch_from({"tests/test_things.py": OLD})
+    branch.commit({"tests/test_new.py": "def test_new():\n    assert True\n"})
+    monkeypatch.chdir(branch.path)
+    monkeypatch.setattr(flake_gate, "busy_machine", _idle)
+
+    assert flake_gate.main(["--base", "main", "--runs", "2", "--budget-minutes", "0"]) == 0
+    said = capsys.readouterr().err
+    assert "repeated 0 of 1 tests, 2 times each" in said
+    assert "the 0 minute cap left 1 unrepeated:" in said
+    assert "tests/test_new.py::test_new" in said
 
 
 def test_the_command_says_so_when_there_is_nothing_to_repeat(branch_from, monkeypatch, capsys):
