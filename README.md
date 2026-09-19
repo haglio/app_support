@@ -23,7 +23,12 @@ More that every repo in the family needs, and used to keep its own copy of:
 - **`flake_gate`** — runs the tests a branch added or changed ten times on a
   busy machine and refuses the branch if one fails even once, so a flaky test
   is turned away before it lands instead of costing a session after.
-  **`changed_tests`** names those tests. From a checkout:
+  **`changed_tests`** names those tests: one whose own body changed, or that
+  reaches a module-level name that did -- through an argument, a helper, or a
+  mark. Where a name comes from is not one of those, so a module that moves
+  costs nothing; and anything no walk can follow (an autouse fixture,
+  `pytestmark`, a name bound inside an `if`) falls back to the whole file. From
+  a checkout:
   `python -m app_support.flake_gate --base origin/main`. It repeats only what
   the repo's own suite would collect (its `testpaths` and `norecursedirs`);
   `--only DIR` asks for a tree the suite leaves out instead, and `--python`
