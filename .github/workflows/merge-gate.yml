@@ -14,12 +14,19 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Three minutes was the suite plus a flake-gate step costing under thirty
+  # seconds, and a branch that changes this repo's own gate tests pays far more
+  # than that: twenty-one of them, repeated ten times each on a busy machine,
+  # take about eight minutes. That ceiling has already cancelled a run of this
+  # repo's queue (35405306955), which reports nothing and turns a green branch
+  # away -- the failure app_support.flake_gate's --budget-minutes exists to end,
+  # once the workflow that calls the gate passes one.
   full-suite:
     uses: haglio/.github/.github/workflows/merge-gate.yml@main
     with:
       siblings: ""
       python-version: "3.14"
-      timeout-minutes: 3
+      timeout-minutes: 15
 
   # A consumer built against the candidate. This package installs editable into
   # every app's venv, so a change here lands in ten repos the moment it merges --
