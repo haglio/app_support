@@ -83,9 +83,27 @@ def test_an_import_the_branch_added_for_its_new_test_names_only_that_test(branch
     assert changed_test_ids(branch.path, "main") == ["tests/test_things.py::test_three"]
 
 
-def test_an_import_the_branch_changed_names_every_test_in_its_file(branch_from):
-    branch = branch_from({"tests/test_things.py": "from os import sep\n\n\n" + BASE})
-    branch.commit({"tests/test_things.py": "from posixpath import sep\n\n\n" + BASE})
+def test_an_import_that_loses_a_name_names_every_test_in_its_file(branch_from):
+    branch = branch_from({"tests/test_things.py": "from os import curdir, sep\n\n\n" + BASE})
+    branch.commit({"tests/test_things.py": "from os import curdir\n\n\n" + BASE})
+
+    assert changed_test_ids(branch.path, "main") == [
+        "tests/test_things.py::test_one", "tests/test_things.py::test_two"]
+
+
+def test_an_import_repointed_at_a_module_that_moved_names_nothing(branch_from):
+    """The same names from a new path is where a test's subject moved to, not
+    what the test itself does -- and a branch that edits only what a test calls
+    already names nothing."""
+    branch = branch_from({"tests/test_things.py": "from os.path import sep\n\n\n" + BASE})
+    branch.commit({"tests/test_things.py": "from os import sep\n\n\n" + BASE})
+
+    assert changed_test_ids(branch.path, "main") == []
+
+
+def test_a_star_import_pointed_at_another_module_names_every_test(branch_from):
+    branch = branch_from({"tests/test_things.py": "from os.path import *\n\n\n" + BASE})
+    branch.commit({"tests/test_things.py": "from posixpath import *\n\n\n" + BASE})
 
     assert changed_test_ids(branch.path, "main") == [
         "tests/test_things.py::test_one", "tests/test_things.py::test_two"]
@@ -94,6 +112,23 @@ def test_an_import_the_branch_changed_names_every_test_in_its_file(branch_from):
 def test_a_rewritten_file_docstring_names_nothing(branch_from):
     branch = branch_from({"tests/test_things.py": '"""What these cover."""\n' + BASE})
     branch.commit({"tests/test_things.py": '"""What these cover, said better."""\n' + BASE})
+
+    assert changed_test_ids(branch.path, "main") == []
+
+
+WITH_A_DESCRIBED_HELPER = (
+    'def helper():\n    """What this stands in for."""\n    return 1\n\n\n'
+    "def test_one():\n    assert helper() == 1\n"
+)
+
+
+def test_a_rewritten_helper_docstring_names_nothing(branch_from):
+    """Nothing runs a docstring, so rewriting one cannot turn a test flaky. A
+    module that moves takes with it every helper docstring that named it, which
+    is how one branch's rename reached 744 tests in a single file."""
+    branch = branch_from({"tests/test_things.py": WITH_A_DESCRIBED_HELPER})
+    branch.commit({"tests/test_things.py":
+                   WITH_A_DESCRIBED_HELPER.replace("What this stands in for.", "Said better.")})
 
     assert changed_test_ids(branch.path, "main") == []
 

@@ -43,9 +43,9 @@ def _read(root: Path, revision_and_path: str) -> _Module:
     tests: dict[tuple[str, str], str] = {}
     around: dict[str, list[str]] = {_MODULE_LEVEL: []}
     imports: set[str] = set()
-    for node in _without_docstring(ast.parse(_source(root, revision_and_path)).body):
+    for node in _without_docstrings(ast.parse(_source(root, revision_and_path))).body:
         if isinstance(node, (ast.Import, ast.ImportFrom)):
-            imports.add(ast.dump(node))
+            imports |= _bound_by(node)
         elif _is_test(node):
             tests[_MODULE_LEVEL, node.name] = ast.dump(node)
         elif isinstance(node, ast.ClassDef) and node.name.startswith("Test"):
@@ -60,7 +60,29 @@ def _read(root: Path, revision_and_path: str) -> _Module:
     return _Module(tests, around, imports)
 
 
-def _without_docstring(body: list[ast.stmt]) -> list[ast.stmt]:
+def _bound_by(node: ast.Import | ast.ImportFrom) -> set[str]:
+    """Where a name comes from is where the test's subject lives, not what the
+    test does -- so a module that moved rewrites the line and changes nothing.  A
+    star import carries its module instead, its names being unknowable."""
+    if isinstance(node, ast.Import):
+        return {alias.asname or alias.name.split(".")[0] for alias in node.names}
+    return {f"*{node.level * '.'}{node.module or ''}" if alias.name == "*"
+            else alias.asname or alias.name for alias in node.names}
+
+
+_SCOPES = (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
+
+
+def _without_docstrings(tree: ast.Module) -> ast.Module:
+    """Every scope's, not only the file's: nothing runs a docstring, so no
+    rewrite of one can turn a test flaky."""
+    for node in ast.walk(tree):
+        if isinstance(node, _SCOPES):
+            node.body = _past_the_docstring(node.body)
+    return tree
+
+
+def _past_the_docstring(body: list[ast.stmt]) -> list[ast.stmt]:
     first = body[0] if body else None
     if (isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant)
             and isinstance(first.value.value, str)):
