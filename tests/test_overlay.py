@@ -26,17 +26,17 @@ def _json(path: Path, data: dict) -> Path:
 
 class TestReadOverlay:
     def test_the_committed_example_answers_when_there_is_no_local_overlay(self, tmp_path: Path):
-        example = _json(tmp_path / "content.example.json", {"suite_root": "C:/example"})
+        example = _json(tmp_path / "content.example.json", {"library_root": "C:/example"})
 
-        assert read_overlay(tmp_path / "content.local.json", example) == {"suite_root": "C:/example"}
+        assert read_overlay(tmp_path / "content.local.json", example) == {"library_root": "C:/example"}
         assert overlay_path(tmp_path / "content.local.json", example) == example
 
     def test_the_local_overlay_answers_instead_when_it_is_there(self, tmp_path: Path):
-        example = _json(tmp_path / "content.example.json", {"suite_root": "C:/example", "acts": ["a"]})
-        local = _json(tmp_path / "content.local.json", {"suite_root": "D:/mine"})
+        example = _json(tmp_path / "content.example.json", {"library_root": "C:/example", "acts": ["a"]})
+        local = _json(tmp_path / "content.local.json", {"library_root": "D:/mine"})
 
         # Instead of, not on top of: what a missing key means is the repo's to say.
-        assert read_overlay(local, example) == {"suite_root": "D:/mine"}
+        assert read_overlay(local, example) == {"library_root": "D:/mine"}
         assert overlay_path(local, example) == local
 
 
@@ -74,37 +74,37 @@ class TestBackfilled:
 class TestMissingKeys:
     def test_a_local_overlay_missing_a_key_the_example_documents_is_named(self, tmp_path: Path):
         example = _json(tmp_path / "content.example.json",
-                        {"suite_root": "C:/x", "genau_source": "a", "labels": ["b"]})
+                        {"library_root": "C:/x", "genau_source": "a", "labels": ["b"]})
         local = _json(tmp_path / "content.local.json", {"labels": ["mine"]})
 
-        assert missing_keys(local, example) == ("genau_source", "suite_root")
+        assert missing_keys(local, example) == ("genau_source", "library_root")
 
     def test_a_complete_overlay_is_missing_nothing(self, tmp_path: Path):
-        example = _json(tmp_path / "content.example.json", {"suite_root": "C:/x"})
-        local = _json(tmp_path / "content.local.json", {"suite_root": "D:/y"})
+        example = _json(tmp_path / "content.example.json", {"library_root": "C:/x"})
+        local = _json(tmp_path / "content.local.json", {"library_root": "D:/y"})
 
         assert missing_keys(local, example) == ()
 
     def test_a_key_present_but_empty_is_not_missing(self, tmp_path: Path):
         """How you switch a feature off: the key is there with nothing in it."""
-        example = _json(tmp_path / "content.example.json", {"suite_root": "C:/x", "synonyms": [["a"]]})
-        local = _json(tmp_path / "content.local.json", {"suite_root": "D:/y", "synonyms": []})
+        example = _json(tmp_path / "content.example.json", {"library_root": "C:/x", "synonyms": [["a"]]})
+        local = _json(tmp_path / "content.local.json", {"library_root": "D:/y", "synonyms": []})
 
         assert missing_keys(local, example) == ()
 
     def test_no_local_overlay_at_all_is_missing_nothing(self, tmp_path: Path):
         """A fresh or public checkout: the example is not compared against
         itself, it IS what loads."""
-        example = _json(tmp_path / "content.example.json", {"suite_root": "C:/x"})
+        example = _json(tmp_path / "content.example.json", {"library_root": "C:/x"})
 
         assert missing_keys(tmp_path / "content.local.json", example) == ()
 
     def test_the_comment_the_example_carries_is_not_a_key_to_copy(self, tmp_path: Path):
-        example = _json(tmp_path / "content.example.json", {"_comment": "prose", "suite_root": "C:/x"})
-        local = _json(tmp_path / "content.local.json", {"suite_root": "D:/y"})
+        example = _json(tmp_path / "content.example.json", {"_comment": "prose", "library_root": "C:/x"})
+        local = _json(tmp_path / "content.local.json", {"library_root": "D:/y"})
 
         assert missing_keys(local, example) == ()
-        assert documented_keys(json.loads(example.read_text())) == {"suite_root"}
+        assert documented_keys(json.loads(example.read_text())) == {"library_root"}
 
 
 class TestOverlayValue:
