@@ -77,8 +77,9 @@ FAMILY_IMPORT_NAMES: Mapping[str, str] = {
     "skimage": "scikit-image",
 }
 
-# The siblings every repo installs editable from beside it, and never declares.
-FAMILY_SIBLINGS = ("app_support", "player_core", "shared_ui")
+# The family's shared packages: a repo names the ones it needs under [tool.haglio]
+# siblings and pins each at a tag.
+FAMILY_SIBLINGS = ("app_support", "player_core", "shared_ui", "voice_core")
 
 _DIST_NAME = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
 
