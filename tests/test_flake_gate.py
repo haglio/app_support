@@ -444,3 +444,20 @@ def test_only_a_machine_named_dedicated_has_its_workers_compete(branch_from, mon
     assert flake_gate.main(["--base", "main", "--runs", "1", "--dedicated-machine"]) == 0
     assert flake_gate.main(["--base", "main", "--runs", "1"]) == 0
     assert gave_way == [False, True]
+
+
+QUOTED_FAILURE = '''
+def test_quoted():
+    assert False, "no “clip” here"
+'''
+
+
+def test_a_refusal_reads_a_run_that_writes_utf_8_on_a_machine_whose_code_page_is_not(
+        tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("PYTHONIOENCODING", "utf-8")
+    (tmp_path / "test_quoted.py").write_text(QUOTED_FAILURE, encoding="utf-8")
+
+    with pytest.raises(AssertionError) as refused:
+        assert_they_hold_up(tmp_path, ["test_quoted.py::test_quoted"], runs=1, load=nullcontext)
+
+    assert "test_quoted" in str(refused.value)

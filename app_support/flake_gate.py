@@ -77,7 +77,7 @@ def assert_they_hold_up(root: Path, ids: list[str], *, runs: int, python: str = 
 
 def _one_run(command: list[str], chunk: list[str], root: Path, *, run: int, runs: int) -> None:
     done = subprocess.run([*command, *chunk], cwd=root, capture_output=True, text=True,
-                          **hidden_subprocess_kwargs())
+                          errors="replace", **hidden_subprocess_kwargs())
     if done.returncode != 0:
         raise AssertionError(
             f"a new or changed test failed on run {run} of {runs}; a test that fails "
