@@ -284,6 +284,12 @@ class TestDeclaredSiblings:
 
         assert undeclared_siblings(root, [root / "someapp"], root / "pyproject.toml") == []
 
+    def test_the_familys_listener_is_a_sibling_like_the_other_three(self, tmp_path: Path):
+        root = self._repo(tmp_path, source="from voice_core.listener import CommandListener\n")
+
+        assert undeclared_siblings(root, [root / "someapp"], root / "pyproject.toml") == [
+            "voice_core is imported by someapp/app.py and declared nowhere"]
+
     def test_an_imported_sibling_no_pyproject_names_is_reported_with_its_files(self, tmp_path: Path):
         root = self._repo(tmp_path, source="import app_support.cli\n")
 
