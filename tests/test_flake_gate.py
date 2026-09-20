@@ -200,6 +200,8 @@ def test_a_busy_machine_keeps_its_workers_spinning_until_it_is_left():
 
 
 def _priority_class(pid: int) -> int:
+    # Local: `ctypes.wintypes` raises on import off Windows, and this module
+    # is collected there -- only these two helpers are Windows-only.
     import ctypes
     from ctypes import wintypes
 
@@ -228,6 +230,8 @@ OWN_PRIORITY = (
 
 
 def _image_of(pid: int) -> str:
+    # Local: `ctypes.wintypes` raises on import off Windows, and this module
+    # is collected there -- only these two helpers are Windows-only.
     import ctypes
     from ctypes import wintypes
 
