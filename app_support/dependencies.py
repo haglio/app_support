@@ -374,10 +374,9 @@ def _bounded(requirement: str) -> bool:
 
 
 def assert_every_dependency_is_bounded(pyproject: Path, *, allowing: Iterable[str] = ()) -> None:
-    """No upper bound anywhere means each run installs whatever PyPI serves that morning.
-
-    That is not hypothetical here: the gates installed a major version of the
-    imaging stack past the one the developer machines run, and nothing said so.
+    """No upper bound anywhere means each run installs whatever PyPI serves that
+    morning, so a new major version can land on the gates and not on the
+    machines the family runs.
     """
     unbounded = unbounded_requirements(pyproject, allowing=allowing)
     assert not unbounded, (

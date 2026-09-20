@@ -1,11 +1,8 @@
 """Make an app's processes say what they are in the Windows task list.
 
-Every app here runs as ``pythonw.exe``, so the task list shows a column of
-identical "Python" rows.  That is not a cosmetic problem.  When something
-strands a process -- a launcher that dies without reaping, a window that closed
-without its worker -- the task list is the only way back, and it cannot say
-which rows are safe to end.  A user looking at six anonymous Pythons, three of
-them somebody else's, is being asked to guess.
+Every app here runs as ``pythonw.exe``, so without this the task list shows a
+column of identical "Python" rows, and someone ending a stranded process has no
+way to tell which rows are this app's.
 
 Windows decides what it shows about a process from the *file it was started
 from*, and from three fields of that file:
@@ -20,17 +17,16 @@ So an app that wants to be identifiable starts through a copy of its own
 interpreter, with all three rewritten: ``Highdeas-Highdeas.exe`` described as
 "Highdeas", carrying Highdeas's mark.  :class:`ProcessNamer` makes those copies.
 
-Two details of *which* interpreter is copied *where* are load-bearing, and both
-were settled by trying the alternative:
+Two details of *which* interpreter is copied *where* are load-bearing:
 
   * The copy stays in the venv's ``Scripts`` directory.  Python finds
     ``pyvenv.cfg`` one level up from there, so the copy is the same venv with
     the same ``site-packages``.
   * What gets copied is that directory's launcher, NOT the base interpreter it
-    redirects to.  Dropping a copy of the base ``python.exe`` into ``Scripts``
-    also resolves the venv, and it has the appeal of running as a single
-    process -- but it loses the DLL search path PyQt6 needs and dies on
-    ``import QtGui``, which is every Qt window these apps own.
+    redirects to.  A copy of the base ``python.exe`` in ``Scripts`` resolves the
+    venv too, and runs as a single process -- but it loses the DLL search path
+    PyQt6 needs and dies on ``import QtGui``, which is every Qt window these
+    apps own.
 
 Copying the launcher means the real interpreter still runs as a child named
 ``python.exe``, so a named parent has an anonymous worker under it.  That is the

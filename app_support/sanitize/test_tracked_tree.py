@@ -51,12 +51,10 @@ def _repo_under_test(rootpath: Path) -> Path:
 def _say_the_tree_was_not_scanned(blocklist: Path) -> None:
     """No terms resolved, so nothing was scanned. Report that, do not pass.
 
-    This used to `return`, and the docstring called it deliberate — "so the run
-    stays clean either way". That is what made the check a silent no-op on every
-    merge queue in the family: CI checks out the public repository, which by
-    design carries no blocklist, so the one place a commit is stopped before it
-    lands scanned nothing and logged a pass indistinguishable from a scanned
-    tree.
+    Passing here would make the check a silent no-op on every merge queue in
+    the family: CI checks out the public repository, which by design carries no
+    blocklist, so the one place a commit is stopped before it lands would scan
+    nothing and log a pass indistinguishable from a scanned tree.
 
     It still must not take a run down. A public clone, a source archive and a
     stripped CI checkout all legitimately arrive without the overlay, and a
