@@ -489,11 +489,11 @@ class TestHookEntryPoint:
 
 
 class TestTheFlagsTheHookPasses:
-    """This runs inside a git hook, where a usage mistake used to be a
-    traceback and a misspelling used to be silently the other mode."""
+    """This runs inside a git hook, so a usage mistake has to come out as a
+    usage error and a misspelling has to be refused rather than read as the
+    other mode."""
 
     def test_a_message_with_no_file_is_a_usage_error_not_a_traceback(self):
-        """`args[args.index("--message") + 1]` raised IndexError here."""
         with pytest.raises(SystemExit):
             build_parser().parse_args(["--message"])
 
