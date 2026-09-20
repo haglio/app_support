@@ -4,7 +4,7 @@ from app_support.cli import preparse_config_path
 
 
 class TestPreparseConfigPath:
-    def test_returns_none_without_config_arg(self):
+    def test_a_command_line_with_no_config_flag_names_no_config(self):
         assert preparse_config_path([]) is None
 
     def test_extracts_config_arg_without_consuming_others(self):

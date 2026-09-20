@@ -72,7 +72,7 @@ def test_append_command_retries_past_a_drain_then_gives_up(tmp_path: Path):
     assert consume_command_file(path) == []
 
 
-def test_consume_returns_empty_list_when_file_missing(tmp_path: Path):
+def test_a_channel_nobody_has_written_to_yet_holds_no_commands(tmp_path: Path):
     path = tmp_path / "cmd.txt"
 
     result = consume_command_file(path)
@@ -80,7 +80,7 @@ def test_consume_returns_empty_list_when_file_missing(tmp_path: Path):
     assert result == []
 
 
-def test_consume_returns_empty_list_when_file_empty(tmp_path: Path):
+def test_an_emptied_channel_holds_no_commands(tmp_path: Path):
     path = tmp_path / "cmd.txt"
     path.write_text("", encoding="utf-8")
 
@@ -89,7 +89,7 @@ def test_consume_returns_empty_list_when_file_empty(tmp_path: Path):
     assert result == []
 
 
-def test_consume_returns_single_command(tmp_path: Path):
+def test_one_written_command_comes_back_whole(tmp_path: Path):
     path = tmp_path / "cmd.txt"
     path.write_text("NEXT", encoding="utf-8")
 
@@ -98,7 +98,7 @@ def test_consume_returns_single_command(tmp_path: Path):
     assert result == ["NEXT"]
 
 
-def test_consume_returns_multiple_commands_from_multiline(tmp_path: Path):
+def test_commands_come_back_one_per_line_in_the_order_written(tmp_path: Path):
     path = tmp_path / "cmd.txt"
     path.write_text("RESUME\nHUD_ON", encoding="utf-8")
 

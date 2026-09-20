@@ -62,7 +62,7 @@ class _FakeClock:
         self.time += seconds
 
 
-def test_wait_until_returns_without_sleeping_when_the_predicate_is_already_true():
+def test_a_condition_already_true_is_not_waited_on():
     clock = _FakeClock()
 
     wait_until(lambda: True, timeout=5.0, now=clock.now, sleep=clock.sleep)

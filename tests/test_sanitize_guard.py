@@ -324,7 +324,7 @@ class TestBlocklistPath:
         _git(primary, "worktree", "add", str(tree), "-b", "side")
         assert blocklist_path(tree) == shared.resolve()
 
-    def test_returns_a_missing_path_when_there_is_no_list(self, tmp_path: Path):
+    def test_a_machine_with_no_blocklist_still_names_where_one_would_go(self, tmp_path: Path):
         """The public-clone case: a checkout with no family beside it. Absence must
         read as "nothing to enforce" — a returned path that simply does not exist —
         never a crash. Same outcome when git is missing entirely, which the helper

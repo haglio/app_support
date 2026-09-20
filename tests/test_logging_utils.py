@@ -16,7 +16,7 @@ from app_support.logging_utils import (
 
 
 class TestConfigureLogging:
-    def test_returns_logger(self, tmp_path: Path):
+    def test_the_caller_gets_a_logger_it_can_log_through(self, tmp_path: Path):
         log_file = tmp_path / "test.log"
         logger = configure_logging("test.cfg.basic", log_file)
         assert isinstance(logger, logging.Logger)
@@ -149,7 +149,7 @@ class TestInstallExceptionLogging:
 class TestEnableFaulthandler:
     """The one function no consumer's suite covered while it lived in genau."""
 
-    def test_creates_the_log_directory_and_returns_an_open_handle(self, tmp_path: Path):
+    def test_a_log_directory_that_does_not_exist_yet_is_made_before_the_first_write(self, tmp_path: Path):
         # A hard crash (a segfault in a native decoder) writes its C-level
         # traceback straight to this handle, so it must exist before the crash —
         # which means creating the directory is the function's job, not the

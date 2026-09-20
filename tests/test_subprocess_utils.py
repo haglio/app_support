@@ -24,7 +24,7 @@ def _platform(name: str):
     return patch("app_support.subprocess_utils.sys.platform", name)
 
 
-def test_returns_empty_dict_off_windows():
+def test_off_windows_no_creation_flags_are_asked_for():
     with _platform("linux"):
         assert hidden_subprocess_kwargs() == {}
 
