@@ -1,9 +1,8 @@
 """hidden_subprocess_kwargs: the two settings that keep a console child invisible.
 
 Against the real ``STARTUPINFO`` and the real flag constants, with only the
-platform patched: the tests used to patch six attributes apiece and then assert
-the values they had patched in, so a harmless refactor of the import broke them
-while a wrong constant would not have.
+platform patched, so a wrong constant fails and a refactor of the import does
+not.
 """
 from __future__ import annotations
 

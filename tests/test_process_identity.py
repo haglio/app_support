@@ -385,11 +385,9 @@ class TestNameThisProcess:
     def test_never_raises_when_python_cannot_say_what_it_is_running_under(
         self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
     ):
-        """sys.executable is documented to be empty then.  That is the failure
-        named_exe cannot foresee -- it never gets a path -- and the one every
-        app used to wrap the call for.  It costs the name, never the window,
-        and it says so: a task list full of anonymous Pythons with nothing
-        anywhere recording why is the state this module exists to end."""
+        """sys.executable is documented to be empty then, which is the one
+        failure named_exe cannot foresee -- it never gets a path.  It costs the
+        name, never the window, and it logs why."""
         monkeypatch.setattr(sys, "executable", "")
         resources = _FakeResources()
 
