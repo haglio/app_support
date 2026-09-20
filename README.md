@@ -77,6 +77,9 @@ More that every repo in the family needs, and used to keep its own copy of:
   against its reader. **`json_store`** is the same idea for a JSON document
   several processes edit rather than publish: a lock file around the read, the
   change and the write, so the second writer cannot erase the first one's field.
+  See below. **`frame_channel`** carries pixels rather than words: a window one
+  process draws, written into a memory-mapped file whole and read by the process
+  that shows it — the picture of a desktop window put on a screen in the headset.
   See below. **`ports`** does for the family's port numbers what `state_files`
   does for its file names: one list, each saying who listens and who sends, in
   place of a compiled-in default in five repos' configs.
