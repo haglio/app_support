@@ -117,15 +117,10 @@ def _matcher(term: str) -> _Matcher:
       leak arrives as a filename: ``two-word``, ``two_word``, ``two.word``,
       ``twoword``. So the gaps between a term's words match any run of spacing
       or joining punctuation, including none at all.
-    * **Inflections.** ``badterm`` on the list did not catch ``badterms`` in a
-      README, because the trailing ``(?!\\w)`` refused the plural. A short
-      inflectional tail is allowed before that boundary -- and an entry
-      written in the plural is matched from its stem (:func:`_stem`), so it
-      catches its own singular too.
-
-    Both widenings were measured against every tracked file in all eleven repos
-    before landing: they added no false positive, and they caught real names that
-    had been sitting on a public ``main`` in slug form.
+    * **Inflections.** A short inflectional tail is allowed before that
+      boundary, so an entry matches its own plural -- and an entry written in
+      the plural is matched from its stem (:func:`_stem`), so it catches its
+      own singular too.
     """
     stripped = term.strip()
     parts = stripped.split()
@@ -168,9 +163,7 @@ def find_violations(
     Matched against the whole text rather than line by line, because a term's
     words are separated by *any* whitespace — a newline included — so a
     multi-word term that a wrap has split across two lines is a real occurrence
-    that a per-line scan cannot see. One was: a title broken over a docstring's
-    line break survived every scan until a history rewrite, matching on the whole
-    blob, put it back together.
+    that a per-line scan cannot see.
 
     The line reported is where the match *starts*, and the excerpt is that line,
     so a wrapped hit still points at somewhere useful to look.
@@ -199,17 +192,14 @@ def _violations_in(text: str, matchers: Sequence[_Matcher], path: str) -> list[V
 def blocklist_path(repo: Path) -> Path:
     """The one list, beside the checkouts rather than inside any of them.
 
-    The list describes the machine, not a tree, so a copy per repository was
-    always the wrong shape: eleven of them had to be edited in lockstep to stay
-    one list, and nothing made them. Beside the family it is one file, and being
-    outside every repository is what makes it uncommittable — a stronger promise
-    than the ``.gitignore`` line each copy used to rely on.
+    The list describes the machine, not a tree, so one file beside the family
+    keeps it one list, and sitting outside every repository is what makes it
+    uncommittable.
 
     ``git rev-parse --git-common-dir`` names the primary checkout's git
     directory, which every worktree shares, so two levels up from it is the
     directory the checkouts sit in. Resolving from the worktree's own path
-    instead would land two levels too deep, which is how the tracked-tree check
-    was once a silent no-op in exactly the place all the work happens.
+    instead lands two levels too deep.
 
     The leading dot says what the directory is: everything else beside it is a
     checkout, and this one is not.
@@ -242,9 +232,8 @@ def _scan_name(path: str, matchers: Sequence[_Matcher]) -> tuple[str, list[Viola
     """*path* as a report may show it, and every term in the file's name.
 
     A name is text the repository publishes as surely as any file's contents,
-    and it used to be passed through as a label and never scanned -- which is
-    how a launcher named after a term cleared every guard and reached a
-    public ``main``.  A hit is reported at line 0.
+    so it is scanned rather than passed through as a label.  A hit is reported
+    at line 0.
 
     A name joins its words with ``_``, ``-`` and ``.``, which the matcher's word
     boundaries read as letters, so the name is judged with those as spaces --
@@ -348,7 +337,8 @@ def build_parser() -> argparse.ArgumentParser:
     """The two flags the hooks pass.
 
     argparse, not a scan of ``sys.argv``: this runs inside a git hook, where a
-    missing value for ``--message`` used to be an IndexError.
+    missing value for ``--message`` must come out as a usage error rather than
+    a traceback.
     """
     parser = argparse.ArgumentParser(
         prog="app_support.sanitize",
