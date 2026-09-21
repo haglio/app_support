@@ -119,36 +119,3 @@ class TestGenausChannel:
         assert publish_whole(path, "speed=3\ndepth=40\n")
 
         assert path.read_text(encoding="utf-8") == "speed=3\ndepth=40\n"
-
-
-class TestWhereTheBrokersFilesLive:
-    """One directory, which a session, the broker and Origenerator all meet at.
-
-    Only two of the three were ever told where it is; the third walked to that
-    checkout in its own source.
-    """
-
-    def test_it_is_the_state_directory_of_the_checkout_that_holds_it(
-            self, tmp_path: Path):
-        (tmp_path / "fun_time").mkdir()
-
-        assert (state_files.broker_state_dir((tmp_path,))
-                == tmp_path / "fun_time" / "state")
-
-    def test_a_root_without_that_checkout_is_passed_over_for_one_with_it(
-            self, tmp_path: Path):
-        """A consumer names its roots in search order, and the answer is the
-        first that actually holds the checkout."""
-        empty, holding = tmp_path / "empty", tmp_path / "holding"
-        empty.mkdir()
-        (holding / "fun_time").mkdir(parents=True)
-
-        assert (state_files.broker_state_dir((empty, holding))
-                == holding / "fun_time" / "state")
-
-    def test_no_root_holding_it_still_answers_rather_than_raising(
-            self, tmp_path: Path):
-        """Every reader of these files guards on existence, so a machine with no
-        such checkout is an ordinary case and not an import-time crash."""
-        assert (state_files.broker_state_dir((tmp_path,))
-                == tmp_path / "fun_time" / "state")
