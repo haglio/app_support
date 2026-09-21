@@ -19,6 +19,10 @@ Origenerator's -- stays in that repo's config: one owner already.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
+from app_support.siblings import project_dir
+
 # --- The broker's, under its own state directory -----------------------------
 
 BROKER_CMD = "broker_cmd.txt"
@@ -57,3 +61,26 @@ GENAU_DRIVE = "genau_drive.txt"
 GENAU_STATUS = "genau_status.txt"
 """Genau -> Fun Time.  ``key=value`` lines, published whole (``read_key_values``);
 the keys are ``player_core.genau_status``'s."""
+
+
+# --- Where the broker's six live ---------------------------------------------
+
+
+def broker_state_dir(roots) -> Path:
+    """The directory the broker's six files above live in.
+
+    Not under the broker's own checkout: the broker is configured to write into
+    the orchestrator's state directory (its ``osr2_broker_config.example.json``
+    points there), because a session, the broker and Origenerator all have to
+    meet at one directory and only one of the three is always running.
+
+    Said here because all three have to know it and only two of them were told.
+    A session and the broker each read it from their own config; Origenerator,
+    which has no such key, walked to that checkout and appended ``state`` in its
+    own source -- so one app's directory layout was a fact written down inside
+    another, where a change to it would be found by nobody.
+
+    *roots* is a consumer's ``project_roots``: the folders its content overlay
+    says the family's checkouts are in, in search order.
+    """
+    return project_dir("fun_time", roots) / "state"
