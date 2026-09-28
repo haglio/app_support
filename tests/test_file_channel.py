@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import patch
 
@@ -268,3 +269,27 @@ def test_a_write_that_dies_part_way_leaves_the_old_file_whole(tmp_path: Path):
 
     assert path.read_text(encoding="utf-8") == "the old one"
     assert [entry.name for entry in tmp_path.iterdir()] == ["record.json"]
+
+
+def test_a_publish_keeps_its_temp_file_to_itself_and_never_dies_tidying_it(tmp_path: Path):
+    """Two players publish one status file while a room changes hands, and both
+    built the same temp name from it: on 2026-09-28 one player's tidy-up of a
+    replace that had failed hit the other's open handle, and the PermissionError
+    came out of a call whose whole contract is to answer a run loop False.
+
+    So the temp file a publish writes is its own, and whatever happens to it the
+    answer is still a bool."""
+    path = tmp_path / "status.txt"
+    shared = path.with_suffix(".tmp")
+    still_open = ExitStack()
+
+    def hold_it_open_and_fail(src, _dst):
+        still_open.enter_context(Path(src).open(encoding="utf-8"))  # noqa: SIM115
+        raise OSError("held")
+
+    with still_open, patch("app_support.file_channel.os.replace",
+                           side_effect=hold_it_open_and_fail):
+        landed = publish_whole(path, "one\n", attempts=1)
+
+    assert landed is False
+    assert not shared.exists(), "the temp file is named for the file, not for the writer"
