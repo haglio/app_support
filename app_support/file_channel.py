@@ -23,6 +23,7 @@ only.
 """
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import time
@@ -57,16 +58,16 @@ def publish_whole(
     the standard library's ``csv`` writes — asks for the second, because
     translating those a second time doubles every one of them.
     """
-    tmp = path.with_suffix(".tmp")
+    mine = path.with_suffix(f".{os.getpid()}.tmp")
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        with tmp.open("w", encoding="utf-8", newline=newline) as handle:
+        with mine.open("w", encoding="utf-8", newline=newline) as handle:
             handle.write(text)
     except OSError:
         return False
     for attempt in range(attempts):
         try:
-            os.replace(tmp, path)
+            os.replace(mine, path)
             return True
         except OSError:
             if attempt < attempts - 1:
@@ -74,7 +75,8 @@ def publish_whole(
     # Nothing landed, so nothing stays on disk: the temp file lives in the
     # state directory beside the real one, where a stray copy per failed publish
     # would accumulate and read as a file some component owns.
-    tmp.unlink(missing_ok=True)
+    with contextlib.suppress(OSError):  # another writer may have it open
+        mine.unlink(missing_ok=True)
     return False
 
 
