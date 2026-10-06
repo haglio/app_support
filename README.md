@@ -53,6 +53,19 @@ More that every repo in the family needs, and used to keep its own copy of:
   dry run (`HAGLIO_LAUNCHER_DRY_RUN=1`) that reports what it would start, which
   is how a suite runs each launcher under the real script host.
   `python -m app_support.launcher --write` renders a checkout's launchers.
+- **`windows_settings`** — what each app relies on Windows to keep, listed in
+  its own `pyproject.toml` beside its launchers: the shortcuts that start one
+  of them (`[tool.haglio.shortcuts."<name>"]`, kept on the taskbar, in the Start
+  menu, in the Startup folder or in the checkout) and the scheduled tasks that
+  do (`[tool.haglio.scheduled-tasks."<name>"]`, in Task Scheduler's `Haglio`
+  folder). `python -m app_support.windows_settings` names what on this machine
+  differs from every checkout's list; `--write` makes it match: it adds what is
+  missing, points whatever starts an old location at the current one, and
+  removes what a list no longer has. Run it from any Python 3.14 with
+  `PYTHONPATH` naming this checkout, whenever a checkout moves or a list
+  changes. A pin is only ever corrected, since Windows lets no program pin,
+  and what a person must unpin is named for one. `scheduled_tasks` is Task
+  Scheduler underneath it, through Windows' own command-line tool.
 - **`process_identity`** — the copy of its interpreter an app starts each of its
   processes through, named and described for the task list; `name_this_process`
   is the call at the top of every `main()`. **`process_identity_check`** runs an
