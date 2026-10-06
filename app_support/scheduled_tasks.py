@@ -19,6 +19,7 @@ from app_support.subprocess_utils import hidden_subprocess_kwargs
 
 _NAMESPACE = "http://schemas.microsoft.com/windows/2004/02/mit/task"
 _REPEATS_COUNTED_FROM = "2026-01-01T00:00:00"
+_PATIENCE_SECONDS = 120
 _SETTINGS = (
     ("MultipleInstancesPolicy", "IgnoreNew"),
     ("StartWhenAvailable", "true"),
@@ -104,8 +105,13 @@ def this_user() -> str:
 
 def schtasks(*arguments: str) -> str:
     tool = Path(os.environ.get("SYSTEMROOT", r"C:\Windows")) / "System32" / "schtasks.exe"
-    finished = subprocess.run([str(tool), *arguments], capture_output=True, check=False,
-                              **hidden_subprocess_kwargs())
+    try:
+        finished = subprocess.run([str(tool), *arguments], capture_output=True, check=False,
+                                  stdin=subprocess.DEVNULL, timeout=_PATIENCE_SECONDS,
+                                  **hidden_subprocess_kwargs())
+    except subprocess.TimeoutExpired as unanswered:
+        raise OSError(f"schtasks {' '.join(arguments)}: no answer in {_PATIENCE_SECONDS} "
+                      "seconds") from unanswered
     output = finished.stdout.decode("oem", errors="replace")
     if finished.returncode != 0:
         complaint = finished.stderr.decode("oem", errors="replace").strip() or output.strip()
@@ -114,11 +120,17 @@ def schtasks(*arguments: str) -> str:
 
 
 def tasks_in(folder: str, *, run=schtasks) -> list[str]:
-    prefix = folder.rstrip("\\").casefold() + "\\"
+    """The tasks directly in *folder*.  Task Scheduler answers for a folder it
+    does not have with an error, so a folder it will not list holds none."""
+    prefix = folder.rstrip("\\") + "\\"
+    try:
+        listing = run("/query", "/tn", prefix, "/fo", "csv", "/nh")
+    except OSError:
+        return []
     found: list[str] = []
-    for row in csv.reader(run("/query", "/fo", "csv", "/nh").splitlines()):
+    for row in csv.reader(listing.splitlines()):
         path = row[0] if row else ""
-        inside = path.casefold().startswith(prefix) and "\\" not in path[len(prefix):]
+        inside = path.casefold().startswith(prefix.casefold()) and "\\" not in path[len(prefix):]
         if inside and path not in found:
             found.append(path)
     return found

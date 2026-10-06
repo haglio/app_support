@@ -167,8 +167,11 @@ class _TaskScheduler:
 
     def __call__(self, *arguments: str) -> str:
         match arguments:
-            case ("/query", "/fo", "csv", "/nh"):
-                return "".join(f'"{path}","N/A","Ready"\n' for path in self.tasks)
+            case ("/query", "/tn", folder, "/fo", "csv", "/nh"):
+                inside = [path for path in self.tasks if path.startswith(folder)]
+                if not inside:
+                    raise OSError("ERROR: The system cannot find the file specified.")
+                return "".join(f'"{path}","N/A","Ready"\n' for path in inside)
             case ("/query", "/tn", path, "/xml"):
                 return self.tasks[path]
             case ("/create", "/tn", path, "/xml", task_file, "/f"):
