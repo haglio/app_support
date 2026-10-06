@@ -177,7 +177,7 @@ def kept_by(description: str) -> str | None:
     return found["checkout"] if found else None
 
 
-def shortcut_file(place: str, checkout: Path, name: str) -> Path:
+def shortcut_file(checkout: Path, name: str, place: str) -> Path:
     return (Path(checkout) if place == "checkout" else windows_folder(place)) / f"{name}.lnk"
 
 
@@ -241,7 +241,7 @@ def _shortcut_changes(checkouts: dict[str, tuple[Path, Declarations]]) -> list[C
         for spec in declarations.shortcuts:
             shortcut = shortcut_for(checkout, spec)
             for place in spec.places:
-                path = shortcut_file(place, checkout, spec.name)
+                path = shortcut_file(checkout, spec.name, place)
                 key = os.path.normcase(path)
                 if key in wanted:
                     raise WindowsSettingsError(
@@ -316,15 +316,11 @@ def _task_changes(checkouts: dict[str, tuple[Path, Declarations]], run) -> list[
     return found
 
 
-def shortcut_path(checkout: Path, name: str, place: str) -> Path:
-    return shortcut_file(place, checkout, _listed(checkout, name, place).name)
-
-
 def write_shortcut(checkout: Path, name: str, place: str) -> Path:
     """Put the shortcut *checkout*'s list keeps in *place* there now, for the
     app whose own setting decides whether it is there at all."""
     spec = _listed(checkout, name, place)
-    path = shortcut_file(place, checkout, spec.name)
+    path = shortcut_file(checkout, spec.name, place)
     _write(path, shortcut_for(checkout, spec))
     return path
 

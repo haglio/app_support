@@ -389,7 +389,7 @@ class TestAnAppWritingItsOwnShortcut:
 
         written = windows_settings.write_shortcut(checkout, "Example", "startup")
 
-        assert written == windows_settings.shortcut_path(checkout, "Example", "startup")
+        assert written == windows_settings.shortcut_file(checkout, "Example", "startup")
         assert written == places["startup"] / "Example.lnk"
         assert windows_settings.what_differs(
             read_shortcut(str(written)), windows_settings.shortcut_for(checkout, spec)) == []
@@ -401,7 +401,20 @@ class TestAnAppWritingItsOwnShortcut:
         checkout = _checkout(tmp_path, SHORTCUT)
 
         with pytest.raises(WindowsSettingsError, match=name):
-            windows_settings.shortcut_path(checkout, name, place)
+            windows_settings.write_shortcut(checkout, name, place)
+
+        assert not windows_settings.shortcut_file(checkout, name, place).exists()
+
+    @pytest.mark.parametrize("place", ["taskbar", "start-menu", "startup"])
+    def test_a_shortcut_windows_keeps_is_named_for_its_place_alone(
+        self, tmp_path: Path, places, place: str,
+    ):
+        assert (windows_settings.shortcut_file(tmp_path / "anywhere", "Example", place)
+                == places[place] / "Example.lnk")
+
+    def test_a_shortcut_kept_in_the_checkout_is_named_for_the_checkout(self, tmp_path: Path):
+        assert (windows_settings.shortcut_file(tmp_path, "Example", "checkout")
+                == tmp_path / "Example.lnk")
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="shortcuts: only Windows can say")
