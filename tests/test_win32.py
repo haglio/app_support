@@ -20,7 +20,7 @@ from app_support.win32 import (
     _PKEY_AppUserModel_ID,
     is_mutex_held,
     mutex_name,
-    read_shortcut_app_user_model_id,
+    read_shortcut,
     set_app_user_model_id,
     set_shortcut_app_user_model_id,
     show_error_popup,
@@ -42,7 +42,7 @@ SYNCHRONIZE = 0x00100000
 class _FakeFunction:
     """A ctypes function pointer as far as this module uses one.
 
-    The prototype is settable because declaring it is part of the behaviour
+    The prototype is settable because declaring it is part of the behavior
     under test, and every call is recorded because what was passed is the other
     part.
     """
@@ -147,7 +147,7 @@ class _FakeOle32:
 class TestSetShortcutAppUserModelId:
     def test_an_apartment_it_never_opened_is_not_given_back(self):
         # RPC_E_CHANGED_MODE means somebody else put this thread in the other
-        # concurrency model and holds the reference. Uninitialising anyway
+        # concurrency model and holds the reference. Uninitializing anyway
         # decrements their count and can close the apartment under them.
         ole32 = _FakeOle32(init=RPC_E_CHANGED_MODE)
 
@@ -171,7 +171,7 @@ class TestSetShortcutAppUserModelId:
         assert "CoCreateInstance" in str(raised.value)
 
     def test_an_apartment_the_thread_already_had_is_still_given_back(self):
-        # S_FALSE: this thread was already initialised in the same model. It is
+        # S_FALSE: this thread was already initialized in the same model. It is
         # a success, and it still took a reference this thread owes back.
         ole32 = _FakeOle32(init=S_FALSE, create=E_INVALIDARG)
 
@@ -183,13 +183,13 @@ class TestSetShortcutAppUserModelId:
         assert len(ole32.CoUninitialize.calls) == 1
 
 
-class TestReadShortcutAppUserModelId:
+class TestReadShortcut:
     def test_an_apartment_it_never_opened_is_not_given_back(self):
         # The reader's bracket is the stamper's, for the stamper's reason.
         ole32 = _FakeOle32(init=RPC_E_CHANGED_MODE)
 
         with pytest.raises(OSError) as raised:
-            read_shortcut_app_user_model_id("C:/pins/Example.lnk", ole32=lambda: ole32)
+            read_shortcut("C:/pins/Example.lnk", ole32=lambda: ole32)
 
         assert ole32.CoUninitialize.calls == []
         assert ole32.CoCreateInstance.calls == []
@@ -199,7 +199,7 @@ class TestReadShortcutAppUserModelId:
         ole32 = _FakeOle32(init=0, create=E_INVALIDARG)
 
         with pytest.raises(OSError) as raised:
-            read_shortcut_app_user_model_id("C:/pins/Example.lnk", ole32=lambda: ole32)
+            read_shortcut("C:/pins/Example.lnk", ole32=lambda: ole32)
 
         assert len(ole32.CoUninitialize.calls) == 1
         assert "CoCreateInstance" in str(raised.value)
@@ -243,7 +243,8 @@ def _what_the_shell_reads_off(tmp_path: pathlib.Path, lnk: pathlib.Path) -> dict
         'WScript.Echo "target=" & link.TargetPath\n'
         'WScript.Echo "arguments=" & link.Arguments\n'
         'WScript.Echo "directory=" & link.WorkingDirectory\n'
-        'WScript.Echo "icon=" & link.IconLocation\n',
+        'WScript.Echo "icon=" & link.IconLocation\n'
+        'WScript.Echo "window=" & link.WindowStyle\n',
         LNK_PATH=str(lnk))
     return dict(line.split("=", 1) for line in output.splitlines() if "=" in line)
 
@@ -255,14 +256,14 @@ class TestTheStampOnARealShortcut:
     Windows can say whether it reads them right."""
 
     def test_a_shortcut_the_shell_wrote_carries_no_identity(self, tmp_path: pathlib.Path):
-        assert read_shortcut_app_user_model_id(str(_a_shortcut(tmp_path))) is None
+        assert read_shortcut(str(_a_shortcut(tmp_path))).app_id is None
 
     def test_what_was_stamped_is_what_reads_back(self, tmp_path: pathlib.Path):
         lnk = _a_shortcut(tmp_path)
 
         set_shortcut_app_user_model_id(str(lnk), "Example.App")
 
-        assert read_shortcut_app_user_model_id(str(lnk)) == "Example.App"
+        assert read_shortcut(str(lnk)).app_id == "Example.App"
 
     def test_a_second_stamp_replaces_the_first(self, tmp_path: pathlib.Path):
         lnk = _a_shortcut(tmp_path)
@@ -270,7 +271,7 @@ class TestTheStampOnARealShortcut:
 
         set_shortcut_app_user_model_id(str(lnk), "Example.Other")
 
-        assert read_shortcut_app_user_model_id(str(lnk)) == "Example.Other"
+        assert read_shortcut(str(lnk)).app_id == "Example.Other"
 
 
 class TestStampPinnedShortcuts:
@@ -375,14 +376,14 @@ class TestAShortcutWrittenOnWindows:
         write_shortcut(str(lnk), target=os.environ.get("COMSPEC", "cmd.exe"),
                        app_id="Example.App")
 
-        assert read_shortcut_app_user_model_id(str(lnk)) == "Example.App"
+        assert read_shortcut(str(lnk)).app_id == "Example.App"
 
     def test_one_written_without_an_identity_carries_none(self, tmp_path: pathlib.Path):
         lnk = tmp_path / "Example.lnk"
 
         write_shortcut(str(lnk), target=os.environ.get("COMSPEC", "cmd.exe"))
 
-        assert read_shortcut_app_user_model_id(str(lnk)) is None
+        assert read_shortcut(str(lnk)).app_id is None
 
     def test_writing_over_a_shortcut_replaces_it(self, tmp_path: pathlib.Path):
         lnk = _a_shortcut(tmp_path)
@@ -391,7 +392,57 @@ class TestAShortcutWrittenOnWindows:
                        arguments="/c exit", app_id="Example.App")
 
         assert _what_the_shell_reads_off(tmp_path, lnk)["arguments"] == "/c exit"
-        assert read_shortcut_app_user_model_id(str(lnk)) == "Example.App"
+        assert read_shortcut(str(lnk)).app_id == "Example.App"
+
+    def test_writing_over_a_shortcut_keeps_what_it_was_not_told(self, tmp_path: pathlib.Path):
+        lnk = tmp_path / "Example.lnk"
+        _through_the_script_host(
+            tmp_path,
+            'Set shell = CreateObject("WScript.Shell")\n'
+            'Set link = shell.CreateShortcut(shell.Environment("Process")("LNK_PATH"))\n'
+            'link.TargetPath = shell.Environment("Process")("LNK_TARGET")\n'
+            "link.WindowStyle = 7\n"
+            "link.Save\n",
+            LNK_PATH=str(lnk), LNK_TARGET=os.environ.get("COMSPEC", "cmd.exe"))
+
+        write_shortcut(str(lnk), target=os.environ.get("COMSPEC", "cmd.exe"), arguments="/c exit")
+
+        assert _what_the_shell_reads_off(tmp_path, lnk)["window"] == "7"
+
+    def test_an_identity_left_out_of_a_rewrite_is_taken_off(self, tmp_path: pathlib.Path):
+        lnk = tmp_path / "Example.lnk"
+        write_shortcut(str(lnk), target=os.environ.get("COMSPEC", "cmd.exe"), app_id="Example.App")
+
+        write_shortcut(str(lnk), target=os.environ.get("COMSPEC", "cmd.exe"))
+
+        assert read_shortcut(str(lnk)).app_id is None
+
+    def test_a_file_windows_cannot_read_as_a_shortcut_is_written_over(
+        self, tmp_path: pathlib.Path,
+    ):
+        lnk = tmp_path / "Example.lnk"
+        lnk.write_bytes(b"not a shortcut")
+
+        write_shortcut(str(lnk), target=os.environ.get("COMSPEC", "cmd.exe"), arguments="/c exit")
+
+        assert read_shortcut(str(lnk)).arguments == "/c exit"
+
+    def test_everything_written_reads_back(self, tmp_path: pathlib.Path):
+        lnk = tmp_path / "Example.lnk"
+        target = os.environ.get("COMSPEC", r"C:\Windows\System32\cmd.exe")
+
+        write_shortcut(str(lnk), target=target, arguments='"C:\\an example\\launch.vbs" --flag',
+                       working_directory=str(tmp_path), icon=target, icon_index=2,
+                       description="Example, written by a test", app_id="Example.App")
+
+        read = read_shortcut(str(lnk))
+        assert pathlib.PureWindowsPath(read.target) == pathlib.PureWindowsPath(target)
+        assert read.arguments == '"C:\\an example\\launch.vbs" --flag'
+        assert pathlib.PureWindowsPath(read.working_directory) == pathlib.PureWindowsPath(tmp_path)
+        assert pathlib.PureWindowsPath(read.icon) == pathlib.PureWindowsPath(target)
+        assert read.icon_index == 2
+        assert read.description == "Example, written by a test"
+        assert read.app_id == "Example.App"
 
 
 class TestMutexName:
