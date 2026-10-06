@@ -84,9 +84,10 @@ More that every repo in the family needs, and used to keep its own copy of:
   does for its file names: one list, each saying who listens and who sends, in
   place of a compiled-in default in five repos' configs.
 - **`win32`** — what a windowed process says about itself to Windows: its
-  taskbar identity, the same identity stamped onto (and read back off) a
-  shortcut through COM or onto every taskbar pin under the app's name, a
-  shortcut written with it in place, the named mutex that answers whether it may run, and
+  taskbar identity, the same identity stamped onto a shortcut through COM or
+  onto every taskbar pin under the app's name, a shortcut written whole (one
+  already there is changed in place) and read back whole, the named mutex that
+  answers whether it may run, and
   the error popup for a process with nowhere else to say it. Every call raises
   on refusal and none decides what that means; the caller keeps its try/except.
 - **`peer_watch`** — two apps that must both be up all the time watching each

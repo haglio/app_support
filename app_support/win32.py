@@ -11,7 +11,7 @@ family ends up doing and had all grown its own spelling of:
     one interpreter means they land under whatever unrelated application
     registered that path first, wearing its icon and its name.
   * **stamping that identity onto a shortcut**, or writing a shortcut that
-    carries it.  A ``.lnk`` written by ``WScript.Shell`` carries no
+    carries it, and reading one back whole.  A ``.lnk`` written by ``WScript.Shell`` carries no
     ``System.AppUserModel.ID``, so clicking the pin starts a process Windows
     treats as a different application, and a second taskbar button opens beside
     the pin it was launched from.  Nothing but COM can write that property.
@@ -42,6 +42,7 @@ import os
 import uuid
 from collections.abc import Iterable
 from ctypes import wintypes
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -187,10 +188,18 @@ _IID_IPropertyStore = _make_guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99")
 
 _STGM_READ = 0x00000000
 _STGM_READWRITE = 0x00000002
+_VT_EMPTY = 0
+_TEXT_BUFFER = 32768
 _VTBL_QI = 0
 _VTBL_RELEASE = 2
+_VTBL_ISL_GET_PATH = 3
+_VTBL_ISL_GET_DESCRIPTION = 6
+_VTBL_ISL_SET_DESCRIPTION = 7
+_VTBL_ISL_GET_WORKING_DIRECTORY = 8
 _VTBL_ISL_SET_WORKING_DIRECTORY = 9
+_VTBL_ISL_GET_ARGUMENTS = 10
 _VTBL_ISL_SET_ARGUMENTS = 11
+_VTBL_ISL_GET_ICON_LOCATION = 16
 _VTBL_ISL_SET_ICON_LOCATION = 17
 _VTBL_ISL_SET_PATH = 20
 _VTBL_IPF_LOAD = 5
@@ -226,12 +235,12 @@ def _query_interface(obj_addr: int, iid: _GUID) -> int:
 def _apartment(ole32):
     """The COM apartment a shortcut is written or read in, given back after.
 
-    Only an initialisation that succeeded gets undone.  ``CoInitializeEx``
+    Only an initialization that succeeded gets undone.  ``CoInitializeEx``
     answers ``S_OK`` when it opened the apartment and ``S_FALSE`` when the thread
     already had one -- both took a reference this thread owes back -- and a
     failure HRESULT when it took none, which here means ``RPC_E_CHANGED_MODE``:
     something else put this thread in the other concurrency model first.
-    Uninitialising anyway would decrement *that* initialisation's count, and the
+    Uninitializing anyway would decrement *that* initialization's count, and the
     apartment its owner is holding objects in can close under them -- while the
     work inside would be asking for a shell link with no apartment of its own.
     """
@@ -276,12 +285,15 @@ def _save(shell_link: int, lnk_path: str) -> None:
         _release(persist_file)
 
 
-def _store_app_id(shell_link: int, app_id: str) -> None:
+def _store_app_id(shell_link: int, app_id: str | None) -> None:
     prop_store = _query_interface(shell_link, _IID_IPropertyStore)
     try:
         pv = _PROPVARIANT()
-        pv.vt = _VT_LPWSTR
-        pv.pwszVal = app_id
+        if app_id is None:
+            pv.vt = _VT_EMPTY
+        else:
+            pv.vt = _VT_LPWSTR
+            pv.pwszVal = app_id
 
         hr = _vtbl_call(prop_store, _VTBL_IPS_SET_VALUE,
                         ctypes.HRESULT,
@@ -300,101 +312,131 @@ def _store_app_id(shell_link: int, app_id: str) -> None:
         _release(prop_store)
 
 
-def set_shortcut_app_user_model_id(lnk_path: str, app_id: str, *, ole32=_ole32) -> None:
-    """Write *app_id* into the shortcut at *lnk_path* as its AppUserModelID."""
-    with _apartment(ole32) as com:
-        shell_link = _create_shell_link(com)
+def _loaded_shell_link(com, lnk_path: str, mode: int) -> int:
+    shell_link = _create_shell_link(com)
+    try:
+        persist_file = _query_interface(shell_link, _IID_IPersistFile)
         try:
-            persist_file = _query_interface(shell_link, _IID_IPersistFile)
-            try:
-                _load_shortcut(persist_file, lnk_path, _STGM_READWRITE)
-            finally:
-                _release(persist_file)
+            _load_shortcut(persist_file, lnk_path, mode)
+        finally:
+            _release(persist_file)
+    except BaseException:
+        _release(shell_link)
+        raise
+    return shell_link
+
+
+def set_shortcut_app_user_model_id(lnk_path: str, app_id: str, *, ole32=_ole32) -> None:
+    with _apartment(ole32) as com:
+        shell_link = _loaded_shell_link(com, lnk_path, _STGM_READWRITE)
+        try:
             _store_app_id(shell_link, app_id)
             _save(shell_link, lnk_path)
         finally:
             _release(shell_link)
 
 
-def write_shortcut(lnk_path: str, *, target: str, arguments: str = "",
-                   working_directory: str = "", icon: str = "", app_id: str | None = None,
-                   ole32=_ole32) -> None:
-    """Write a shortcut at *lnk_path* that starts *target*, over whatever is there.
+@dataclass(frozen=True)
+class Shortcut:
+    target: str
+    arguments: str = ""
+    working_directory: str = ""
+    icon: str = ""
+    icon_index: int = 0
+    description: str = ""
+    app_id: str | None = None
 
-    *app_id* goes in with the same save, so the shortcut never exists without the
-    identity its app claims.
-    """
+
+def write_shortcut(lnk_path: str, *, target: str, arguments: str = "",
+                   working_directory: str = "", icon: str = "", icon_index: int = 0,
+                   description: str = "", app_id: str | None = None, ole32=_ole32) -> None:
+    """Make the shortcut at *lnk_path* exactly the one described, the identity
+    in the same save.  One already there is changed in place, as the shell's
+    Properties dialog changes one, so what this call does not name survives."""
     with _apartment(ole32) as com:
-        shell_link = _create_shell_link(com)
+        shell_link = _shell_link_to_rewrite(com, lnk_path)
         try:
             for index, method, value in (
                 (_VTBL_ISL_SET_PATH, "SetPath", target),
                 (_VTBL_ISL_SET_ARGUMENTS, "SetArguments", arguments),
                 (_VTBL_ISL_SET_WORKING_DIRECTORY, "SetWorkingDirectory", working_directory),
+                (_VTBL_ISL_SET_DESCRIPTION, "SetDescription", description),
             ):
                 hr = _vtbl_call(shell_link, index, ctypes.HRESULT, wintypes.LPCWSTR)(
                     shell_link, value)
                 if hr < 0:
                     raise _hresult(f"IShellLinkW::{method}", hr)
-            if icon:
-                hr = _vtbl_call(shell_link, _VTBL_ISL_SET_ICON_LOCATION,
-                                ctypes.HRESULT, wintypes.LPCWSTR, ctypes.c_int)(
-                    shell_link, icon, 0)
-                if hr < 0:
-                    raise _hresult("IShellLinkW::SetIconLocation", hr)
-            if app_id is not None:
-                _store_app_id(shell_link, app_id)
+            hr = _vtbl_call(shell_link, _VTBL_ISL_SET_ICON_LOCATION,
+                            ctypes.HRESULT, wintypes.LPCWSTR, ctypes.c_int)(
+                shell_link, icon, icon_index)
+            if hr < 0:
+                raise _hresult("IShellLinkW::SetIconLocation", hr)
+            _store_app_id(shell_link, app_id)
             _save(shell_link, lnk_path)
         finally:
             _release(shell_link)
 
 
-def read_shortcut_app_user_model_id(lnk_path: str, *, ole32=_ole32) -> str | None:
-    """The AppUserModelID the shortcut at *lnk_path* carries, or ``None`` for none.
+def _shell_link_to_rewrite(com, lnk_path: str) -> int:
+    if Path(lnk_path).is_file():
+        with contextlib.suppress(OSError):
+            return _loaded_shell_link(com, lnk_path, _STGM_READWRITE)
+    return _create_shell_link(com)
 
-    It exists because a stamp that reported success still has to be read back to
-    be believed -- the one failure in this module Windows reports no error for is
-    a wrong property key, which writes a real value under the wrong name -- so
-    this is what a test of the stamp asks, and what a launcher asks of a pin it
-    did not write.
-    """
+
+def read_shortcut(lnk_path: str, *, ole32=_ole32) -> Shortcut:
     with _apartment(ole32) as com:
-        return _get_lnk_aumid(lnk_path, com)
-
-
-def _get_lnk_aumid(lnk_path: str, com) -> str | None:
-    shell_link = _create_shell_link(com)
-    try:
-        persist_file = _query_interface(shell_link, _IID_IPersistFile)
+        shell_link = _loaded_shell_link(com, lnk_path, _STGM_READ)
         try:
-            _load_shortcut(persist_file, lnk_path, _STGM_READ)
-
-            prop_store = _query_interface(shell_link, _IID_IPropertyStore)
-            try:
-                pv = _PROPVARIANT()
-                hr = _vtbl_call(prop_store, _VTBL_IPS_GET_VALUE,
-                                ctypes.HRESULT,
-                                ctypes.POINTER(_PROPERTYKEY),
-                                ctypes.POINTER(_PROPVARIANT))(
-                    prop_store,
-                    ctypes.byref(_PKEY_AppUserModel_ID),
-                    ctypes.byref(pv))
-                if hr < 0:
-                    raise _hresult("IPropertyStore::GetValue", hr)
-                try:
-                    # A shortcut with no such property answers VT_EMPTY, and
-                    # S_OK: absence is an answer here, not a failure.
-                    return pv.pwszVal if pv.vt == _VT_LPWSTR else None
-                finally:
-                    # The string in the variant is COM's allocation, not ours.
-                    _declare(com, "PropVariantClear", ctypes.HRESULT,
-                             ctypes.POINTER(_PROPVARIANT))(ctypes.byref(pv))
-            finally:
-                _release(prop_store)
+            icon_index = ctypes.c_int()
+            icon = _read_text(shell_link, _VTBL_ISL_GET_ICON_LOCATION, "GetIconLocation",
+                              (ctypes.POINTER(ctypes.c_int), ctypes.byref(icon_index)))
+            return Shortcut(
+                target=_read_text(shell_link, _VTBL_ISL_GET_PATH, "GetPath",
+                                  (ctypes.c_void_p, None), (wintypes.DWORD, 0)),
+                arguments=_read_text(shell_link, _VTBL_ISL_GET_ARGUMENTS, "GetArguments"),
+                working_directory=_read_text(shell_link, _VTBL_ISL_GET_WORKING_DIRECTORY,
+                                             "GetWorkingDirectory"),
+                icon=icon,
+                icon_index=icon_index.value,
+                description=_read_text(shell_link, _VTBL_ISL_GET_DESCRIPTION, "GetDescription"),
+                app_id=_app_id_of(shell_link, com),
+            )
         finally:
-            _release(persist_file)
+            _release(shell_link)
+
+
+def _read_text(shell_link: int, index: int, method: str, *after_the_buffer) -> str:
+    buffer = ctypes.create_unicode_buffer(_TEXT_BUFFER)
+    function = _vtbl_call(shell_link, index, ctypes.HRESULT, wintypes.LPWSTR, ctypes.c_int,
+                          *(argtype for argtype, _ in after_the_buffer))
+    hr = function(shell_link, buffer, _TEXT_BUFFER, *(value for _, value in after_the_buffer))
+    if hr < 0:
+        raise _hresult(f"IShellLinkW::{method}", hr)
+    return buffer.value
+
+
+def _app_id_of(shell_link: int, com) -> str | None:
+    prop_store = _query_interface(shell_link, _IID_IPropertyStore)
+    try:
+        pv = _PROPVARIANT()
+        hr = _vtbl_call(prop_store, _VTBL_IPS_GET_VALUE,
+                        ctypes.HRESULT,
+                        ctypes.POINTER(_PROPERTYKEY),
+                        ctypes.POINTER(_PROPVARIANT))(
+            prop_store,
+            ctypes.byref(_PKEY_AppUserModel_ID),
+            ctypes.byref(pv))
+        if hr < 0:
+            raise _hresult("IPropertyStore::GetValue", hr)
+        try:
+            return pv.pwszVal if pv.vt == _VT_LPWSTR else None
+        finally:
+            # The string in the variant is COM's allocation, not ours.
+            _declare(com, "PropVariantClear", ctypes.HRESULT,
+                     ctypes.POINTER(_PROPVARIANT))(ctypes.byref(pv))
     finally:
-        _release(shell_link)
+        _release(prop_store)
 
 
 def taskbar_pins() -> Path:
