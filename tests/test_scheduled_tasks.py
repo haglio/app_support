@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import dataclasses
+import subprocess
 import sys
 import uuid
 import xml.etree.ElementTree as ET
@@ -179,21 +180,29 @@ LISTING = r'''
 
 
 class TestTheCommandLineTool:
-    def test_the_tasks_in_a_folder_are_listed_once_each(self):
+    def test_the_tasks_directly_in_a_folder_are_listed_once_each(self):
         schtasks = _Schtasks(LISTING)
 
         assert scheduled_tasks.tasks_in("\\Example", run=schtasks) == [
             "\\Example\\Example Tray", "\\Example\\Other"]
-        assert schtasks.calls == [("/query", "/fo", "csv", "/nh")]
+
+    def test_only_the_folder_is_asked_for(self):
+        """Every folder on the machine took a busy runner more than a minute to
+        list; one folder takes what that folder holds."""
+        schtasks = _Schtasks(LISTING)
+
+        scheduled_tasks.tasks_in("\\Example", run=schtasks)
+
+        assert schtasks.calls == [("/query", "/tn", "\\Example\\", "/fo", "csv", "/nh")]
 
     def test_a_folder_is_matched_whatever_its_case(self):
         assert scheduled_tasks.tasks_in("\\EXAMPLE\\", run=_Schtasks(LISTING)) == [
             "\\Example\\Example Tray", "\\Example\\Other"]
 
-    def test_a_machine_with_no_tasks_has_none_in_the_folder(self):
-        nothing = "INFO: There are no scheduled tasks presently available at your access level."
+    def test_a_folder_task_scheduler_does_not_have_holds_nothing(self):
+        missing = _Schtasks(refusal="ERROR: The system cannot find the file specified.")
 
-        assert scheduled_tasks.tasks_in("\\Example", run=_Schtasks(nothing)) == []
+        assert scheduled_tasks.tasks_in("\\Example", run=missing) == []
 
     def test_a_registered_task_is_read_back_as_it_is_registered(self):
         schtasks = _Schtasks("<Task/>")
@@ -244,6 +253,28 @@ class TestTheCommandLineTool:
         with pytest.raises(OSError, match="Access is denied"):
             scheduled_tasks.delete("\\Example\\Example Tray", run=schtasks)
 
+    def test_a_tool_that_never_answers_is_a_refusal_rather_than_a_hang(self, monkeypatch):
+        def never_answers(*arguments, **options):
+            raise subprocess.TimeoutExpired(arguments[0], options["timeout"])
+
+        monkeypatch.setattr(scheduled_tasks.subprocess, "run", never_answers)
+
+        with pytest.raises(OSError, match="no answer"):
+            scheduled_tasks.schtasks("/query", "/tn", "\\Example\\", "/fo", "csv", "/nh")
+
+    def test_the_tool_is_never_left_waiting_for_input(self, monkeypatch):
+        asked: dict = {}
+
+        def answered(arguments, **options):
+            asked.update(options)
+            return subprocess.CompletedProcess(arguments, 0, b"", b"")
+
+        monkeypatch.setattr(scheduled_tasks.subprocess, "run", answered)
+
+        scheduled_tasks.schtasks("/query", "/tn", "\\Example\\", "/fo", "csv", "/nh")
+
+        assert asked["stdin"] is subprocess.DEVNULL
+
     def test_the_user_is_the_one_signed_in(self, monkeypatch):
         monkeypatch.setenv("USERDOMAIN", "EXAMPLE")
         monkeypatch.setenv("USERNAME", "someone")
@@ -263,9 +294,11 @@ class TestARealRegistration:
     """What only Task Scheduler can say: that it takes the rendered task, without
     an administrator, and hands back every value it was given."""
 
+    FOLDER = "\\Haglio"
+
     @pytest.fixture
     def path(self):
-        path = f"\\Example test {uuid.uuid4().hex[:12]}"
+        path = f"{self.FOLDER}\\Example test {uuid.uuid4().hex[:12]}"
         yield path
         with contextlib.suppress(OSError):
             scheduled_tasks.delete(path)
@@ -277,7 +310,7 @@ class TestARealRegistration:
 
         scheduled_tasks.register(path, xml)
 
-        assert path in scheduled_tasks.tasks_in("\\")
+        assert path in scheduled_tasks.tasks_in(self.FOLDER)
         assert scheduled_tasks.what_differs(xml, scheduled_tasks.registered(path)) == []
 
     def test_a_deleted_task_is_gone(self, path):
@@ -286,4 +319,4 @@ class TestARealRegistration:
 
         scheduled_tasks.delete(path)
 
-        assert path not in scheduled_tasks.tasks_in("\\")
+        assert path not in scheduled_tasks.tasks_in(self.FOLDER)
