@@ -43,6 +43,7 @@ _TASK_KEYS = ("launcher", "every-minutes")
 _UNUSABLE_IN_A_FILE_NAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 _KEPT_BY = re.compile(
     r"Kept by app_support\.windows_settings from (?P<checkout>[^\\]+)\\pyproject\.toml")
+_ABSOLUTE_PATH = re.compile(r'"([A-Za-z]:\\[^"]*)"|(?<!\S)([A-Za-z]:\\[^\s"]*)')
 
 
 class WindowsSettingsError(ValueError):
@@ -220,7 +221,7 @@ def changes(workspace: Path, *, run=scheduled_tasks.schtasks) -> list[Change]:
     """What would make this machine hold what every checkout in *workspace* lists.
     A change with nothing to make it is one only a person can make."""
     checkouts = _lists(workspace)
-    return _shortcut_changes(checkouts) + _task_changes(checkouts, run)
+    return _shortcut_changes(checkouts, Path(workspace)) + _task_changes(checkouts, run)
 
 
 def _lists(workspace: Path) -> dict[str, tuple[Path, Declarations]]:
@@ -235,7 +236,8 @@ def _lists(workspace: Path) -> dict[str, tuple[Path, Declarations]]:
     return found
 
 
-def _shortcut_changes(checkouts: dict[str, tuple[Path, Declarations]]) -> list[Change]:
+def _shortcut_changes(checkouts: dict[str, tuple[Path, Declarations]],
+                      workspace: Path) -> list[Change]:
     wanted: dict[str, tuple[Path, win32.Shortcut, str, str]] = {}
     for owner, (checkout, declarations) in checkouts.items():
         for spec in declarations.shortcuts:
@@ -256,10 +258,33 @@ def _shortcut_changes(checkouts: dict[str, tuple[Path, Declarations]]) -> list[C
             if os.path.normcase(lnk) in wanted:
                 continue
             with contextlib.suppress(OSError):
-                owner = kept_by(win32.read_shortcut(str(lnk)).description)
+                shortcut = win32.read_shortcut(str(lnk))
+                owner = kept_by(shortcut.description)
                 if owner in checkouts:
                     found.append(_retirement(lnk, place, owner))
+                elif gone := _not_there(shortcut, workspace if place != "checkout" else None):
+                    found.append(_dead(lnk, place, gone))
     return found
+
+
+def _not_there(shortcut: win32.Shortcut, within: Path | None) -> list[str]:
+    """What *shortcut* starts that is gone -- only inside *within*, unless None:
+    another program's pin is that program's to keep."""
+    started = [shortcut.target]
+    started += [quoted or bare for quoted, bare in _ABSOLUTE_PATH.findall(shortcut.arguments)]
+    started.append(shortcut.working_directory)
+    gone = []
+    for path in dict.fromkeys(os.path.expandvars(path) for path in started if path):
+        inside = within is None or Path(path).is_relative_to(within)
+        if inside and not Path(path).exists():
+            gone.append(path)
+    return gone
+
+
+def _dead(lnk: Path, place: str, gone: list[str]) -> Change:
+    named = gone[0] if len(gone) == 1 else ", ".join(gone[:-1]) + f" and {gone[-1]}"
+    where = f"unpin {lnk.stem} from the taskbar" if place == "taskbar" else f"remove {lnk}"
+    return Change(f"{where}: it starts {named}, which {'is' if len(gone) == 1 else 'are'} not there")
 
 
 def _shortcut_change(path: Path, shortcut: win32.Shortcut, place: str) -> list[Change]:
