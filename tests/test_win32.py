@@ -17,7 +17,21 @@ import uuid
 import pytest
 
 from app_support.win32 import (
+    _PROPERTYKEY,
+    _PROPVARIANT,
+    _VT_LPWSTR,
+    _VTBL_IPS_GET_VALUE,
+    TaskbarApp,
+    _IID_IPropertyStore,
     _PKEY_AppUserModel_ID,
+    _PKEY_AppUserModel_RelaunchCommand,
+    _PKEY_AppUserModel_RelaunchDisplayNameResource,
+    _PKEY_AppUserModel_RelaunchIconResource,
+    _release,
+    _vtbl_call,
+    describe_taskbar_app,
+    described_taskbar_app,
+    dress_window,
     is_mutex_held,
     mutex_name,
     read_shortcut,
@@ -443,6 +457,150 @@ class TestAShortcutWrittenOnWindows:
         assert read.icon_index == 2
         assert read.description == "Example, written by a test"
         assert read.app_id == "Example.App"
+
+
+_EXAMPLE_APP = TaskbarApp(name="Example - preview of a feature",
+                          icon=pathlib.Path(r"C:\example\preview.ico"),
+                          relaunch=r'wscript.exe "C:\example\launch.vbs"')
+
+
+def _a_window_never_shown():
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    user32.CreateWindowExW.restype = ctypes.c_void_p
+    user32.CreateWindowExW.argtypes = [
+        ctypes.c_ulong, ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_ulong,
+        ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+        ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
+    user32.DestroyWindow.argtypes = [ctypes.c_void_p]
+    hwnd = user32.CreateWindowExW(0, "STATIC", "Example", 0, 0, 0, 1, 1,
+                                  None, None, None, None)
+    assert hwnd, ctypes.get_last_error()
+    return hwnd, lambda: user32.DestroyWindow(hwnd)
+
+
+def _what_the_taskbar_reads_off(hwnd) -> dict[str, str | None]:
+    shell32 = ctypes.WinDLL("shell32")
+    ole32 = ctypes.WinDLL("ole32")
+    get_store = shell32.SHGetPropertyStoreForWindow
+    get_store.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
+    get_store.restype = ctypes.HRESULT
+    store = ctypes.c_void_p()
+    get_store(hwnd, ctypes.byref(_IID_IPropertyStore), ctypes.byref(store))
+    get_value = _vtbl_call(store.value, _VTBL_IPS_GET_VALUE, ctypes.HRESULT,
+                           ctypes.POINTER(_PROPERTYKEY), ctypes.POINTER(_PROPVARIANT))
+    read = {}
+    try:
+        for name, key in (("id", _PKEY_AppUserModel_ID),
+                          ("relaunch", _PKEY_AppUserModel_RelaunchCommand),
+                          ("name", _PKEY_AppUserModel_RelaunchDisplayNameResource),
+                          ("icon", _PKEY_AppUserModel_RelaunchIconResource)):
+            value = _PROPVARIANT()
+            get_value(store.value, ctypes.byref(key), ctypes.byref(value))
+            read[name] = value.pwszVal if value.vt == _VT_LPWSTR else None
+            ole32.PropVariantClear(ctypes.byref(value))
+    finally:
+        _release(store.value)
+    return read
+
+
+class TestDressWindow:
+    def test_a_window_the_shell_will_not_open_is_named_in_the_refusal(self):
+        shell32 = _FakeDll(SHGetPropertyStoreForWindow=_FakeFunction(E_INVALIDARG))
+
+        with pytest.raises(OSError) as raised:
+            dress_window(0x1234, "Example.App", _EXAMPLE_APP, shell32=lambda: shell32)
+
+        assert "SHGetPropertyStoreForWindow" in str(raised.value)
+        assert "0x80070057" in str(raised.value)
+
+
+class _FakeRegistry:
+    """winreg as far as a description is written and read: keys of values."""
+
+    HKEY_CURRENT_USER = "HKCU"
+    REG_SZ = 1
+
+    def __init__(self) -> None:
+        self.keys: dict[tuple[str, str], dict[str, str]] = {}
+
+    def CreateKey(self, root, path):  # noqa: N802 -- winreg's spelling
+        return _FakeKey(self.keys.setdefault((root, path), {}))
+
+    def OpenKey(self, root, path):  # noqa: N802
+        if (root, path) not in self.keys:
+            raise FileNotFoundError(path)
+        return _FakeKey(self.keys[(root, path)])
+
+    def SetValueEx(self, key, name, reserved, kind, value):  # noqa: N802
+        assert kind == self.REG_SZ
+        key.values[name] = value
+
+    def QueryValueEx(self, key, name):  # noqa: N802
+        return key.values[name], self.REG_SZ
+
+
+class _FakeKey:
+    def __init__(self, values: dict[str, str]) -> None:
+        self.values = values
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        return False
+
+
+class TestATaskbarAppDescribed:
+    def test_a_window_of_another_process_finds_the_app_under_its_identity(self):
+        registry = _FakeRegistry()
+
+        describe_taskbar_app("Example.App.Preview", _EXAMPLE_APP, registry=lambda: registry)
+
+        assert described_taskbar_app("Example.App.Preview",
+                                     registry=lambda: registry) == _EXAMPLE_APP
+
+    def test_an_identity_nobody_described_has_none(self):
+        assert described_taskbar_app("Example.App", registry=_FakeRegistry) is None
+
+    @pytest.mark.skipif(not hasattr(ctypes, "windll"), reason="the registry: only Windows can say")
+    def test_the_registry_hands_back_what_was_described(self):
+        import winreg
+        app_id = f"Example.Test.{uuid.uuid4().hex}"
+        try:
+            describe_taskbar_app(app_id, _EXAMPLE_APP)
+
+            assert described_taskbar_app(app_id) == _EXAMPLE_APP
+        finally:
+            winreg.DeleteKey(winreg.HKEY_CURRENT_USER, rf"Software\Haglio\TaskbarApps\{app_id}")
+
+
+@pytest.mark.skipif(not hasattr(ctypes, "windll"), reason="a window: only Windows can say")
+class TestAWindowDressedOnWindows:
+    def test_it_carries_the_identity_and_the_app_its_button_shows(self):
+        hwnd, destroy = _a_window_never_shown()
+        try:
+            dress_window(hwnd, "Example.App.Preview", _EXAMPLE_APP)
+
+            assert _what_the_taskbar_reads_off(hwnd) == {
+                "id": "Example.App.Preview",
+                "relaunch": r'wscript.exe "C:\example\launch.vbs"',
+                "name": "Example - preview of a feature",
+                "icon": r"C:\example\preview.ico,0",
+            }
+        finally:
+            destroy()
+
+    def test_dressed_again_without_an_app_it_keeps_only_the_new_identity(self):
+        hwnd, destroy = _a_window_never_shown()
+        try:
+            dress_window(hwnd, "Example.App.Preview", _EXAMPLE_APP)
+
+            dress_window(hwnd, "Example.Host")
+
+            assert _what_the_taskbar_reads_off(hwnd) == {
+                "id": "Example.Host", "relaunch": None, "name": None, "icon": None}
+        finally:
+            destroy()
 
 
 class TestMutexName:
