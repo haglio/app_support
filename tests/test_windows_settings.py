@@ -289,6 +289,61 @@ class TestMakingTheMachineMatch:
 
         assert windows_settings.changes(workspace, run=_TaskScheduler()) == []
 
+    def test_a_shortcut_in_a_checkout_that_starts_a_launcher_no_longer_there_is_named(
+        self, tmp_path: Path, places,
+    ):
+        checkout = _checkout(tmp_path / "workspace", "")
+        dead = checkout / "Retired Mode.lnk"
+        write_shortcut(str(dead), target=str(WSCRIPT), arguments=f'"{checkout / "launch_old.vbs"}"',
+                       working_directory=str(checkout))
+
+        (change,) = windows_settings.changes(tmp_path / "workspace", run=_TaskScheduler())
+
+        assert change.what == (f"remove {dead}: it starts {checkout / 'launch_old.vbs'}, "
+                               "which is not there")
+        assert change.make is None
+
+    def test_a_pin_into_an_app_folder_that_is_gone_is_named_for_a_person_to_unpin(
+        self, tmp_path: Path, places,
+    ):
+        _checkout(tmp_path / "workspace", "")
+        gone = tmp_path / "workspace" / "retired_app"
+        write_shortcut(str(places["taskbar"] / "Old App.lnk"), target=str(WSCRIPT),
+                       arguments=f'"{gone / "launch.vbs"}"', working_directory=str(gone))
+
+        (change,) = windows_settings.changes(tmp_path / "workspace", run=_TaskScheduler())
+
+        assert change.what == (f"unpin Old App from the taskbar: it starts {gone / 'launch.vbs'} "
+                               f"and {gone}, which are not there")
+
+    def test_a_pin_of_another_program_whose_folder_is_gone_is_not_this_commands_to_name(
+        self, tmp_path: Path, places,
+    ):
+        _checkout(tmp_path / "workspace", "")
+        updated_away = tmp_path / "Other Program" / "app-1.0"
+        write_shortcut(str(places["taskbar"] / "Other Program.lnk"), target=str(WSCRIPT),
+                       working_directory=str(updated_away))
+
+        assert windows_settings.changes(tmp_path / "workspace", run=_TaskScheduler()) == []
+
+    def test_a_folder_named_through_a_windows_variable_is_read_as_the_folder_it_names(
+        self, tmp_path: Path, places,
+    ):
+        checkout = _checkout(tmp_path / "workspace", "")
+        write_shortcut(str(checkout / "Console.lnk"), target=str(WSCRIPT),
+                       working_directory="%SystemRoot%\\System32")
+
+        assert windows_settings.changes(tmp_path / "workspace", run=_TaskScheduler()) == []
+
+    def test_a_shortcut_that_starts_what_is_there_is_not_named(self, tmp_path: Path, places):
+        checkout = _checkout(tmp_path / "workspace", "")
+        (checkout / "launch_example.vbs").write_text("", encoding="ascii")
+        write_shortcut(str(places["start-menu"] / "Theirs.lnk"), target=str(WSCRIPT),
+                       arguments=f'"{checkout / "launch_example.vbs"}" --flag "a b"',
+                       working_directory=str(checkout))
+
+        assert windows_settings.changes(tmp_path / "workspace", run=_TaskScheduler()) == []
+
     def test_a_shortcut_whose_checkout_is_not_here_to_ask_is_left_alone(
         self, tmp_path: Path, places,
     ):
