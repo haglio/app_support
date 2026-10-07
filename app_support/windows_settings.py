@@ -316,33 +316,6 @@ def _task_changes(checkouts: dict[str, tuple[Path, Declarations]], run) -> list[
     return found
 
 
-def write_shortcut(checkout: Path, name: str, place: str) -> Path:
-    """Put the shortcut *checkout*'s list keeps in *place* there now, for the
-    app whose own setting decides whether it is there at all."""
-    spec = _listed(checkout, name, place)
-    path = shortcut_file(checkout, spec.name, place)
-    _write(path, shortcut_for(checkout, spec))
-    return path
-
-
-def assert_listed_settings_can_be_made(checkout: Path) -> None:
-    __tracebackhide__ = True
-    declarations = declared(checkout)
-    needed = [spec.icon for spec in declarations.shortcuts]
-    needed += [spec.launcher for spec in (*declarations.shortcuts, *declarations.scheduled_tasks)]
-    missing = sorted({name for name in needed if not (Path(checkout) / name).is_file()})
-    assert not missing, (
-        "what this checkout's Windows settings start or show is not in it:\n  "
-        + "\n  ".join(missing))
-
-
-def _listed(checkout: Path, name: str, place: str) -> ShortcutSpec:
-    for spec in declared(checkout).shortcuts:
-        if spec.name == name and place in spec.places:
-            return spec
-    raise WindowsSettingsError(f"{Path(checkout).name}'s list keeps no shortcut {name} in {place}")
-
-
 def workspace_of(module_file: Path) -> Path:
     checkout = Path(module_file).resolve().parents[1]
     if checkout.parent.name == "worktrees" and checkout.parent.parent.name == ".claude":
