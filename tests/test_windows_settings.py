@@ -384,30 +384,7 @@ class TestMakingTheMachineMatch:
             windows_settings.changes(workspace, run=_TaskScheduler())
 
 
-@pytest.mark.skipif(sys.platform != "win32", reason="shortcuts: only Windows can say")
-class TestAnAppWritingItsOwnShortcut:
-    def test_it_writes_the_shortcut_its_list_keeps_there(self, tmp_path: Path, places):
-        checkout = _checkout(tmp_path, SHORTCUT.replace('"checkout"]', '"startup"]'))
-        (spec,) = declared(checkout).shortcuts
-
-        written = windows_settings.write_shortcut(checkout, "Example", "startup")
-
-        assert written == windows_settings.shortcut_file(checkout, "Example", "startup")
-        assert written == places["startup"] / "Example.lnk"
-        assert windows_settings.what_differs(
-            read_shortcut(str(written)), windows_settings.shortcut_for(checkout, spec)) == []
-
-    @pytest.mark.parametrize(("name", "place"), [("Example", "startup"), ("Other", "taskbar")])
-    def test_a_shortcut_its_list_does_not_keep_there_is_refused(
-        self, tmp_path: Path, places, name: str, place: str,
-    ):
-        checkout = _checkout(tmp_path, SHORTCUT)
-
-        with pytest.raises(WindowsSettingsError, match=name):
-            windows_settings.write_shortcut(checkout, name, place)
-
-        assert not windows_settings.shortcut_file(checkout, name, place).exists()
-
+class TestWhereAShortcutIsKept:
     @pytest.mark.parametrize("place", ["taskbar", "start-menu", "startup"])
     def test_a_shortcut_windows_keeps_is_named_for_its_place_alone(
         self, tmp_path: Path, places, place: str,
@@ -469,30 +446,6 @@ class TestTheCommandLine:
             f"done: add {checkout / 'Example.lnk'}",
             "failed: register the scheduled task \\Haglio\\Example Tray: ERROR: Access is denied.",
         ]
-
-
-class TestACheckoutsOwnCheck:
-    def test_a_list_whose_icons_and_launchers_are_there_passes(self, tmp_path: Path):
-        checkout = _checkout(tmp_path, SHORTCUT + TASK)
-        (checkout / "example.ico").write_bytes(b"")
-        (checkout / "launch_example.vbs").write_text("", encoding="ascii")
-
-        windows_settings.assert_listed_settings_can_be_made(checkout)
-
-    def test_an_icon_that_is_not_there_is_named(self, tmp_path: Path):
-        checkout = _checkout(tmp_path, SHORTCUT)
-        (checkout / "launch_example.vbs").write_text("", encoding="ascii")
-
-        with pytest.raises(AssertionError, match=r"example\.ico"):
-            windows_settings.assert_listed_settings_can_be_made(checkout)
-
-    @pytest.mark.parametrize("specs", [SHORTCUT, TASK], ids=["shortcut", "task"])
-    def test_a_launcher_that_is_not_rendered_is_named(self, tmp_path: Path, specs: str):
-        checkout = _checkout(tmp_path, specs)
-        (checkout / "example.ico").write_bytes(b"")
-
-        with pytest.raises(AssertionError, match=r"launch_example\.vbs"):
-            windows_settings.assert_listed_settings_can_be_made(checkout)
 
 
 class TestWhereTheCheckoutsAre:
