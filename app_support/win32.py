@@ -10,6 +10,10 @@ family ends up doing and had all grown its own spelling of:
     identity derived from its executable -- which for a family of apps sharing
     one interpreter means they land under whatever unrelated application
     registered that path first, wearing its icon and its name.
+  * **dressing a window as an app that no shortcut carries**: on the window
+    itself, the name, icon and relaunch command a shortcut would have given its
+    taskbar button, and in the registry for a window of another process that
+    wears the same identity.
   * **stamping that identity onto a shortcut**, or writing a shortcut that
     carries it, and reading one back whole.  A ``.lnk`` written by ``WScript.Shell`` carries no
     ``System.AppUserModel.ID``, so clicking the pin starts a process Windows
@@ -160,12 +164,14 @@ class _PROPERTYKEY(ctypes.Structure):
     _fields_ = [("fmtid", _GUID), ("pid", ctypes.c_ulong)]
 
 
-# ``System.AppUserModel.ID``.  The one failure in this module that Windows
+# ``System.AppUserModel.*``.  The one failure in this module that Windows
 # reports no error for: a wrong key here writes a real value into the shortcut,
 # answers S_OK, and leaves the duplicate taskbar button in place.
-_PKEY_AppUserModel_ID = _PROPERTYKEY(
-    _make_guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"), 5
-)
+_APP_USER_MODEL = "9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"
+_PKEY_AppUserModel_RelaunchCommand = _PROPERTYKEY(_make_guid(_APP_USER_MODEL), 2)
+_PKEY_AppUserModel_RelaunchIconResource = _PROPERTYKEY(_make_guid(_APP_USER_MODEL), 3)
+_PKEY_AppUserModel_RelaunchDisplayNameResource = _PROPERTYKEY(_make_guid(_APP_USER_MODEL), 4)
+_PKEY_AppUserModel_ID = _PROPERTYKEY(_make_guid(_APP_USER_MODEL), 5)
 
 _VT_LPWSTR = 31
 
@@ -288,28 +294,28 @@ def _save(shell_link: int, lnk_path: str) -> None:
 def _store_app_id(shell_link: int, app_id: str | None) -> None:
     prop_store = _query_interface(shell_link, _IID_IPropertyStore)
     try:
+        _store_values(prop_store, ((_PKEY_AppUserModel_ID, app_id),))
+    finally:
+        _release(prop_store)
+
+
+def _store_values(prop_store: int, values: Iterable[tuple[_PROPERTYKEY, str | None]]) -> None:
+    """Write each value under its key, ``None`` taking the key off, then commit."""
+    set_value = _vtbl_call(prop_store, _VTBL_IPS_SET_VALUE, ctypes.HRESULT,
+                           ctypes.POINTER(_PROPERTYKEY), ctypes.POINTER(_PROPVARIANT))
+    for key, value in values:
         pv = _PROPVARIANT()
-        if app_id is None:
+        if value is None:
             pv.vt = _VT_EMPTY
         else:
             pv.vt = _VT_LPWSTR
-            pv.pwszVal = app_id
-
-        hr = _vtbl_call(prop_store, _VTBL_IPS_SET_VALUE,
-                        ctypes.HRESULT,
-                        ctypes.POINTER(_PROPERTYKEY),
-                        ctypes.POINTER(_PROPVARIANT))(
-            prop_store,
-            ctypes.byref(_PKEY_AppUserModel_ID),
-            ctypes.byref(pv))
+            pv.pwszVal = value
+        hr = set_value(prop_store, ctypes.byref(key), ctypes.byref(pv))
         if hr < 0:
             raise _hresult("IPropertyStore::SetValue", hr)
-
-        hr = _vtbl_call(prop_store, _VTBL_IPS_COMMIT, ctypes.HRESULT)(prop_store)
-        if hr < 0:
-            raise _hresult("IPropertyStore::Commit", hr)
-    finally:
-        _release(prop_store)
+    hr = _vtbl_call(prop_store, _VTBL_IPS_COMMIT, ctypes.HRESULT)(prop_store)
+    if hr < 0:
+        raise _hresult("IPropertyStore::Commit", hr)
 
 
 def _loaded_shell_link(com, lnk_path: str, mode: int) -> int:
@@ -470,6 +476,71 @@ def stamp_pinned_shortcuts(app_id: str, names: Iterable[str], *, pins: Path | No
         else:
             results[lnk] = None
     return results
+
+
+# --- A window that wears an identity no shortcut carries ---------------------
+
+
+@dataclass(frozen=True)
+class TaskbarApp:
+    """What a shortcut tells the taskbar about the identity it carries."""
+
+    name: str
+    icon: Path
+    relaunch: str
+
+
+def dress_window(hwnd: int, app_id: str, app: TaskbarApp | None = None, *,
+                 shell32=_shell32) -> None:
+    """Put *app_id* on *hwnd*, and with *app* what a shortcut carrying *app_id*
+    would give its taskbar button: without either, the button wears the icon of
+    the process's executable whenever the window is too busy to say its own.
+
+    Windows reads them as it makes the button, so they go on before the window
+    is first shown, and it uses the name and the relaunch command only together.
+    """
+    get_store = _declare(shell32(), "SHGetPropertyStoreForWindow", ctypes.c_long,
+                         wintypes.HWND, ctypes.POINTER(_GUID), ctypes.POINTER(ctypes.c_void_p))
+    prop_store = ctypes.c_void_p()
+    hr = get_store(hwnd, ctypes.byref(_IID_IPropertyStore), ctypes.byref(prop_store))
+    if hr < 0:
+        raise _hresult("SHGetPropertyStoreForWindow", hr)
+    try:
+        _store_values(prop_store.value, (
+            (_PKEY_AppUserModel_RelaunchCommand, app and app.relaunch),
+            (_PKEY_AppUserModel_RelaunchDisplayNameResource, app and app.name),
+            (_PKEY_AppUserModel_RelaunchIconResource, app and f"{app.icon},0"),
+            (_PKEY_AppUserModel_ID, app_id),
+        ))
+    finally:
+        _release(prop_store.value)
+
+
+_TASKBAR_APPS = r"Software\Haglio\TaskbarApps"
+
+
+def _winreg():
+    import winreg
+    return winreg
+
+
+def describe_taskbar_app(app_id: str, app: TaskbarApp, *, registry=_winreg) -> None:
+    """Leave *app* where a window of another process that wears *app_id* finds it."""
+    reg = registry()
+    with reg.CreateKey(reg.HKEY_CURRENT_USER, rf"{_TASKBAR_APPS}\{app_id}") as key:
+        for name, value in (("Name", app.name), ("Icon", str(app.icon)), ("Relaunch", app.relaunch)):
+            reg.SetValueEx(key, name, 0, reg.REG_SZ, value)
+
+
+def described_taskbar_app(app_id: str, *, registry=_winreg) -> TaskbarApp | None:
+    reg = registry()
+    try:
+        with reg.OpenKey(reg.HKEY_CURRENT_USER, rf"{_TASKBAR_APPS}\{app_id}") as key:
+            name, icon, relaunch = (reg.QueryValueEx(key, value)[0]
+                                    for value in ("Name", "Icon", "Relaunch"))
+    except OSError:
+        return None
+    return TaskbarApp(name=name, icon=Path(icon), relaunch=relaunch)
 
 
 # --- May I run?  A named mutex, and the handle that answers ------------------
