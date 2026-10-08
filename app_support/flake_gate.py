@@ -50,8 +50,8 @@ def assert_they_hold_up(root: Path, ids: list[str], *, runs: int, python: str = 
     and take the job past its own ceiling, which reports nothing at all and turns
     a green branch away.  So the tests are taken in chunks, each chunk repeated to
     the end before the next is started, no run is begun that the measured pace
-    says would end past the cap, and what there is no room for comes back named
-    rather than dropped."""
+    says would end past the cap, a run that goes on past it anyway is stopped
+    there, and what there is no room for comes back named rather than dropped."""
     if not ids:
         return Repeats([], [])
     command = [python, "-m", "pytest", "-q", "-p", "no:cacheprovider"]
@@ -68,20 +68,27 @@ def assert_they_hold_up(root: Path, ids: list[str], *, runs: int, python: str = 
                 if deadline is not None and monotonic() + pace.seconds_for(chunk) > deadline:
                     return Repeats(repeated, left)
                 started = monotonic()
-                _one_run(command, chunk, root, run=run, runs=runs)
+                within = None if deadline is None else deadline - started
+                if not _one_run(command, chunk, root, run=run, runs=runs, within=within):
+                    return Repeats(repeated, left)
                 pace.measured(monotonic() - started, len(chunk))
             repeated += chunk
             left = left[len(chunk):]
     return Repeats(repeated, left)
 
 
-def _one_run(command: list[str], chunk: list[str], root: Path, *, run: int, runs: int) -> None:
-    done = subprocess.run([*command, *chunk], cwd=root, capture_output=True, text=True,
-                          errors="replace", **hidden_subprocess_kwargs())
+def _one_run(command: list[str], chunk: list[str], root: Path, *, run: int, runs: int,
+             within: float | None) -> bool:
+    try:
+        done = subprocess.run([*command, *chunk], cwd=root, capture_output=True, text=True,
+                              errors="replace", timeout=within, **hidden_subprocess_kwargs())
+    except subprocess.TimeoutExpired:
+        return False
     if done.returncode != 0:
         raise AssertionError(
             f"a new or changed test failed on run {run} of {runs}; a test that fails "
             f"even once is flaky and cannot land:\n{done.stdout}{done.stderr}")
+    return True
 
 
 _LONGEST_COMMAND_LINE = 32_766  # CreateProcessW's limit, less its terminating null

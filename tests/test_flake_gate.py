@@ -104,15 +104,24 @@ class _Paced:
     minutes proving it -- so these runs cost time without taking any, and the
     gate reads the clock they move."""
 
-    def __init__(self, *, seconds_a_test: float, seconds_to_start: float = 0.0):
+    def __init__(self, *, seconds_a_test: float, seconds_to_start: float = 0.0,
+                 slow: frozenset[str] = frozenset(), seconds_a_slow_test: float = 0.0):
         self.seconds_a_test = seconds_a_test
         self.seconds_to_start = seconds_to_start
+        self.slow = slow
+        self.seconds_a_slow_test = seconds_a_slow_test
         self.now = 0.0
         self.runs: list[list[str]] = []
 
-    def run(self, argv, **kwargs):
+    def run(self, argv, timeout=None, **kwargs):
         named = [arg for arg in argv if "::" in arg]
-        self.now += self.seconds_to_start + self.seconds_a_test * len(named)
+        cost = self.seconds_to_start + sum(
+            self.seconds_a_slow_test if test in self.slow else self.seconds_a_test
+            for test in named)
+        if timeout is not None and cost > timeout:
+            self.now += timeout
+            raise subprocess.TimeoutExpired(argv, timeout)
+        self.now += cost
         self.runs.append(named)
         return subprocess.CompletedProcess(argv, 0, "", "")
 
@@ -153,6 +162,18 @@ def test_a_run_that_would_end_past_the_cap_is_never_started(tmp_path: Path, monk
 
     assert paced.now <= 150
     assert held.repeated == []
+
+
+def test_a_run_slower_than_the_pace_promised_is_stopped_at_the_cap(tmp_path: Path, monkeypatch):
+    ids = _named(400)
+    paced = _Paced(seconds_a_test=0.1, slow=frozenset(ids[20:]), seconds_a_slow_test=5.0)
+    paced.install(monkeypatch)
+
+    held = assert_they_hold_up(tmp_path, ids, runs=10, load=nullcontext, budget=300)
+
+    assert paced.now <= 300
+    assert held.repeated + held.skipped == ids
+    assert all(paced.times_run(test) == 10 for test in held.repeated)
 
 
 def test_a_cap_that_holds_them_all_leaves_nothing_out(tmp_path: Path, monkeypatch):
