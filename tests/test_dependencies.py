@@ -67,6 +67,13 @@ class TestThirdPartyImports:
 
         assert found == {"examplelib": ["someapp/app.py"]}
 
+    def test_a_siblings_package_is_not_third_party_under_a_name_its_repo_does_not_have(
+            self, tmp_path: Path):
+        # player_core ships funestra_core, and player_core under its old name.
+        root = _repo(tmp_path, source="from funestra_core.playlist import PlaylistItem\n")
+
+        assert third_party_imports(root, [root / "someapp"]) == {}
+
     def test_an_import_inside_a_try_is_optional_by_construction(self, tmp_path: Path):
         root = _repo(tmp_path, source="try:\n    import maybe_there\nexcept ImportError:\n    maybe_there = None\n")
 
@@ -295,6 +302,18 @@ class TestDeclaredSiblings:
 
         assert undeclared_siblings(root, [root / "someapp"], root / "pyproject.toml") == [
             "app_support is imported by someapp/app.py and declared nowhere"]
+
+    def test_a_siblings_package_counts_for_the_repo_that_ships_it(self, tmp_path: Path):
+        root = self._repo(tmp_path, source="from funestra_core.playlist import PlaylistItem\n",
+                          siblings='"player_core"', beside=["player_core"])
+
+        assert undeclared_siblings(root, [root / "someapp"], root / "pyproject.toml") == []
+
+    def test_a_siblings_package_no_pyproject_names_is_reported_under_its_repo(self, tmp_path: Path):
+        root = self._repo(tmp_path, source="import funestra_core.funestra\n")
+
+        assert undeclared_siblings(root, [root / "someapp"], root / "pyproject.toml") == [
+            "player_core is imported by someapp/app.py and declared nowhere"]
 
     def test_a_declared_sibling_nothing_needs_is_reported_too(self, tmp_path: Path):
         # It costs a clone and an install on every run of the gate, and it reads

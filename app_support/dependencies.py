@@ -81,6 +81,17 @@ FAMILY_IMPORT_NAMES: Mapping[str, str] = {
 # siblings and pins each at a tag.
 FAMILY_SIBLINGS = ("app_support", "player_core", "shared_ui", "voice_core")
 
+# What a sibling's modules are imported as, where that is not its repo's name:
+# player_core ships funestra_core, and answers to player_core as well for the
+# checkouts from before the Player became the Funestra.
+_SIBLING_PACKAGES: Mapping[str, tuple[str, ...]] = {
+    "player_core": ("funestra_core", "player_core"),
+}
+
+
+def _packages_of(sibling: str) -> tuple[str, ...]:
+    return _SIBLING_PACKAGES.get(sibling, (sibling,))
+
 _DIST_NAME = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
 
 
@@ -157,7 +168,8 @@ def _imported_names(root: Path, packages: Iterable[Path], *,
 
 def third_party_imports(root: Path, packages: Iterable[Path], *, local: Iterable[str] = ()) -> dict[str, list[str]]:
     """Every third-party name the *packages* import, with the files that do."""
-    skip = set(sys.stdlib_module_names) | set(local) | set(FAMILY_SIBLINGS)
+    skip = (set(sys.stdlib_module_names) | set(local)
+            | {package for sibling in FAMILY_SIBLINGS for package in _packages_of(sibling)})
     return {name: files for name, files in _imported_names(root, packages).items()
             if name not in skip}
 
@@ -255,8 +267,12 @@ def sibling_imports(root: Path, packages: Iterable[Path], pyproject: Path) -> di
         project = tomllib.load(handle)
     itself = _normalized(project.get("project", {}).get("name", ""))
     wanted = {name for name in FAMILY_SIBLINGS if _normalized(name) != itself}
-    needed = {name: files for name, files in _imported_names(root, packages).items()
-              if name in wanted}
+    imported = _imported_names(root, packages)
+    needed = {}
+    for sibling in wanted:
+        files = sorted({file for package in _packages_of(sibling) for file in imported.get(package, ())})
+        if files:
+            needed[sibling] = files
     addopts = project.get("tool", {}).get("pytest", {}).get("ini_options", {}).get("addopts", "")
     for name in _PLUGIN.findall(addopts):
         if name in wanted:
