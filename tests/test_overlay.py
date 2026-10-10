@@ -10,11 +10,9 @@ import pytest
 
 from app_support.overlay import (
     MissingOverlayKey,
-    Noun,
     backfilled,
     documented_keys,
     missing_keys,
-    overlay_noun,
     overlay_path,
     overlay_value,
     read_overlay,
@@ -129,18 +127,3 @@ class TestOverlayValue:
 
     def test_it_is_a_lookup_error_so_a_bare_except_keyerror_no_longer_hides_it_either(self):
         assert issubclass(MissingOverlayKey, LookupError)
-
-
-class TestOverlayNoun:
-    def test_a_noun_is_the_one_and_the_many_under_its_key(self):
-        noun = overlay_noun({"thing_words": {"one": "pip", "many": "pips"}}, "thing_words")
-
-        assert isinstance(noun, Noun)
-        assert (noun.one, noun.many) == ("pip", "pips")
-
-    def test_a_noun_short_of_its_many_is_named_with_its_file(self, tmp_path: Path):
-        with pytest.raises(MissingOverlayKey) as raised:
-            overlay_noun({"thing_words": {"one": "pip"}}, "thing_words", path=tmp_path / "content.local.json")
-
-        assert raised.value.keys == ("thing_words", "many")
-        assert "content.local.json" in str(raised.value)
