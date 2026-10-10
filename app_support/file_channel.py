@@ -1,8 +1,8 @@
 """The file channel one process steers another through, and the files it publishes back.
 
-Every player in this family is a separate process that an orchestrator steers
-without a socket: it appends verbs to a *command file* the player drains each
-tick, and owns pause through a *flag file* the player simply obeys.  The broker
+Every Funestra in this family is a separate process that an orchestrator steers
+without a socket: it appends verbs to a *command file* the Funestra drains each
+tick, and owns pause through a *flag file* the Funestra simply obeys.  The broker
 is steered the same way, and it publishes what it knows -- a mode, a heartbeat,
 when the device last spoke -- through files of its own that the orchestrator
 polls.  Reading is best-effort by design: a missing file, a half-written one, or
@@ -11,11 +11,11 @@ tick is milliseconds away and will see the settled value.  Writing is whole or
 not at all, for that reader's sake.
 
 Pause rides its own file rather than the command channel so that being paused is
-a *state* the player converges on, not an event it can miss: a player that
+a *state* the Funestra converges on, not an event it can miss: a Funestra that
 starts late, restarts, or drops a verb still reads the flag and lands correctly.
 
-This was ``player_core.file_channel``, which re-exports it so the players are
-untouched.  It moved because the broker, which is no player, had grown its own
+This was ``player_core.file_channel``, which re-exports it so the Funestras are
+untouched.  It moved because the broker, which is no Funestra, had grown its own
 consumer that read the file and then truncated it -- a gap one verb wide that a
 verb written into it fell through -- and because the files' names were spelled
 by hand in four repos (see :mod:`app_support.state_files`).  Standard library
@@ -163,8 +163,8 @@ def consume_command_file(
 ) -> list[str]:
     """Take every queued command line, emptying the file so none replays.
 
-    *uppercase* folds the whole payload, which suits a player whose verbs carry
-    no arguments.  A player whose commands take a case-sensitive argument (a
+    *uppercase* folds the whole payload, which suits a Funestra whose verbs carry
+    no arguments.  A Funestra whose commands take a case-sensitive argument (a
     path) passes ``uppercase=False`` and folds just the keyword itself.
 
     The queue is CLAIMED by renaming it aside and read from the claimed copy.
@@ -229,7 +229,7 @@ def write_flag(path: Path, value: bool, *, attempts: int = 5, delay_s: float = 0
 
 
 def read_paused_state(path: Path, *, logger: logging.Logger | None = None) -> bool:
-    """Whether the orchestrator has the player paused; no file means running."""
+    """Whether the orchestrator has the Funestra paused; no file means running."""
     return read_flag(path, default=False, logger=logger)
 
 

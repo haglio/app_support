@@ -32,7 +32,7 @@ def test_append_command_starts_a_line_of_its_own_after_an_unterminated_write(tmp
     """An orchestrator that writes the file whole rarely bothers with a trailing
     newline, and appending straight onto that welds the two verbs into one word
     that matches neither — silently losing both.  Observed as exactly that: a
-    "NEXT" written whole, an appended flag, and a player that never navigated.
+    "NEXT" written whole, an appended flag, and a Funestra that never navigated.
     """
     path = tmp_path / "cmd.txt"
     path.write_text("NEXT", encoding="utf-8")  # no trailing newline
@@ -272,8 +272,8 @@ def test_a_write_that_dies_part_way_leaves_the_old_file_whole(tmp_path: Path):
 
 
 def test_a_publish_keeps_its_temp_file_to_itself_and_never_dies_tidying_it(tmp_path: Path):
-    """Two players publish one status file while a room changes hands, and both
-    built the same temp name from it: on 2026-09-28 one player's tidy-up of a
+    """Two Funestras publish one status file while a room changes hands, and both
+    built the same temp name from it: on 2026-09-28 one Funestra's tidy-up of a
     replace that had failed hit the other's open handle, and the PermissionError
     came out of a call whose whole contract is to answer a run loop False.
 
