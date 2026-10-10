@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -122,3 +123,14 @@ def overlay_value(content: Mapping[str, Any], *keys: str, path: Path | None = No
             raise MissingOverlayKey(keys[:depth], path)
         here = here[key]
     return here
+
+
+@dataclass(frozen=True)
+class Noun:
+    one: str
+    many: str
+
+
+def overlay_noun(content: Mapping[str, Any], key: str, *, path: Path | None = None) -> Noun:
+    return Noun(one=overlay_value(content, key, "one", path=path),
+                many=overlay_value(content, key, "many", path=path))
