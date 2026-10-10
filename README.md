@@ -129,7 +129,7 @@ knows about:
 | Repo | Holds |
 | --- | --- |
 | `app_support` | process/logging/CLI scaffolding — knows nothing |
-| `player_core` | the libmpv wrapper, playlist format, player file protocol |
+| `player_core` | the libmpv wrapper, playlist format, Funestra file protocol |
 | `shared_ui` | shared Qt widgets and design tokens |
 
 ## Install

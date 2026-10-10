@@ -235,7 +235,7 @@ DEAD_CODE_LINT_RULES = ("F401", "F811", "F841")
 
 # A parameter the body never reads, one level out from the constructor scan in
 # `app_support.unread`. ARG001 alone by default: a framework override (Qt's
-# paintEvent, a player's pump) is handed arguments it is free to ignore.
+# paintEvent, a Funestra's pump) is handed arguments it is free to ignore.
 UNREAD_ARGUMENT_RULES = ("ARG001",)
 
 

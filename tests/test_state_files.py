@@ -113,7 +113,7 @@ class TestGenausChannel:
         assert read_key_values(path) == {
             "cruise": "1", "locked": "0", "shape": "sine", "clip": "example.mp4"}
 
-    def test_the_drive_genau_publishes_is_read_whole_by_main_player(self, tmp_path: Path):
+    def test_the_drive_genau_publishes_is_read_whole_by_the_main_funestra(self, tmp_path: Path):
         path = tmp_path / state_files.GENAU_DRIVE
 
         assert publish_whole(path, "speed=3\ndepth=40\n")

@@ -1,7 +1,7 @@
 """Where the other checkouts of the family are, asked one way.
 
 The family's repos are cloned side by side, and an app that needs a sibling --
-its shared widgets, the players' core, Fun Time's favorites file -- asked where
+its shared widgets, the Funestras' core, Fun Time's favorites file -- asked where
 it was in eight independent ways, four of them by spelling the directory's name
 into a path count.  Two of them put the sibling on ``sys.path`` with opposite
 ideas about where: one at the front, where the sibling's own ``tests`` and

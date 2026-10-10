@@ -21,20 +21,20 @@ cannot collide.
 from __future__ import annotations
 
 TCODE_UDP = 50557
-"""The broker listens; Fun Time, Genau, the main player and Origenerator send.
+"""The broker listens; Fun Time, Genau, the Main Funestra and Origenerator send.
 
 The device protocol: position-and-duration lines the broker relays over serial
-to the hardware.  ``player_core.tcode.UdpTCodeSink`` is the socket all four
+to the hardware.  ``funestra_core.tcode.UdpTCodeSink`` is the socket all four
 senders reach it through, and its own default is this number."""
 
 GENAU_UDP = 50555
-"""Genau listens; the broker and Fun Time's VR player send.
+"""Genau listens; the broker and Fun Time's headset send.
 
 The verbs that steer Genau from outside -- show, hide, sync, and the motion and
 tempo it should take up."""
 
 AUDIO_COMPANION = 50556
-"""Fun Time's audio companion listens; Genau and Fun Time's VR player send.
+"""Fun Time's audio companion listens; Genau and Fun Time's headset send.
 
 What the companion is told about the session it is scoring."""
 
