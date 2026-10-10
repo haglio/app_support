@@ -24,6 +24,9 @@ family ends up doing and had all grown its own spelling of:
     when the last handle to it closes.
   * **putting an error where the user will see it**, for a process that was
     launched hidden and has no console and no window to put one in.
+  * **putting a window in front with the keyboard**, which Windows refuses to a
+    process the user is not looking at -- the one that was started for him a
+    moment ago included.
 
 Every call raises ``OSError`` when Windows refuses -- ``show_error_popup``
 excepted, which says why at its own docstring -- and none of them decide what
@@ -654,3 +657,55 @@ def show_error_popup(title: str, message: str, *, user32=_user32) -> None:
                     wintypes.HWND, wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.UINT)
     show(None, message, title,
          _MB_OK | _MB_ICONERROR | _MB_SETFOREGROUND | _MB_TOPMOST)
+
+
+def window_exists(hwnd: int, *, user32=_user32) -> bool:
+    """Whether *hwnd* still names a live window.
+
+    A handle outlives the window it named -- closing the window leaves the
+    number, and Windows may give it to another window later -- so anything that
+    must reach *that* window and no other asks first.
+    """
+    return bool(hwnd) and bool(_declare(user32(), "IsWindow", wintypes.BOOL, wintypes.HWND)(hwnd))
+
+
+def force_foreground_window(hwnd: int, *, user32=_user32, kernel32=_kernel32) -> bool:
+    """Put *hwnd* in front with the keyboard, from a process Windows would refuse.
+
+    ``SetForegroundWindow`` is refused, silently, to a process that neither owns
+    the foreground window nor received the last input: the window opens under
+    whatever the user is looking at, its taskbar button flashing.  A thread
+    sharing the foreground thread's input queue is one of the cases the rule
+    accepts, so the queues are attached for the call and parted after it.
+
+    Returns whether the window ended up in front.
+    """
+    if not window_exists(hwnd, user32=user32):
+        return False
+    user = user32()
+    foreground_window = _declare(user, "GetForegroundWindow", wintypes.HWND)
+    owner_thread = _declare(user, "GetWindowThreadProcessId",
+                            wintypes.DWORD, wintypes.HWND, wintypes.LPDWORD)
+    foreground = foreground_window() or 0
+    this_thread = _declare(kernel32(), "GetCurrentThreadId", wintypes.DWORD)()
+    with _input_queue_shared(user, owner_thread(foreground or hwnd, None), this_thread):
+        _declare(user, "BringWindowToTop", wintypes.BOOL, wintypes.HWND)(hwnd)
+        _declare(user, "SetForegroundWindow", wintypes.BOOL, wintypes.HWND)(hwnd)
+        if not foreground:
+            _declare(user, "SetActiveWindow", wintypes.HWND, wintypes.HWND)(hwnd)
+    return (foreground_window() or 0) == hwnd
+
+
+@contextlib.contextmanager
+def _input_queue_shared(user, other_thread: int, this_thread: int):
+    """*this_thread* reading *other_thread*'s input queue for as long as the block
+    runs: left joined, the two programs' keyboard focus would move together."""
+    attach = _declare(user, "AttachThreadInput",
+                      wintypes.BOOL, wintypes.DWORD, wintypes.DWORD, wintypes.BOOL)
+    attached = bool(other_thread and other_thread != this_thread
+                    and attach(other_thread, this_thread, True))
+    try:
+        yield
+    finally:
+        if attached:
+            attach(other_thread, this_thread, False)
