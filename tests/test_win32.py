@@ -32,6 +32,7 @@ from app_support.win32 import (
     describe_taskbar_app,
     described_taskbar_app,
     dress_window,
+    force_foreground_window,
     is_mutex_held,
     mutex_name,
     read_shortcut,
@@ -41,6 +42,7 @@ from app_support.win32 import (
     stamp_pinned_shortcuts,
     taskbar_pins,
     try_acquire_mutex,
+    window_exists,
     write_shortcut,
 )
 
@@ -820,3 +822,148 @@ class TestShowErrorPopup:
 
         assert show_error_popup("Example App", "The scene file could not be read.",
                                 user32=lambda: user32) is None
+
+
+class _Answers(_FakeFunction):
+    """A function whose answers change from one call to the next, the way the
+    foreground does across a call that takes it."""
+
+    def __init__(self, *answers: object, name: str = "", log: list | None = None) -> None:
+        super().__init__(name=name, log=log)
+        self._answers = list(answers)
+
+    def __call__(self, *args):
+        super().__call__(*args)
+        return self._answers.pop(0)
+
+
+THIS_THREAD = 7002
+FOREGROUND_THREAD = 7001
+
+
+def _a_desktop(*, foreground_before: int, foreground_after: int, log: list) -> tuple:
+    user32 = _FakeDll(
+        IsWindow=_FakeFunction(1),
+        GetForegroundWindow=_Answers(foreground_before, foreground_after),
+        GetWindowThreadProcessId=_FakeFunction(FOREGROUND_THREAD),
+        AttachThreadInput=_FakeFunction(1, name="AttachThreadInput", log=log),
+        BringWindowToTop=_FakeFunction(1, name="BringWindowToTop", log=log),
+        SetForegroundWindow=_FakeFunction(1, name="SetForegroundWindow", log=log),
+        SetActiveWindow=_FakeFunction(0, name="SetActiveWindow", log=log),
+    )
+    kernel32 = _FakeDll(GetCurrentThreadId=_FakeFunction(THIS_THREAD))
+    return user32, kernel32
+
+
+class TestForceForegroundWindow:
+    def test_it_borrows_the_foreground_s_input_queue_for_the_activation_and_gives_it_back(self):
+        # Windows refuses SetForegroundWindow, silently, to a process that neither
+        # owns the foreground nor received the last input.  A thread attached to
+        # the foreground thread's input queue is one the rule accepts.
+        log: list = []
+        user32, kernel32 = _a_desktop(foreground_before=999, foreground_after=111, log=log)
+
+        assert force_foreground_window(
+            111, user32=lambda: user32, kernel32=lambda: kernel32) is True
+
+        assert log == ["AttachThreadInput", "BringWindowToTop", "SetForegroundWindow",
+                       "AttachThreadInput"]
+        assert user32.AttachThreadInput.calls == [
+            (FOREGROUND_THREAD, THIS_THREAD, True), (FOREGROUND_THREAD, THIS_THREAD, False)]
+        assert user32.SetForegroundWindow.calls == [(111,)]
+
+    def test_a_window_that_is_gone_is_not_brought_forward_and_nothing_is_attached(self):
+        # A handle outlives the window it named: closing the window leaves the
+        # number, and Windows may hand it to another window later.
+        log: list = []
+        user32, kernel32 = _a_desktop(foreground_before=999, foreground_after=111, log=log)
+        user32.IsWindow.result = 0
+
+        assert force_foreground_window(
+            111, user32=lambda: user32, kernel32=lambda: kernel32) is False
+
+        assert log == []
+
+    def test_with_nothing_in_front_the_window_s_own_queue_takes_the_activation(self):
+        # A desktop with no foreground window -- a hidden one, as an integration
+        # suite runs on -- has no queue to borrow, and SetForegroundWindow alone
+        # then delivers no WM_ACTIVATE; SetActiveWindow from the window's own
+        # queue does.
+        log: list = []
+        user32, kernel32 = _a_desktop(foreground_before=0, foreground_after=0, log=log)
+        window_thread = 7003
+
+        class _OwnerOf(_FakeFunction):
+            def __call__(self, hwnd, _pid):
+                super().__call__(hwnd, _pid)
+                return {111: window_thread}[hwnd]
+
+        user32.GetWindowThreadProcessId = _OwnerOf()
+
+        force_foreground_window(111, user32=lambda: user32, kernel32=lambda: kernel32)
+
+        assert log == ["AttachThreadInput", "BringWindowToTop", "SetForegroundWindow",
+                       "SetActiveWindow", "AttachThreadInput"]
+        assert user32.AttachThreadInput.calls == [
+            (window_thread, THIS_THREAD, True), (window_thread, THIS_THREAD, False)]
+        assert user32.SetActiveWindow.calls == [(111,)]
+
+    def test_a_queue_this_thread_already_reads_is_not_attached_to_itself(self):
+        log: list = []
+        user32, kernel32 = _a_desktop(foreground_before=999, foreground_after=111, log=log)
+        user32.GetWindowThreadProcessId.result = THIS_THREAD
+
+        assert force_foreground_window(
+            111, user32=lambda: user32, kernel32=lambda: kernel32) is True
+
+        assert user32.AttachThreadInput.calls == []
+
+    def test_it_says_when_the_window_did_not_end_up_in_front(self):
+        log: list = []
+        user32, kernel32 = _a_desktop(foreground_before=999, foreground_after=999, log=log)
+
+        assert force_foreground_window(
+            111, user32=lambda: user32, kernel32=lambda: kernel32) is False
+
+    def test_the_queues_are_parted_even_when_the_activation_fails(self):
+        # Left attached, the two threads share one input state for good: the
+        # other program's keyboard focus and this one's move together.
+        log: list = []
+        user32, kernel32 = _a_desktop(foreground_before=999, foreground_after=111, log=log)
+
+        class _Refused(_FakeFunction):
+            def __call__(self, *args):
+                super().__call__(*args)
+                raise OSError("refused")
+
+        user32.SetForegroundWindow = _Refused()
+
+        with pytest.raises(OSError):
+            force_foreground_window(111, user32=lambda: user32, kernel32=lambda: kernel32)
+
+        assert user32.AttachThreadInput.calls[-1] == (FOREGROUND_THREAD, THIS_THREAD, False)
+
+    def test_a_handle_is_passed_and_read_as_a_handle(self):
+        log: list = []
+        user32, kernel32 = _a_desktop(foreground_before=999, foreground_after=111, log=log)
+
+        force_foreground_window(111, user32=lambda: user32, kernel32=lambda: kernel32)
+
+        assert user32.GetForegroundWindow.restype is ctypes.wintypes.HWND
+        assert user32.SetForegroundWindow.argtypes == [ctypes.wintypes.HWND]
+        assert user32.BringWindowToTop.argtypes == [ctypes.wintypes.HWND]
+
+
+class TestWindowExists:
+    def test_zero_is_never_a_window_and_windows_is_not_asked(self):
+        is_window = _FakeFunction(1)
+
+        assert window_exists(0, user32=lambda: _FakeDll(IsWindow=is_window)) is False
+
+        assert is_window.calls == []
+
+    @pytest.mark.parametrize(("answer", "exists"), [(0, False), (1, True)])
+    def test_it_answers_what_windows_says(self, answer, exists):
+        user32 = _FakeDll(IsWindow=_FakeFunction(answer))
+
+        assert window_exists(4321, user32=lambda: user32) is exists
