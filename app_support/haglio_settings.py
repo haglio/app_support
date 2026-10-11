@@ -14,6 +14,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from app_support import siblings
+
 SETTINGS_ENV = "HAGLIO_SETTINGS"
 THE_EXAMPLE = "example"
 
@@ -52,3 +54,7 @@ def value(*keys: str) -> Any:
             raise MissingSetting(keys[:depth], settings_file())
         here = here[key]
     return here
+
+
+def project_roots() -> tuple[Path, ...]:
+    return siblings.project_roots(load().get("project_roots"), fallback=Path(value("library_root")) / "projects")

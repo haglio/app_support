@@ -15,10 +15,11 @@ two answers:
     is :func:`sibling_checkout`; :func:`ensure_sibling_importable` puts it on
     ``sys.path`` -- at the back, and only when nothing already answers for the
     name, so a session that chose a checkout through ``PYTHONPATH`` keeps it.
-  * **Where do the suite's apps live on this machine?**  Wherever the content
-    overlay says, in search order, with a fallback under the library root.  That
-    is :func:`project_roots` and :func:`project_dir`, for the apps that reach a
-    sibling's *files* rather than its package.
+  * **Where do the suite's apps live on this machine?**  Wherever the settings
+    all of Haglio shares say, in search order, with a fallback under the library
+    root.  That is :func:`app_support.haglio_settings.project_roots` and
+    :func:`project_dir`, for the apps that reach a sibling's *files* rather than
+    its package.
 
 The same question asked about *this* checkout is
 :func:`assert_imported_from_checkout`, which a suite calls on itself.
@@ -89,11 +90,9 @@ def ensure_sibling_importable(name: str, *, near: Path) -> None:
 def project_roots(configured: Iterable[str | Path] | None, *, fallback: Path) -> tuple[Path, ...]:
     """The folders that hold the suite's app checkouts, in search order.
 
-    *configured* is what the content overlay says -- its ``project_roots`` key,
-    read by the caller so the key stays visible where that repo's overlay
-    contract is pinned.  Nothing there means *fallback*: ``<library
-    root>/projects``, where the repos lived before they moved out of the
-    file-synced tree the library stays in.  A *list* rather than one path so a
+    *configured* is the ``project_roots`` setting.  Nothing there means
+    *fallback*: ``<library root>/projects``, where the repos lived before they
+    moved out of the file-synced tree the library stays in.  A *list* rather than one path so a
     part-finished move resolves: each checkout is found wherever it actually is
     right now, with no window where half the suite is unreachable.
     """
