@@ -69,7 +69,7 @@ class TestThirdPartyImports:
 
     def test_a_siblings_package_is_not_third_party_under_a_name_its_repo_does_not_have(
             self, tmp_path: Path):
-        # player_core ships funestra_core, and player_core under its old name.
+        # The funestra sibling still answers as funestra_core and player_core.
         root = _repo(tmp_path, source="from funestra_core.playlist import PlaylistItem\n")
 
         assert third_party_imports(root, [root / "someapp"]) == {}
@@ -304,6 +304,13 @@ class TestDeclaredSiblings:
             "app_support is imported by someapp/app.py and declared nowhere"]
 
     def test_a_siblings_package_counts_for_the_repo_that_ships_it(self, tmp_path: Path):
+        root = self._repo(tmp_path, source="from funestra.playlist import PlaylistItem\n",
+                          siblings='"funestra"', beside=["funestra"])
+
+        assert undeclared_siblings(root, [root / "someapp"], root / "pyproject.toml") == []
+
+    def test_a_repo_still_naming_a_renamed_sibling_by_its_old_name_has_declared_it(
+            self, tmp_path: Path):
         root = self._repo(tmp_path, source="from funestra_core.playlist import PlaylistItem\n",
                           siblings='"player_core"', beside=["player_core"])
 
@@ -313,15 +320,15 @@ class TestDeclaredSiblings:
         root = self._repo(tmp_path, source="import funestra_core.funestra\n")
 
         assert undeclared_siblings(root, [root / "someapp"], root / "pyproject.toml") == [
-            "player_core is imported by someapp/app.py and declared nowhere"]
+            "funestra is imported by someapp/app.py and declared nowhere"]
 
     def test_a_declared_sibling_nothing_needs_is_reported_too(self, tmp_path: Path):
         # It costs a clone and an install on every run of the gate, and it reads
         # as a dependency to anyone deciding what may safely change.
-        root = self._repo(tmp_path, source="", siblings='"player_core"', beside=["player_core"])
+        root = self._repo(tmp_path, source="", siblings='"funestra"', beside=["funestra"])
 
         assert undeclared_siblings(root, [root / "someapp"], root / "pyproject.toml") == [
-            "player_core is declared, imported nowhere, and needed by nothing declared"]
+            "funestra is declared, imported nowhere, and needed by nothing declared"]
 
     def test_a_sibling_the_pytest_config_loads_as_a_plugin_counts_as_imported(self, tmp_path: Path):
         # `-p app_support.sanitize.pytest_plugin` is what makes the guard run;
@@ -369,19 +376,25 @@ class TestASiblingsOwnSiblings:
 
     def test_what_a_declared_sibling_needs_is_needed_too(self, tmp_path: Path):
         # genau's shape: it imports no shared_ui module and cannot run a line
-        # without it, because the player_core HUDs it does import are painted
+        # without it, because the Funestra HUDs it does import are painted
         # in the family's colors.
+        self._checkout(tmp_path, "shared_ui")
+        self._checkout(tmp_path, "funestra", siblings='"shared_ui"')
+
+        assert inherited_siblings(["funestra"], tmp_path / "funestra") == {"shared_ui"}
+
+    def test_a_sibling_whose_checkout_still_has_its_old_name_is_asked_there(self, tmp_path: Path):
         self._checkout(tmp_path, "shared_ui")
         self._checkout(tmp_path, "player_core", siblings='"shared_ui"')
 
-        assert inherited_siblings(["player_core"], tmp_path / "player_core") == {"shared_ui"}
+        assert inherited_siblings(["funestra"], tmp_path / "player_core") == {"shared_ui"}
 
     def test_the_closure_is_followed_all_the_way_down(self, tmp_path: Path):
         self._checkout(tmp_path, "app_support")
         self._checkout(tmp_path, "shared_ui", siblings='"app_support"')
-        self._checkout(tmp_path, "player_core", siblings='"shared_ui"')
+        self._checkout(tmp_path, "funestra", siblings='"shared_ui"')
 
-        assert inherited_siblings(["player_core"], tmp_path / "player_core") == {
+        assert inherited_siblings(["funestra"], tmp_path / "funestra") == {
             "shared_ui", "app_support"}
 
     def test_siblings_that_are_not_on_disk_cannot_be_asked(self, tmp_path: Path):
@@ -389,7 +402,7 @@ class TestASiblingsOwnSiblings:
         # nothing" would call every inherited requirement unused.
         (tmp_path / "somewhere").mkdir()
 
-        assert inherited_siblings(["player_core"], tmp_path / "somewhere") is None
+        assert inherited_siblings(["funestra"], tmp_path / "somewhere") is None
 
 
 class TestTheVersionComesFromTheTag:

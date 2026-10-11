@@ -52,7 +52,7 @@ import tomllib
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 
-from app_support.siblings import sibling_checkout
+from app_support.siblings import RENAMED_SIBLINGS, sibling_checkout
 
 # Import names that differ from the distribution that provides them, across the
 # family; a repo adds its own on top.
@@ -79,13 +79,13 @@ FAMILY_IMPORT_NAMES: Mapping[str, str] = {
 
 # The family's shared packages: a repo names the ones it needs under [tool.haglio]
 # siblings and pins each at a tag.
-FAMILY_SIBLINGS = ("app_support", "player_core", "shared_ui", "voice_core")
+FAMILY_SIBLINGS = ("app_support", "funestra", "shared_ui", "voice_core")
 
 # What a sibling's modules are imported as, where that is not its repo's name:
-# player_core ships funestra_core, and answers to player_core as well for the
-# checkouts from before the Player became the Funestra.
+# funestra answers to funestra_core and player_core as well, for the checkouts
+# from before it had its own name.
 _SIBLING_PACKAGES: Mapping[str, tuple[str, ...]] = {
-    "player_core": ("funestra_core", "player_core"),
+    "funestra": ("funestra", "funestra_core", "player_core"),
 }
 
 
@@ -252,7 +252,7 @@ def declared_siblings(pyproject: Path) -> set[str]:
     """
     with Path(pyproject).open("rb") as handle:
         table = tomllib.load(handle).get("tool", {}).get("haglio", {})
-    return set(table.get("siblings", ()))
+    return {RENAMED_SIBLINGS.get(name, name) for name in table.get("siblings", ())}
 
 
 def sibling_imports(root: Path, packages: Iterable[Path], pyproject: Path) -> dict[str, list[str]]:
@@ -304,7 +304,7 @@ def inherited_siblings(declared: Iterable[str], near: Path) -> set[str] | None:
 
     A sibling is installed for what it imports as well as for itself: genau
     imports no shared_ui module and cannot run a line without it, because the
-    player_core HUDs it does import are painted in the family's colors.  So the
+    Funestra HUDs it does import are painted in the family's colors.  So the
     set a repo has to install is the closure, not the direct imports.
     """
     inherited: set[str] = set()
@@ -342,7 +342,7 @@ def assert_every_sibling_is_declared(root: Path, packages: Iterable[Path], pypro
     of what a checkout needs, and a declared one nothing needs costs a clone and
     an install on every run while reading as a dependency to anyone deciding what
     may safely change.  What a declared sibling needs in turn counts as needed --
-    installing player_core without shared_ui gets a checkout that cannot import
+    installing funestra without shared_ui gets a checkout that cannot import
     a HUD.
     """
     wrong = undeclared_siblings(root, packages, pyproject)

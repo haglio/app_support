@@ -52,8 +52,8 @@ GENAU_PAUSED = "genau_paused.txt"
 
 GENAU_DRIVE = "genau_drive.txt"
 """Genau -> the Main Funestra.  The drive readout, published whole; its lines are
-``funestra_core.drive_readout``'s."""
+``funestra.drive_readout``'s."""
 
 GENAU_STATUS = "genau_status.txt"
 """Genau -> Fun Time.  ``key=value`` lines, published whole (``read_key_values``);
-the keys are ``funestra_core.genau_status``'s."""
+the keys are ``funestra.genau_status``'s."""

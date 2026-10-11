@@ -24,7 +24,7 @@ TCODE_UDP = 50557
 """The broker listens; Fun Time, Genau, the Main Funestra and Origenerator send.
 
 The device protocol: position-and-duration lines the broker relays over serial
-to the hardware.  ``funestra_core.tcode.UdpTCodeSink`` is the socket all four
+to the hardware.  ``funestra.tcode.UdpTCodeSink`` is the socket all four
 senders reach it through, and its own default is this number."""
 
 GENAU_UDP = 50555

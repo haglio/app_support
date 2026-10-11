@@ -14,7 +14,7 @@ Pause rides its own file rather than the command channel so that being paused is
 a *state* the Funestra converges on, not an event it can miss: a Funestra that
 starts late, restarts, or drops a verb still reads the flag and lands correctly.
 
-This was ``player_core.file_channel``, which re-exports it so the Funestras are
+This was ``funestra.file_channel``, which re-exports it so the Funestras are
 untouched.  It moved because the broker, which is no Funestra, had grown its own
 consumer that read the file and then truncated it -- a gap one verb wide that a
 verb written into it fell through -- and because the files' names were spelled
