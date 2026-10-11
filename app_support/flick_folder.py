@@ -20,6 +20,10 @@ def weird_pile_in(genau: Path) -> Path:
     return genau / "weird"
 
 
+def audio_in(genau: Path) -> Path:
+    return genau / "audio"
+
+
 def weird_dir_for_flicks_folder(folder: Path) -> Path:
     return weird_pile_in(folder.parent)
 
