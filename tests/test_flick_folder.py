@@ -5,11 +5,16 @@ from app_support.flick_folder import (
     flicks_folder_in,
     vr_flicks_in,
     weird_dir_for_flicks_folder,
+    weird_pile_in,
 )
 
 
 def test_weird_dir_sits_beside_the_flicks_folder():
     assert weird_dir_for_flicks_folder(Path("C:/videos/genau/flicks")) == Path("C:/videos/genau/weird")
+
+
+def test_the_weird_pile_is_in_genaus_folder_whether_or_not_its_flicks_are_found():
+    assert weird_pile_in(Path("C:/videos/genau")) == Path("C:/videos/genau/weird")
 
 
 def test_the_flicks_folder_forks_into_the_2d_flicks_and_the_vr_flicks():

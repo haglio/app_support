@@ -16,8 +16,12 @@ def vr_flicks_in(flicks_folder: Path) -> Path:
     return flicks_folder / "VR"
 
 
+def weird_pile_in(genau: Path) -> Path:
+    return genau / "weird"
+
+
 def weird_dir_for_flicks_folder(folder: Path) -> Path:
-    return folder.parent / "weird"
+    return weird_pile_in(folder.parent)
 
 
 def flicks_folder_in(genau: Path) -> Path | None:
