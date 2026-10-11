@@ -111,7 +111,7 @@ def scan_targets(root, trees) -> list[str]:
     """What the gate hands ruff: the named *trees* and the root's own files.
 
     Never `.`: a gate checks out sibling repos beside or inside this one
-    (player_core's runner puts shared_ui under it) and an agent's checkout lives
+    (funestra's runner puts shared_ui under it) and an agent's checkout lives
     in `.claude/worktrees`, and all of it would be read under this repo's config.
     """
     return [str(tree) for tree in trees] + [path.name for path in sorted(Path(root).glob("*.py"))]

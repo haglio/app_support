@@ -55,6 +55,24 @@ class TestSiblingCheckout:
         assert sibling_checkout("widgetlib", near=family / "someapp" / "someapp" / "x.py") == (
             family / "widgetlib")
 
+    def test_a_renamed_sibling_is_found_under_the_name_its_checkout_had_before(
+            self, tmp_path: Path):
+        family = _family(tmp_path)
+        (family / "player_core" / "player_core").mkdir(parents=True)
+        (family / "player_core" / "player_core" / "__init__.py").write_text("", encoding="utf-8")
+
+        assert sibling_checkout("funestra", near=family / "someapp" / "someapp" / "x.py") == (
+            family / "player_core")
+
+    def test_a_renamed_siblings_checkout_under_its_new_name_comes_first(self, tmp_path: Path):
+        family = _family(tmp_path)
+        for name in ("funestra", "player_core"):
+            (family / name / name).mkdir(parents=True)
+            (family / name / name / "__init__.py").write_text("", encoding="utf-8")
+
+        assert sibling_checkout("funestra", near=family / "someapp" / "someapp" / "x.py") == (
+            family / "funestra")
+
     def test_nothing_found_is_said_rather_than_guessed(self, tmp_path: Path):
         with pytest.raises(RuntimeError, match="widgetlib"):
             sibling_checkout("widgetlib", near=tmp_path / "alone" / "x.py")
@@ -110,6 +128,17 @@ class TestProjectDir:
 
     def test_a_sibling_nobody_has_is_a_path_under_the_first_root_not_a_crash(self, tmp_path: Path):
         assert project_dir("someapp", (tmp_path / "new", tmp_path / "old")) == tmp_path / "new" / "someapp"
+
+    def test_a_renamed_siblings_folder_is_found_under_its_old_name_too(self, tmp_path: Path):
+        (tmp_path / "root" / "player_core").mkdir(parents=True)
+
+        assert project_dir("funestra", (tmp_path / "root",)) == tmp_path / "root" / "player_core"
+
+    def test_a_renamed_siblings_folder_under_its_new_name_comes_first(self, tmp_path: Path):
+        for name in ("funestra", "player_core"):
+            (tmp_path / "root" / name).mkdir(parents=True)
+
+        assert project_dir("funestra", (tmp_path / "root",)) == tmp_path / "root" / "funestra"
 
 
 def _imported(name: str, file: Path | None) -> ModuleType:

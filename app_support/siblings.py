@@ -33,6 +33,14 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 from types import ModuleType
 
+# A sibling's earlier name, and the name it has now. A checkout keeps its folder's
+# old name until someone moves it, and a CI job clones under the name it spells.
+RENAMED_SIBLINGS = {"player_core": "funestra"}
+
+
+def names_of(sibling: str) -> tuple[str, ...]:
+    return (sibling, *(old for old, new in RENAMED_SIBLINGS.items() if new == sibling))
+
 
 def sibling_checkout(name: str, *, near: Path) -> Path:
     """The *name* checkout beside the one *near* is in; its ``name/`` child is the package.
@@ -42,9 +50,10 @@ def sibling_checkout(name: str, *, near: Path) -> Path:
     """
     here = Path(near).resolve()
     for parent in here.parents:
-        checkout = parent / name
-        if (checkout / name / "__init__.py").exists():
-            return checkout
+        for spelled in names_of(name):
+            checkout = parent / spelled
+            if (checkout / spelled / "__init__.py").exists():
+                return checkout
     raise RuntimeError(f"Could not locate the {name} checkout above {here}")
 
 
@@ -100,9 +109,10 @@ def project_dir(name: str, roots: Sequence[Path]) -> Path:
     existence -- so it must not be an import-time crash.
     """
     for root in roots:
-        candidate = Path(root) / name
-        if candidate.is_dir():
-            return candidate
+        for spelled in names_of(name):
+            candidate = Path(root) / spelled
+            if candidate.is_dir():
+                return candidate
     return Path(roots[0]) / name
 
 

@@ -76,7 +76,7 @@ def test_a_noqa_for_a_rule_this_config_does_not_run_is_not_unused(tmp_path):
 
 
 def test_only_the_named_trees_and_the_root_files_are_scanned(tmp_path):
-    """A gate checks out siblings beside or inside the repo (player_core's runner
+    """A gate checks out siblings beside or inside the repo (funestra's runner
     puts shared_ui under it), and a checkout lives in `.claude/worktrees`: a scan of
     `.` reads all of them under this repo's config. The named directories and the
     root's own files are the repo."""
