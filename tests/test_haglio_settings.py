@@ -65,3 +65,18 @@ def test_one_reader_changing_what_it_was_handed_changes_nobody_else_s(monkeypatc
     haglio_settings.load()["genau_flick_words"]["one"] = "changed"
 
     assert haglio_settings.value("genau_flick_words", "one") == "flick"
+
+
+def test_the_checkouts_are_found_in_the_folders_the_settings_name_in_order(tmp_path, monkeypatch):
+    monkeypatch.setenv(haglio_settings.SETTINGS_ENV, str(_settings(
+        tmp_path / "settings.json",
+        {"library_root": "L:/library", "project_roots": ["W:/workspace", "L:/library/projects"]})))
+
+    assert haglio_settings.project_roots() == (Path("W:/workspace"), Path("L:/library/projects"))
+
+
+def test_settings_naming_no_checkout_folders_mean_the_projects_folder_in_the_library(tmp_path, monkeypatch):
+    monkeypatch.setenv(haglio_settings.SETTINGS_ENV,
+                       str(_settings(tmp_path / "settings.json", {"library_root": "L:/library"})))
+
+    assert haglio_settings.project_roots() == (Path("L:/library/projects"),)
