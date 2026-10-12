@@ -45,6 +45,11 @@ def test_it_tells():
     assert told("you") == "told you"
 """
 
+A_FAILING_TEST = """\
+def test_it_fails():
+    assert False
+"""
+
 
 def _config(**narrowed) -> Namespace:
     settled = {"file_or_dir": [], "keyword": "", "markexpr": "", "deselect": None, "maxfail": 0}
@@ -73,10 +78,8 @@ class TestWhichRunsTheFloorApplies:
     def test_deselecting_narrows_it(self):
         assert coverage_gate.why_this_is_not_the_whole_suite(_config(deselect=["tests/test_a.py"]))
 
-    def test_stopping_at_the_first_failure_narrows_it(self):
-        """The suite stops partway, so what was measured is whatever ran before the
-        failure -- and the run is red already."""
-        assert coverage_gate.why_this_is_not_the_whole_suite(_config(maxfail=1))
+    def test_a_run_set_to_stop_at_its_first_failure_is_still_the_whole_suite(self):
+        assert coverage_gate.why_this_is_not_the_whole_suite(_config(maxfail=1)) is None
 
     def test_switching_the_measuring_off_narrows_it(self):
         assert coverage_gate.why_this_is_not_the_whole_suite(_config(no_cov=True))
@@ -91,7 +94,7 @@ class TestWhichRunsTheFloorApplies:
 
 
 class TestTheFloorAgainstARealRun:
-    def _repo(self, tmp_path: Path, floor: float, pyproject: str = MEASURING) -> Path:
+    def _repo(self, tmp_path: Path, floor: float, pyproject: str = MEASURING, *, failing: bool = False) -> Path:
         package = tmp_path / "pkg"
         package.mkdir()
         (package / "__init__.py").write_text("", encoding="utf-8")
@@ -99,6 +102,8 @@ class TestTheFloorAgainstARealRun:
         tests = tmp_path / "tests"
         tests.mkdir()
         (tests / "test_mod.py").write_text(A_TEST, encoding="utf-8")
+        if failing:
+            (tests / "test_failing.py").write_text(A_FAILING_TEST, encoding="utf-8")
         (tmp_path / "pyproject.toml").write_text(pyproject, encoding="utf-8")
         (tmp_path / ".coveragerc").write_text(
             coverage_gate.render_config((), floor), encoding="utf-8")
@@ -120,6 +125,21 @@ class TestTheFloorAgainstARealRun:
 
         assert done.returncode != 0, done.stdout + done.stderr
         assert "Required test coverage of 90.0% not reached" in done.stdout
+
+    def test_a_run_set_to_stop_at_its_first_failure_is_held_to_the_floor_when_every_test_passes(self, tmp_path):
+        done = self._run(self._repo(tmp_path, 90.0), "-x")
+
+        assert done.returncode != 0, done.stdout + done.stderr
+        assert "Required test coverage of 90.0% not reached" in done.stdout
+
+    def test_a_run_stopped_by_a_failure_reports_the_failure_alone(self, tmp_path):
+        """What was measured is whatever ran before the failure, and the run is red
+        already: a coverage failure beside it would send the reader after the wrong one."""
+        done = self._run(self._repo(tmp_path, 90.0, failing=True), "-x")
+
+        assert done.returncode != 0, done.stdout + done.stderr
+        assert "test_it_fails" in done.stdout
+        assert "Required test coverage" not in done.stdout
 
     def test_a_narrowed_run_is_not_held_to_the_floor_and_says_so(self, tmp_path):
         done = self._run(self._repo(tmp_path, 90.0), "tests/test_mod.py")
