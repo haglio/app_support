@@ -60,7 +60,6 @@ _NARROWINGS = (
     ("keyword", "-k {}"),
     ("markexpr", "-m {}"),
     ("deselect", "--deselect"),
-    ("maxfail", "--maxfail={}"),
     ("no_cov", "--no-cov"),
     ("lf", "--lf"),
     ("failedfirst", "--ff"),
@@ -124,12 +123,15 @@ def pytest_configure(config) -> None:
 
 
 def pytest_collection_modifyitems(config, items) -> None:
+    # pytest-cov reads its settings off the namespace it was handed before the
+    # conftests loaded, which is not the one `config.option` ends up being.
+    measuring = config.pluginmanager.get_plugin("_cov").options
     why = why_this_is_not_the_whole_suite(config)
     if why is not None:
-        # pytest-cov reads the floor off the namespace it was handed before the
-        # conftests loaded, which is not the one `config.option` ends up being.
-        config.pluginmanager.get_plugin("_cov").options.cov_fail_under = None
+        measuring.cov_fail_under = None
         config.stash[_STOOD_DOWN] = why
+    elif config.option.maxfail:
+        measuring.no_cov_on_fail = True
 
 
 def pytest_terminal_summary(terminalreporter) -> None:
