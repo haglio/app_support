@@ -284,15 +284,8 @@ def stamp_age(path: Path, now: float | None = None) -> float | None:
 
 
 def read_key_values(path: Path) -> dict[str, str]:
-    """One ``key=value``-per-line status file as a dict; raises what the file raises.
-
-    A status is published whole, so a read either sees a complete record or the
-    file mid-replace -- and what to do then (hand back the last good snapshot,
-    usually) is the reader's to decide, which it cannot if the failure is hidden
-    under an empty dict.
-    """
     return dict(
         line.split("=", 1)
-        for line in path.read_text(encoding="utf-8").splitlines()
+        for line in read_whole(path).splitlines()
         if "=" in line
     )

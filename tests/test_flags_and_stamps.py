@@ -6,6 +6,8 @@ import logging
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from app_support.file_channel import (
     publish_stamp,
     read_flag,
@@ -131,6 +133,19 @@ class TestReadKeyValues:
         path.write_text("video=C:/clips/a=b.mp4\n", encoding="utf-8")
 
         assert read_key_values(path) == {"video": "C:/clips/a=b.mp4"}
+
+    def test_a_status_read_while_it_is_being_replaced_reads_whole(self, tmp_path: Path,
+                                                                  being_replaced):
+        path = tmp_path / "status.txt"
+        path.write_text("video=demo.mp4\nstate=looping\n", encoding="utf-8")
+
+        with being_replaced(path):
+            assert read_key_values(path) == {"video": "demo.mp4", "state": "looping"}
+
+    def test_a_status_that_cannot_be_read_raises_so_its_reader_can_keep_the_last_good_one(
+            self, tmp_path: Path):
+        with pytest.raises(FileNotFoundError):
+            read_key_values(tmp_path / "never-published.txt")
 
     def test_a_line_without_a_pair_is_skipped(self, tmp_path: Path):
         path = tmp_path / "status.txt"
