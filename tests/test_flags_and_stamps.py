@@ -46,6 +46,14 @@ class TestReadFlag:
 
         assert read_flag(path, default=True) is False
 
+    def test_a_flag_read_while_it_is_being_replaced_is_what_it_says(self, tmp_path: Path,
+                                                                    being_replaced):
+        path = tmp_path / "flag.txt"
+        write_flag(path, True)
+
+        with being_replaced(path):
+            assert read_flag(path, default=False) is True
+
     def test_an_unreadable_path_is_the_default_and_says_so(self, tmp_path: Path):
         logger = MagicMock(spec=logging.Logger)
 
