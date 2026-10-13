@@ -38,7 +38,7 @@ def _retried_while_held[T](act: Callable[[], T], attempts: int, delay_s: float) 
     for _ in range(attempts - 1):
         try:
             return act()
-        except OSError:
+        except PermissionError:
             time.sleep(delay_s)
     return act()
 
