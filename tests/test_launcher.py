@@ -8,8 +8,6 @@ a stand-in, so every line runs and nothing is started.
 """
 from __future__ import annotations
 
-import contextlib
-import ctypes
 import os
 import subprocess
 import sys
@@ -577,24 +575,7 @@ def _line_index(run: ScriptHostRun, start: str) -> int:
                 if line.startswith(start))
 
 
-@contextlib.contextmanager
-def _held(path: Path):
-    """Hold *path* the way a stray child holds a redirect it inherited: open for
-    writing, shared with nobody."""
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel32.CreateFileW.restype = ctypes.c_void_p
-    kernel32.CreateFileW.argtypes = [ctypes.c_wchar_p, ctypes.c_ulong, ctypes.c_ulong,
-                                     ctypes.c_void_p, ctypes.c_ulong, ctypes.c_ulong,
-                                     ctypes.c_void_p]
-    kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
-    path.parent.mkdir(parents=True, exist_ok=True)
-    generic_write, open_always, normal = 0x40000000, 4, 0x80
-    handle = kernel32.CreateFileW(str(path), generic_write, 0, None, open_always, normal, None)
-    assert handle not in (None, ctypes.c_void_p(-1).value), ctypes.get_last_error()
-    try:
-        yield
-    finally:
-        kernel32.CloseHandle(handle)
+_FOR_WRITING, _SHARED_WITH_NOBODY, _MADE_IF_MISSING = 0x40000000, 0, 4
 
 
 @windows_only
@@ -630,14 +611,17 @@ class TestALaunch:
         assert f"rehearsal: run {command} (style 0, wait False)" in run.output
         assert f" launch: {command}" in log.read_text(encoding="utf-8")
 
-    def test_a_held_log_costs_its_name_and_not_the_launch(self, tmp_path: Path):
+    def test_a_held_log_costs_its_name_and_not_the_launch(self, tmp_path: Path, held_open):
         # A child of an earlier session that outlived it holds the log it
         # inherited, and cmd cannot redirect into it -- a launch that fails
         # before python runs, leaving nothing anywhere to say why.
         checkout = _checkout(tmp_path, LOGGED)
         _venv(checkout, "python.exe")
+        inherited = checkout / "state" / "example.log"
+        inherited.parent.mkdir()
 
-        with _held(checkout / "state" / "example.log"):
+        with held_open(inherited, access=_FOR_WRITING, share=_SHARED_WITH_NOBODY,
+                       disposition=_MADE_IF_MISSING):
             run = _rehearsed_to_the_end(_rehearse(_rendered(checkout)))
 
         second = checkout / "state" / "example-2.log"
