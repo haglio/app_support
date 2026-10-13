@@ -19,6 +19,14 @@ def test_a_document_that_is_not_there_reads_as_an_empty_one(tmp_path):
     assert read_json(tmp_path / "absent.json") == {}
 
 
+def test_a_document_read_while_it_is_being_replaced_reads_whole(tmp_path, being_replaced):
+    path = tmp_path / "clip.json"
+    _write(path, {"video": {"act": "alpha"}})
+
+    with being_replaced(path):
+        assert read_json(path) == {"video": {"act": "alpha"}}
+
+
 def test_a_document_that_will_not_parse_raises_rather_than_reading_as_empty(tmp_path):
     path = tmp_path / "torn.json"
     path.write_text('{"video": {"act"', encoding="utf-8")

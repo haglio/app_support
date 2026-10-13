@@ -20,7 +20,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from app_support.file_channel import write_whole
+from app_support.file_channel import read_whole, write_whole
 
 LOCK_SUFFIX = ".lock"
 
@@ -50,7 +50,7 @@ def read_json(path: Path) -> dict:
     writing our own field into it replaces somebody else's record with ours.
     """
     try:
-        text = path.read_text(encoding="utf-8")
+        text = read_whole(path)
     except FileNotFoundError:
         return {}
     payload = json.loads(text)
