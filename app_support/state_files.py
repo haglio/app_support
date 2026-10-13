@@ -38,6 +38,11 @@ OSR2_SERIAL_RX = "osr2_serial_rx.txt"
 """Broker -> Fun Time and Origenerator.  A stamp of the device's last word: how
 the session knows the OSR2 is powered on."""
 
+OSR2_SERIAL_ANSWER = "osr2_serial_answer.txt"
+"""Broker -> Fun Time and Origenerator.  A stamp of the device's last answer to
+the question the broker keeps asking it, which a switched-off OSR2 cannot
+answer."""
+
 OSR2_SERIAL_TX = "osr2_serial_tx.txt"
 """Broker -> Fun Time.  A stamp of the last word TO the device: a driver sending
 is a device in use even while it says nothing back."""
