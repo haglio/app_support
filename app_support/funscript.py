@@ -22,7 +22,7 @@ import json
 import logging
 from pathlib import Path
 
-from app_support.file_channel import write_whole
+from app_support.file_channel import read_whole, write_whole
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +85,7 @@ def read(path: Path) -> dict:
     can act on it, and the run loops among them have a frame to draw.
     """
     try:
-        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+        payload = json.loads(read_whole(Path(path)))
     except FileNotFoundError:
         return {}
     except (OSError, json.JSONDecodeError):
