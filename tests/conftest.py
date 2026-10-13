@@ -98,6 +98,11 @@ def _held_open(path: Path, *, access: int, share: int, disposition: int):
 
 
 @pytest.fixture
+def held_open():
+    return _held_open
+
+
+@pytest.fixture
 def being_replaced():
     @contextlib.contextmanager
     def replacing(path: Path):
