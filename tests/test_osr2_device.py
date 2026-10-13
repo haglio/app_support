@@ -2,14 +2,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from app_support.file_channel import publish_stamp
+from app_support.file_channel import publish_stamp, write_flag
 from app_support.osr2_device import (
     ANSWERING_TRUSTED_S,
     ANSWERS_ONCE_OFF_S,
     SILENT_ONCE_OFF_S,
+    Osr2Mode,
+    mode,
     switched_on,
 )
-from app_support.state_files import OSR2_SERIAL_ANSWER, OSR2_SERIAL_RX
+from app_support.state_files import BROKER_MODE, OSR2_SERIAL_ANSWER, OSR2_SERIAL_RX
 
 
 def _spoke_at(state_dir: Path, when: float) -> None:
@@ -67,3 +69,29 @@ def test_a_switched_off_osr2_stays_off_as_its_answers_stop_counting(tmp_path):
 
     assert not switched_on(tmp_path, now=100.0 + ANSWERING_TRUSTED_S + 0.1)
 
+
+def test_a_switched_off_osr2_is_off_whatever_the_broker_last_said_of_it(tmp_path):
+    write_flag(tmp_path / BROKER_MODE, True)
+
+    assert mode(tmp_path, now=100.0) is Osr2Mode.OFF
+
+
+
+def test_one_switched_on_in_its_own_auto_mode_is_auto(tmp_path):
+    _spoke_at(tmp_path, 100.0)
+    write_flag(tmp_path / BROKER_MODE, True)
+
+    assert mode(tmp_path, now=100.5) is Osr2Mode.AUTO
+
+
+def test_one_switched_on_and_not_in_its_auto_mode_is_controlled(tmp_path):
+    _spoke_at(tmp_path, 100.0)
+    write_flag(tmp_path / BROKER_MODE, False)
+
+    assert mode(tmp_path, now=100.5) is Osr2Mode.CONTROLLED
+
+
+def test_one_whose_broker_has_not_said_is_controlled(tmp_path):
+    _spoke_at(tmp_path, 100.0)
+
+    assert mode(tmp_path, now=100.5) is Osr2Mode.CONTROLLED
