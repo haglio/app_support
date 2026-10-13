@@ -27,7 +27,20 @@ import contextlib
 import logging
 import os
 import time
+from collections.abc import Callable
 from pathlib import Path
+
+_ATTEMPTS_WHILE_HELD = 5
+_DELAY_WHILE_HELD_S = 0.005
+
+
+def _retried_while_held[T](act: Callable[[], T], attempts: int, delay_s: float) -> T:
+    for _ in range(attempts - 1):
+        try:
+            return act()
+        except OSError:
+            time.sleep(delay_s)
+    return act()
 
 
 def publish_whole(
@@ -35,8 +48,8 @@ def publish_whole(
     text: str,
     *,
     newline: str | None = None,
-    attempts: int = 5,
-    delay_s: float = 0.005,
+    attempts: int = _ATTEMPTS_WHILE_HELD,
+    delay_s: float = _DELAY_WHILE_HELD_S,
 ) -> bool:
     """Write *text* to *path* so a concurrent poller reads all of it or none.
 
@@ -65,19 +78,13 @@ def publish_whole(
             handle.write(text)
     except OSError:
         return False
-    for attempt in range(attempts):
-        try:
-            os.replace(mine, path)
-            return True
-        except OSError:
-            if attempt < attempts - 1:
-                time.sleep(delay_s)
-    # Nothing landed, so nothing stays on disk: the temp file lives in the
-    # state directory beside the real one, where a stray copy per failed publish
-    # would accumulate and read as a file some component owns.
-    with contextlib.suppress(OSError):  # another writer may have it open
-        mine.unlink(missing_ok=True)
-    return False
+    try:
+        _retried_while_held(lambda: os.replace(mine, path), attempts, delay_s)
+    except OSError:
+        with contextlib.suppress(OSError):
+            mine.unlink(missing_ok=True)
+        return False
+    return True
 
 
 def write_whole(
@@ -85,8 +92,8 @@ def write_whole(
     text: str,
     *,
     newline: str | None = None,
-    attempts: int = 5,
-    delay_s: float = 0.005,
+    attempts: int = _ATTEMPTS_WHILE_HELD,
+    delay_s: float = _DELAY_WHILE_HELD_S,
 ) -> None:
     """:func:`publish_whole` for a caller that must not miss a failed write.
 
@@ -103,7 +110,11 @@ def write_whole(
 
 
 def append_command(
-    path: Path, line: str, *, attempts: int = 5, delay_s: float = 0.005,
+    path: Path,
+    line: str,
+    *,
+    attempts: int = _ATTEMPTS_WHILE_HELD,
+    delay_s: float = _DELAY_WHILE_HELD_S,
 ) -> bool:
     """Queue one verb on *path*, keeping whatever is already waiting there.
 
@@ -125,26 +136,22 @@ def append_command(
     """
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
+        _retried_while_held(lambda: _append_line(path, line), attempts, delay_s)
     except OSError:
         return False
-    for attempt in range(attempts):
-        try:
-            # Checked inside the retry loop: the queue can be drained between
-            # attempts, and whether a separator is needed goes with it.
-            with path.open("a+", encoding="utf-8") as handle:
-                handle.seek(0, 2)
-                if handle.tell():
-                    handle.seek(handle.tell() - 1)
-                    unterminated = handle.read(1) not in ("\n", "\r")
-                    handle.seek(0, 2)
-                    if unterminated:
-                        handle.write("\n")
-                handle.write(line + "\n")
-            return True
-        except OSError:
-            if attempt < attempts - 1:
-                time.sleep(delay_s)
-    return False
+    return True
+
+
+def _append_line(path: Path, line: str) -> None:
+    with path.open("a+", encoding="utf-8") as handle:
+        handle.seek(0, 2)
+        if handle.tell():
+            handle.seek(handle.tell() - 1)
+            unterminated = handle.read(1) not in ("\n", "\r")
+            handle.seek(0, 2)
+            if unterminated:
+                handle.write("\n")
+        handle.write(line + "\n")
 
 
 def _read_text(path: Path) -> str:
@@ -218,7 +225,13 @@ def read_flag(path: Path, *, default: bool, logger: logging.Logger | None = None
     return default
 
 
-def write_flag(path: Path, value: bool, *, attempts: int = 5, delay_s: float = 0.005) -> bool:
+def write_flag(
+    path: Path,
+    value: bool,
+    *,
+    attempts: int = _ATTEMPTS_WHILE_HELD,
+    delay_s: float = _DELAY_WHILE_HELD_S,
+) -> bool:
     """Set *path* to ``"1"`` or ``"0"``, published whole.
 
     Even a one-character file has a truncate-and-write window in which it is
@@ -234,7 +247,11 @@ def read_paused_state(path: Path, *, logger: logging.Logger | None = None) -> bo
 
 
 def publish_stamp(
-    path: Path, now: float | None = None, *, attempts: int = 5, delay_s: float = 0.005,
+    path: Path,
+    now: float | None = None,
+    *,
+    attempts: int = _ATTEMPTS_WHILE_HELD,
+    delay_s: float = _DELAY_WHILE_HELD_S,
 ) -> bool:
     """Set *path* to the wall clock as text: a heartbeat, or when a device last spoke.
 
