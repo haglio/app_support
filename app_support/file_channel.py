@@ -167,7 +167,7 @@ def _read_text(path: Path) -> str:
     UTF-8 leads with a BOM, which would otherwise be part of the first verb, or
     glue itself to a flag's one character and hide it.
     """
-    return path.read_text(encoding="utf-8").replace("﻿", "").strip()
+    return read_whole(path).replace("﻿", "").strip()
 
 
 def consume_command_file(
