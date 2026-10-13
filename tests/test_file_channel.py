@@ -13,6 +13,7 @@ from app_support.file_channel import (
     consume_command_file,
     publish_whole,
     read_paused_state,
+    read_whole,
     write_whole,
 )
 
@@ -67,7 +68,7 @@ def test_append_command_retries_past_a_drain_then_gives_up(tmp_path: Path):
     """
     path = tmp_path / "cmd.txt"
 
-    with patch("pathlib.Path.open", side_effect=OSError("locked")):
+    with patch("pathlib.Path.open", side_effect=PermissionError(13, "Permission denied")):
         assert append_command(path, "NEXT", attempts=2, delay_s=0) is False
 
     assert consume_command_file(path) == []
@@ -242,6 +243,16 @@ def test_a_write_that_landed_says_nothing(tmp_path: Path):
     assert write_whole(path, '{"act": "alpha"}\n') is None
 
     assert path.read_text(encoding="utf-8") == '{"act": "alpha"}\n'
+def test_a_file_that_is_not_there_is_reported_at_once_rather_than_waited_for(tmp_path: Path):
+    with (
+        patch("app_support.file_channel.time.sleep") as waited,
+        pytest.raises(FileNotFoundError),
+    ):
+        read_whole(tmp_path / "never-written.txt")
+
+    waited.assert_not_called()
+
+
 def test_a_write_makes_the_directory_it_writes_into(tmp_path: Path):
     """A tree of records laid out to match a tree of files grows a folder the
     first time something is written into it, so every writer would otherwise
