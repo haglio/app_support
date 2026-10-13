@@ -20,3 +20,6 @@ pytest_collection_modifyitems  # app_support/coverage_gate.py
 pytest_terminal_summary  # app_support/coverage_gate.py
 cov_fail_under  # app_support/coverage_gate.py, set on pytest-cov's own namespace
 no_cov_on_fail  # app_support/coverage_gate.py, set on pytest-cov's own namespace
+
+# --- fields of a format another repo reads (no reader in this package) ---
+short  # app_support/integration_runs.py: Line orders its line by it

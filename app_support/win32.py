@@ -27,6 +27,9 @@ family ends up doing and had all grown its own spelling of:
   * **putting a window in front with the keyboard**, which Windows refuses to a
     process the user is not looking at -- the one that was started for him a
     moment ago included.
+  * **naming a process for good**: Windows gives a finished process's number to
+    the next one it starts, so a pid names one process only together with the
+    moment that process started.
 
 Every call raises ``OSError`` when Windows refuses -- ``show_error_popup``
 excepted, which says why at its own docstring -- and none of them decide what
@@ -623,6 +626,35 @@ def is_mutex_held(name: str, *, kernel32=_kernel32) -> bool:
         return False
     close(handle)
     return True
+
+
+# --- Which process a pid names, by when it started --------------------------
+
+_PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+_STILL_ACTIVE = 259
+
+
+def process_started(pid: int, *, kernel32=_kernel32) -> int | None:
+    dll = kernel32()
+    open_process = _declare(dll, "OpenProcess", ctypes.c_void_p, wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    exit_code_of = _declare(dll, "GetExitCodeProcess", wintypes.BOOL, ctypes.c_void_p,
+                            ctypes.POINTER(wintypes.DWORD))
+    times_of = _declare(dll, "GetProcessTimes", wintypes.BOOL, ctypes.c_void_p,
+                        *[ctypes.POINTER(wintypes.FILETIME)] * 4)
+    close = _declare(dll, "CloseHandle", wintypes.BOOL, ctypes.c_void_p)
+
+    handle = open_process(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not handle:
+        return None
+    try:
+        exit_code, created, unread = wintypes.DWORD(), wintypes.FILETIME(), wintypes.FILETIME()
+        if not exit_code_of(handle, ctypes.byref(exit_code)) or exit_code.value != _STILL_ACTIVE:
+            return None
+        if not times_of(handle, ctypes.byref(created), *[ctypes.byref(unread)] * 3):
+            return None
+        return created.dwHighDateTime << 32 | created.dwLowDateTime
+    finally:
+        close(handle)
 
 
 # --- Putting an error where the user will actually see it -------------------
