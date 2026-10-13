@@ -113,6 +113,15 @@ def test_a_written_script_reads_back_as_the_document_that_was_written(tmp_path: 
     assert read(path) == built
 
 
+def test_a_script_read_while_it_is_being_replaced_reads_whole(tmp_path: Path, being_replaced):
+    path = tmp_path / "clip.funscript"
+    built = document([{"at": 0, "pos": 10}], duration_seconds=1)
+    write(path, built)
+
+    with being_replaced(path):
+        assert read(path) == built
+
+
 def test_a_script_is_written_the_way_the_players_that_read_one_write_it(tmp_path: Path):
     """Minified.  A script runs to thousands of actions, and every writer of one
     outside this family emits it on a single line."""
