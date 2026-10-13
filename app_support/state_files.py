@@ -30,9 +30,10 @@ BROKER_HEARTBEAT = "broker_heartbeat.txt"
 second while the broker holds the serial port; read as an age (``stamp_age``)."""
 
 BROKER_MODE = "broker_mode.txt"
-"""Broker -> Fun Time.  ``"1"`` while the broker is running the OSR2 itself in
-auto mode, ``"0"`` while it holds the device under Fun Time's control
-(``write_flag`` / ``read_flag`` with a default of False)."""
+"""Broker -> Fun Time and Origenerator.  ``"1"`` while the OSR2 runs its own auto
+mode, which the broker reads off what the device says, ``"0"`` while the broker
+passes the apps' commands to it (``write_flag`` / ``read_flag`` with a default of
+False; ``osr2_device.mode`` reads it)."""
 
 OSR2_SERIAL_RX = "osr2_serial_rx.txt"
 """Broker -> Fun Time and Origenerator.  A stamp of the device's last word: how
