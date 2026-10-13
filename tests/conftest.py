@@ -7,17 +7,24 @@ own reporting is the first casualty when it is left standing.
 """
 from __future__ import annotations
 
+import contextlib
+import ctypes
 import faulthandler
 import logging
 import subprocess
 import sys
 import threading
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
 import app_support
 from app_support.siblings import assert_imported_from_checkout
+
+_DELETE = 0x00010000
+_SHARED_WITH_EVERYONE = 0x1 | 0x2 | 0x4
+_OPEN_EXISTING = 3
 
 
 def pytest_configure(config):
@@ -65,6 +72,43 @@ def branch_from(tmp_path):
         branch.git("checkout", "-q", "-b", "branch")
         return branch
     return make
+
+
+@contextlib.contextmanager
+def _held_open(path: Path, *, access: int, share: int, disposition: int):
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateFileW.restype = ctypes.c_void_p
+    kernel32.CreateFileW.argtypes = [ctypes.c_wchar_p, ctypes.c_ulong, ctypes.c_ulong,
+                                     ctypes.c_void_p, ctypes.c_ulong, ctypes.c_ulong,
+                                     ctypes.c_void_p]
+    kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+    normal = 0x80
+    handle = kernel32.CreateFileW(str(path), access, share, None, disposition, normal, None)
+    assert handle not in (None, ctypes.c_void_p(-1).value), ctypes.get_last_error()
+    still_open = [handle]
+
+    def let_go() -> None:
+        while still_open:
+            kernel32.CloseHandle(still_open.pop())
+
+    try:
+        yield let_go
+    finally:
+        let_go()
+
+
+@pytest.fixture
+def being_replaced():
+    @contextlib.contextmanager
+    def replacing(path: Path):
+        with (
+            _held_open(path, access=_DELETE, share=_SHARED_WITH_EVERYONE,
+                       disposition=_OPEN_EXISTING) as the_replace_finishes,
+            patch("app_support.file_channel.time.sleep",
+                  side_effect=lambda _: the_replace_finishes()),
+        ):
+            yield
+    return replacing
 
 
 @pytest.fixture(autouse=True)

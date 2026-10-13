@@ -109,6 +109,11 @@ def write_whole(
         raise OSError(f"could not replace {path}")
 
 
+def read_whole(path: Path) -> str:
+    return _retried_while_held(lambda: path.read_text(encoding="utf-8"),
+                               _ATTEMPTS_WHILE_HELD, _DELAY_WHILE_HELD_S)
+
+
 def append_command(
     path: Path,
     line: str,

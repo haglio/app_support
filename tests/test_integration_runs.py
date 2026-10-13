@@ -39,6 +39,13 @@ def test_a_run_reads_back_from_the_file_it_was_written_to(tmp_path: Path):
     assert integration_runs.read_run(written_to) == a_run()
 
 
+def test_a_run_read_while_its_record_is_being_replaced_reads_as_it_was_written(tmp_path: Path, being_replaced):
+    written_to = integration_runs.write_run(tmp_path, a_run())
+
+    with being_replaced(written_to):
+        assert integration_runs.read_run(written_to) == a_run()
+
+
 def test_a_run_written_down_before_runs_said_whose_session_or_process_they_were_reads_without_them(tmp_path: Path):
     (tmp_path / "20261010-200005-4242.json").write_text(
         '{\n "checkout": "crown-colors-1a2b3c",\n "branch": "claude/crown-colors-1a2b3c",\n'

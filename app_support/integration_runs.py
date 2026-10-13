@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass, fields
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from app_support.file_channel import write_whole
+from app_support.file_channel import read_whole, write_whole
 from app_support.win32 import process_started
 
 _TIMES = ("joined", "got_the_machine", "ended", "seen")
@@ -72,7 +72,7 @@ def still_going(run: RunRecord) -> bool:
 
 
 def read_run(path: Path) -> RunRecord:
-    return RunRecord.from_json(path.read_text(encoding="utf-8"))
+    return RunRecord.from_json(read_whole(path))
 
 
 def read_runs(folder: Path) -> list[RunRecord]:
