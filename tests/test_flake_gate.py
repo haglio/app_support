@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
-from contextlib import contextmanager, nullcontext
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -29,7 +29,7 @@ def test_sometimes():
 def test_a_test_that_always_passes_holds_up(tmp_path: Path):
     (tmp_path / "test_steady.py").write_text("def test_steady():\n    assert True\n", encoding="utf-8")
 
-    assert_they_hold_up(tmp_path, ["test_steady.py::test_steady"], runs=3, load=nullcontext)
+    assert_they_hold_up(tmp_path, ["test_steady.py::test_steady"], runs=3)
 
 
 def test_nothing_to_repeat_runs_nothing_at_all(tmp_path: Path):
@@ -51,7 +51,7 @@ def test_a_test_that_fails_on_one_run_of_several_is_refused(tmp_path: Path):
     (tmp_path / "test_flaky.py").write_text(FAILS_ON_ITS_SECOND_RUN, encoding="utf-8")
 
     with pytest.raises(AssertionError):
-        assert_they_hold_up(tmp_path, ["test_flaky.py::test_sometimes"], runs=3, load=nullcontext)
+        assert_they_hold_up(tmp_path, ["test_flaky.py::test_sometimes"], runs=3)
 
 
 def test_more_tests_than_one_windows_command_line_can_name_are_all_run(tmp_path: Path):
@@ -61,7 +61,7 @@ def test_more_tests_than_one_windows_command_line_can_name_are_all_run(tmp_path:
         f"    with Path(__file__).with_name('ran.txt').open('a') as ran:\n"
         f"        ran.write('{name}\\n')\n" for name in names), encoding="utf-8")
 
-    assert_they_hold_up(tmp_path, [f"test_many.py::{name}" for name in names], runs=1, load=nullcontext)
+    assert_they_hold_up(tmp_path, [f"test_many.py::{name}" for name in names], runs=1)
 
     assert sorted((tmp_path / "ran.txt").read_text().split()) == names
 
@@ -91,7 +91,7 @@ def test_the_refusal_says_which_run_failed_and_carries_what_it_printed(tmp_path:
     (tmp_path / "test_flaky.py").write_text(FAILS_ON_ITS_SECOND_RUN, encoding="utf-8")
 
     with pytest.raises(AssertionError) as refused:
-        assert_they_hold_up(tmp_path, ["test_flaky.py::test_sometimes"], runs=3, load=nullcontext)
+        assert_they_hold_up(tmp_path, ["test_flaky.py::test_sometimes"], runs=3)
 
     assert "run 2 of 3" in str(refused.value)
     assert "assert 2 != 2" in str(refused.value)
@@ -143,7 +143,7 @@ def test_a_cap_too_small_for_them_all_repeats_what_fits_and_names_the_rest(
     paced.install(monkeypatch)
     ids = _named(400)
 
-    held = assert_they_hold_up(tmp_path, ids, runs=10, load=nullcontext, budget=300)
+    held = assert_they_hold_up(tmp_path, ids, runs=10, budget=300)
 
     assert paced.now <= 300
     assert held.repeated + held.skipped == ids
@@ -158,7 +158,7 @@ def test_a_run_that_would_end_past_the_cap_is_never_started(tmp_path: Path, monk
     paced = _Paced(seconds_a_test=1.0)
     paced.install(monkeypatch)
 
-    held = assert_they_hold_up(tmp_path, _named(400), runs=10, load=nullcontext, budget=150)
+    held = assert_they_hold_up(tmp_path, _named(400), runs=10, budget=150)
 
     assert paced.now <= 150
     assert held.repeated == []
@@ -169,7 +169,7 @@ def test_a_run_slower_than_the_pace_promised_is_stopped_at_the_cap(tmp_path: Pat
     paced = _Paced(seconds_a_test=0.1, slow=frozenset(ids[20:]), seconds_a_slow_test=5.0)
     paced.install(monkeypatch)
 
-    held = assert_they_hold_up(tmp_path, ids, runs=10, load=nullcontext, budget=300)
+    held = assert_they_hold_up(tmp_path, ids, runs=10, budget=300)
 
     assert paced.now <= 300
     assert held.repeated + held.skipped == ids
@@ -181,7 +181,7 @@ def test_a_cap_that_holds_them_all_leaves_nothing_out(tmp_path: Path, monkeypatc
     paced.install(monkeypatch)
     ids = _named(20)
 
-    held = assert_they_hold_up(tmp_path, ids, runs=10, load=nullcontext, budget=10_000)
+    held = assert_they_hold_up(tmp_path, ids, runs=10, budget=10_000)
 
     assert held.repeated == ids
     assert held.skipped == []
@@ -192,7 +192,7 @@ def test_with_no_cap_at_all_every_test_is_repeated(tmp_path: Path, monkeypatch):
     paced.install(monkeypatch)
     ids = _named(400)
 
-    held = assert_they_hold_up(tmp_path, ids, runs=10, load=nullcontext)
+    held = assert_they_hold_up(tmp_path, ids, runs=10)
 
     assert held.repeated == ids
     assert held.skipped == []
@@ -206,7 +206,7 @@ def test_a_cap_the_very_first_run_spends_leaves_every_test_unrepeated(
     paced.install(monkeypatch)
     ids = _named(400)
 
-    held = assert_they_hold_up(tmp_path, ids, runs=10, load=nullcontext, budget=300)
+    held = assert_they_hold_up(tmp_path, ids, runs=10, budget=300)
 
     assert held.repeated == []
     assert held.skipped == ids
@@ -281,14 +281,8 @@ def test_a_worker_is_the_interpreter_itself_so_ending_it_leaves_nothing_spinning
 
 
 @windows_only
-def test_the_workers_give_way_to_whatever_he_is_using():
-    with busy_machine(workers=1) as workers:
-        assert _priority_class(workers[0].pid) == subprocess.BELOW_NORMAL_PRIORITY_CLASS
-
-
-@windows_only
 def test_on_a_machine_nobody_is_using_the_workers_compete_with_the_runs():
-    with busy_machine(workers=1, give_way=False) as workers:
+    with busy_machine(workers=1) as workers:
         assert _priority_class(workers[0].pid) == _priority_class(os.getpid())
 
 
@@ -299,16 +293,16 @@ def test_the_runs_keep_the_priority_the_gate_was_started_with(tmp_path: Path):
     runner starts the whole job below normal, which the runs keep too."""
     (tmp_path / "test_own_priority.py").write_text(OWN_PRIORITY, encoding="utf-8")
 
-    assert_they_hold_up(tmp_path, ["test_own_priority.py::test_own_priority"], runs=1, load=nullcontext)
+    assert_they_hold_up(tmp_path, ["test_own_priority.py::test_own_priority"], runs=1)
 
     assert int((tmp_path / "priority.txt").read_text()) == _priority_class(os.getpid())
 
 
-def test_unless_told_otherwise_it_keeps_every_core_busy(monkeypatch, tmp_path: Path):
+def test_unless_told_otherwise_it_keeps_no_core_busy(monkeypatch, tmp_path: Path):
     asked_for = []
 
     @contextmanager
-    def counting(*, workers, give_way):
+    def counting(*, workers):
         asked_for.append(workers)
         yield []
 
@@ -317,12 +311,7 @@ def test_unless_told_otherwise_it_keeps_every_core_busy(monkeypatch, tmp_path: P
 
     assert_they_hold_up(tmp_path, ["test_steady.py::test_steady"], runs=1)
 
-    assert asked_for == [os.cpu_count()]
-
-
-@contextmanager
-def _idle(*, workers, give_way):
-    yield []
+    assert asked_for == []
 
 
 OLD = "def test_old():\n    assert True\n"
@@ -332,7 +321,6 @@ def test_the_command_repeats_what_the_branch_added_and_lets_it_through(branch_fr
     branch = branch_from({"tests/test_things.py": OLD})
     branch.commit({"tests/test_things.py": OLD + "\n\ndef test_new():\n    assert True\n"})
     monkeypatch.chdir(branch.path)
-    monkeypatch.setattr(flake_gate, "busy_machine", _idle)
 
     assert flake_gate.main(["--base", "main", "--runs", "2"]) == 0
     assert "tests/test_things.py::test_new" in capsys.readouterr().out
@@ -342,7 +330,6 @@ def test_the_command_refuses_a_flaky_test_with_its_output(branch_from, monkeypat
     branch = branch_from({"tests/test_things.py": OLD})
     branch.commit({"tests/test_flaky.py": FAILS_ON_ITS_SECOND_RUN})
     monkeypatch.chdir(branch.path)
-    monkeypatch.setattr(flake_gate, "busy_machine", _idle)
 
     assert flake_gate.main(["--base", "main", "--runs", "3"]) == 1
     assert "run 2 of 3" in capsys.readouterr().err
@@ -359,7 +346,6 @@ def test_a_tree_the_suite_does_not_recurse_into_is_not_repeated(branch_from, mon
     branch.commit({"tests/integration/test_slow.py": BROKEN,
                    "tests/test_fast.py": "def test_fast():\n    assert True\n"})
     monkeypatch.chdir(branch.path)
-    monkeypatch.setattr(flake_gate, "busy_machine", _idle)
 
     assert flake_gate.main(["--base", "main", "--runs", "1"]) == 0
     assert capsys.readouterr().out.split() == ["tests/test_fast.py::test_fast"]
@@ -370,7 +356,6 @@ def test_a_tree_the_command_is_limited_to_is_all_it_runs(branch_from, monkeypatc
     branch.commit({"tests/integration/test_slow.py": "def test_slow():\n    assert True\n",
                    "tests/test_fast.py": BROKEN})
     monkeypatch.chdir(branch.path)
-    monkeypatch.setattr(flake_gate, "busy_machine", _idle)
 
     assert flake_gate.main(["--base", "main", "--runs", "1", "--only", "tests/integration/"]) == 0
     assert capsys.readouterr().out.split() == ["tests/integration/test_slow.py::test_slow"]
@@ -385,8 +370,7 @@ def test_the_runs_use_the_interpreter_they_are_given(tmp_path: Path, monkeypatch
 
     monkeypatch.setattr(flake_gate.subprocess, "run", run)
 
-    assert_they_hold_up(tmp_path, ["test_x.py::test_x"], runs=2, load=nullcontext,
-                        python=r"C:\elsewhere\python.exe")
+    assert_they_hold_up(tmp_path, ["test_x.py::test_x"], runs=2, python=r"C:\elsewhere\python.exe")
 
     assert started == [r"C:\elsewhere\python.exe"] * 2
 
@@ -411,7 +395,6 @@ def test_the_command_says_how_many_it_repeated(branch_from, monkeypatch, capsys)
     branch = branch_from({"tests/test_things.py": OLD})
     branch.commit({"tests/test_new.py": "def test_new():\n    assert True\n"})
     monkeypatch.chdir(branch.path)
-    monkeypatch.setattr(flake_gate, "busy_machine", _idle)
 
     assert flake_gate.main(["--base", "main", "--runs", "2"]) == 0
     assert "repeated 1 of 1 tests, 2 times each" in capsys.readouterr().err
@@ -423,7 +406,6 @@ def test_the_command_names_every_test_a_cap_left_unrepeated(branch_from, monkeyp
     branch = branch_from({"tests/test_things.py": OLD})
     branch.commit({"tests/test_new.py": "def test_new():\n    assert True\n"})
     monkeypatch.chdir(branch.path)
-    monkeypatch.setattr(flake_gate, "busy_machine", _idle)
 
     assert flake_gate.main(["--base", "main", "--runs", "2", "--budget-minutes", "0"]) == 0
     said = capsys.readouterr().err
@@ -447,28 +429,28 @@ def test_a_test_outside_the_suites_test_paths_is_not_repeated(branch_from, monke
     branch.commit({"package/test_shipped.py": BROKEN,
                    "tests/test_fast.py": "def test_fast():\n    assert True\n"})
     monkeypatch.chdir(branch.path)
-    monkeypatch.setattr(flake_gate, "busy_machine", _idle)
 
     assert flake_gate.main(["--base", "main", "--runs", "1"]) == 0
     assert capsys.readouterr().out.split() == ["tests/test_fast.py::test_fast"]
 
 
-def test_only_a_machine_named_dedicated_has_its_workers_compete(branch_from, monkeypatch):
+def test_only_a_machine_named_dedicated_is_kept_busy(branch_from, monkeypatch):
     branch = branch_from({"tests/test_things.py": OLD})
     branch.commit({"tests/test_new.py": "def test_new():\n    assert True\n"})
     monkeypatch.chdir(branch.path)
-    gave_way = []
+    kept_busy = []
 
     @contextmanager
-    def recording(*, workers, give_way):
-        gave_way.append(give_way)
+    def recording(*, workers):
+        kept_busy.append(workers)
         yield []
 
     monkeypatch.setattr(flake_gate, "busy_machine", recording)
 
-    assert flake_gate.main(["--base", "main", "--runs", "1", "--dedicated-machine"]) == 0
     assert flake_gate.main(["--base", "main", "--runs", "1"]) == 0
-    assert gave_way == [False, True]
+    assert kept_busy == []
+    assert flake_gate.main(["--base", "main", "--runs", "1", "--dedicated-machine"]) == 0
+    assert kept_busy == [os.cpu_count()]
 
 
 QUOTED_FAILURE = '''
@@ -483,6 +465,6 @@ def test_a_refusal_reads_a_run_that_writes_utf_8_on_a_machine_whose_code_page_is
     (tmp_path / "test_quoted.py").write_text(QUOTED_FAILURE, encoding="utf-8")
 
     with pytest.raises(AssertionError) as refused:
-        assert_they_hold_up(tmp_path, ["test_quoted.py::test_quoted"], runs=1, load=nullcontext)
+        assert_they_hold_up(tmp_path, ["test_quoted.py::test_quoted"], runs=1)
 
     assert "test_quoted" in str(refused.value)

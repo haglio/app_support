@@ -8,8 +8,7 @@ import subprocess
 import sys
 import tomllib
 from collections.abc import Callable, Iterator
-from contextlib import AbstractContextManager, contextmanager
-from functools import partial
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from pathlib import Path
 from time import monotonic
 from typing import Any, NamedTuple
@@ -21,10 +20,9 @@ __all__ = ["Repeats", "assert_they_hold_up", "busy_machine", "main"]
 
 
 @contextmanager
-def busy_machine(*, workers: int, give_way: bool = True) -> Iterator[list[subprocess.Popen]]:
-    started_as = _giving_way() if give_way else hidden_subprocess_kwargs()
+def busy_machine(*, workers: int) -> Iterator[list[subprocess.Popen]]:
     interpreter = getattr(sys, "_base_executable", sys.executable)
-    spinning = [subprocess.Popen([interpreter, "-c", "while True: pass"], **started_as)
+    spinning = [subprocess.Popen([interpreter, "-c", "while True: pass"], **hidden_subprocess_kwargs())
                 for _ in range(workers)]
     try:
         yield spinning
@@ -42,7 +40,7 @@ class Repeats(NamedTuple):
 
 
 def assert_they_hold_up(root: Path, ids: list[str], *, runs: int, python: str = sys.executable,
-                        load: Callable[[], AbstractContextManager] | None = None,
+                        load: Callable[[], AbstractContextManager] = nullcontext,
                         budget: float | None = None) -> Repeats:
     """Repeat *ids* *runs* times each, within *budget* seconds if one is given.
 
@@ -59,7 +57,7 @@ def assert_they_hold_up(root: Path, ids: list[str], *, runs: int, python: str = 
     pace = _Pace()
     repeated: list[str] = []
     left = list(ids)
-    with (load or _every_core_busy)():
+    with load():
         while left:
             chunk = _the_next_chunk(command, left, runs=runs, deadline=deadline, pace=pace)
             if not chunk:
@@ -138,14 +136,8 @@ def _how_many_one_command_line_holds(command: list[str], ids: list[str]) -> int:
     return len(ids)
 
 
-def _every_core_busy(give_way: bool = True) -> AbstractContextManager:
-    return busy_machine(workers=os.cpu_count() or 1, give_way=give_way)
-
-
-def _giving_way() -> dict[str, Any]:
-    if sys.platform != "win32":
-        return {}
-    return hidden_subprocess_kwargs(creationflags=subprocess.BELOW_NORMAL_PRIORITY_CLASS)
+def _every_core_busy() -> AbstractContextManager:
+    return busy_machine(workers=os.cpu_count() or 1)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -171,7 +163,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         held = assert_they_hold_up(
             root, ids, runs=args.runs, python=args.python,
-            load=partial(_every_core_busy, give_way=not args.dedicated_machine),
+            load=_every_core_busy if args.dedicated_machine else nullcontext,
             budget=None if args.budget_minutes is None else args.budget_minutes * 60)
     except AssertionError as refusal:
         print(refusal, file=sys.stderr)

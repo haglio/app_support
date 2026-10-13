@@ -20,9 +20,9 @@ More that every repo in the family needs, and used to keep its own copy of:
   that enforces a clean tracked tree. See below.
 - **`dead_code`** — the family's vulture gate in one shape, so eleven repos stop
   keeping six. See below.
-- **`flake_gate`** — runs the tests a branch added or changed ten times on a
-  busy machine and refuses the branch if one fails even once, so a flaky test
-  is turned away before it lands instead of costing a session after.
+- **`flake_gate`** — runs the tests a branch added or changed ten times and
+  refuses the branch if one fails even once, so a flaky test is turned away
+  before it lands instead of costing a session after.
   **`changed_tests`** names those tests: one whose own body changed, or that
   reaches a module-level name that did -- through an argument, a helper, or a
   mark. Where a name comes from is not one of those, so a module that moves
@@ -32,16 +32,17 @@ More that every repo in the family needs, and used to keep its own copy of:
   `python -m app_support.flake_gate --base origin/main`. It repeats only what
   the repo's own suite would collect (its `testpaths` and `norecursedirs`);
   `--only DIR` asks for a tree the suite leaves out instead, and `--python`
-  names the interpreter the tests run under. The busy machine is one spinning
-  worker per core, below normal priority so it never takes the processor from
-  the person at the machine; `--dedicated-machine`, for a CI runner, has the
-  workers compete with the tests at the tests' own priority. The tests run at
-  the priority the gate was started with, never lower. `--budget-minutes` caps
-  how long the repeats may take: the gate paces itself by what the runs have
-  cost, starts no run the cap has no room for, and names on stderr every test it
-  could not get to. Set below the job's own ceiling, that turns a branch too big
-  to repeat in full into a report rather than a cancelled job, which says
-  nothing at all and turns a green branch away.
+  names the interpreter the tests run under. The repeats run on the machine as
+  it is, which on a computer someone is working at is busy enough already;
+  `--dedicated-machine`, for a CI runner nobody is using, keeps every core busy
+  while they run, with one spinning worker per core competing with the tests at
+  their own priority. The tests run at the priority the gate was started with,
+  never lower. `--budget-minutes` caps how long the repeats may take: the gate
+  paces itself by what the runs have cost, starts no run the cap has no room
+  for, and names on stderr every test it could not get to. Set below the job's
+  own ceiling, that turns a branch too big to repeat in full into a report
+  rather than a cancelled job, which says nothing at all and turns a green
+  branch away.
 - **`launch_smoke`** — reads everything a launcher's entry point imports off its
   AST so a test can replay it in a fresh interpreter. A windowed launch has no
   console, so an import that fails inside one leaves the icon doing nothing and
