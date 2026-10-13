@@ -22,8 +22,8 @@ from __future__ import annotations
 # --- The broker's, under its own state directory -----------------------------
 
 BROKER_CMD = "broker_cmd.txt"
-"""Fun Time -> broker.  A queue of verbs -- PARK, RETRACT, RESUME -- joined with
-``append_command`` and drained whole each tick with ``consume_command_file``."""
+"""Every app -> broker.  A queue of :mod:`app_support.osr2_hold`'s verbs, joined
+with ``ask_the_broker`` and drained whole each tick with ``consume_command_file``."""
 
 BROKER_HEARTBEAT = "broker_heartbeat.txt"
 """Broker -> Fun Time.  The wall clock as text (``publish_stamp``), every half
