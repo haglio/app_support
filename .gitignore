@@ -25,3 +25,7 @@ htmlcov/
 # pCloud conflict copies (this dir syncs via pCloud). Never our files; an
 # untracked one dirties main and blocks merges. '[' escaped to match literally.
 *\[conflicted*
+
+# What the production updater writes as it runs: its log, and what it last did
+# to each checkout.
+/state/
