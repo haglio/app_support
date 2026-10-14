@@ -16,6 +16,7 @@ from app_support.siblings import (
     project_dir,
     project_roots,
     sibling_checkout,
+    workspace_of,
 )
 
 
@@ -176,3 +177,32 @@ class TestTheCheckoutUnderTest:
         with pytest.raises(RuntimeError, match="PYTHONPATH"):
             assert_imported_from_checkout(_imported("widgetlib", None),
                                           checkout=family / "widgetlib")
+
+
+class TestWhereTheCheckoutsAre:
+    def _module_in(self, checkout: Path) -> Path:
+        (checkout / "app_support").mkdir(parents=True)
+        (checkout / "pyproject.toml").write_text("", encoding="utf-8")
+        module = checkout / "app_support" / "siblings.py"
+        module.write_text("", encoding="utf-8")
+        return module
+
+    def test_they_are_beside_the_checkout_this_runs_from(self, tmp_path: Path):
+        module = self._module_in(tmp_path / "workspace" / "app_support")
+
+        assert workspace_of(module) == tmp_path / "workspace"
+
+    def test_from_a_worktree_they_are_beside_its_primary_checkout(self, tmp_path: Path):
+        primary = tmp_path / "workspace" / "app_support"
+        module = self._module_in(primary / ".claude" / "worktrees" / "some-branch")
+        (primary / "pyproject.toml").write_text("", encoding="utf-8")
+
+        assert workspace_of(module) == tmp_path / "workspace"
+
+    def test_a_copy_installed_into_a_venv_has_to_be_told(self, tmp_path: Path):
+        module = tmp_path / "venv" / "Lib" / "site-packages" / "app_support" / "siblings.py"
+        module.parent.mkdir(parents=True)
+        module.write_text("", encoding="utf-8")
+
+        with pytest.raises(ValueError, match="--workspace"):
+            workspace_of(module)
