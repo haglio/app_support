@@ -50,6 +50,7 @@ import re
 import sys
 import tomllib
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 
 from app_support.siblings import RENAMED_SIBLINGS, sibling_checkout
@@ -359,8 +360,11 @@ _TAG_PIN = re.compile(r"@\s*git\+https://\S+@v[0-9]\S*$")
 
 def _requirements(pyproject: Path) -> list[tuple[str, str]]:
     """Every requirement the project declares, with the group that declares it."""
-    with Path(pyproject).open("rb") as handle:
-        project = tomllib.load(handle).get("project", {})
+    return _requirements_in(Path(pyproject).read_text(encoding="utf-8"))
+
+
+def _requirements_in(pyproject_text: str) -> list[tuple[str, str]]:
+    project = tomllib.loads(pyproject_text).get("project", {})
     found = [("dependencies", requirement) for requirement in project.get("dependencies", [])]
     for extra, requirements in project.get("optional-dependencies", {}).items():
         found.extend((extra, requirement) for requirement in requirements)
@@ -446,14 +450,23 @@ _SIBLING_PIN = re.compile(
 )
 
 
+@dataclass(frozen=True)
+class SiblingPin:
+    package: str
+    repo: str
+    tag: str
+    spec: str
+
+
+def sibling_pins_in(pyproject_text: str) -> list[SiblingPin]:
+    return [SiblingPin(match["package"], match["repo"], match["tag"], requirement.strip())
+            for _group, requirement in _requirements_in(pyproject_text)
+            if (match := _SIBLING_PIN.match(requirement.strip()))]
+
+
 def pinned_siblings(pyproject: Path) -> dict[str, str]:
     """Which family repo each pinned requirement names, and at what tag."""
-    found = {}
-    for _group, requirement in _requirements(pyproject):
-        match = _SIBLING_PIN.match(requirement.strip())
-        if match:
-            found[match["repo"]] = match["tag"]
-    return found
+    return {pin.repo: pin.tag for pin in sibling_pins_in(Path(pyproject).read_text(encoding="utf-8"))}
 
 
 def assert_every_sibling_is_pinned(pyproject: Path) -> None:
