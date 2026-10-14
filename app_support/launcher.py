@@ -27,8 +27,10 @@ import subprocess
 import sys
 import tomllib
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path, PureWindowsPath
+
+from app_support import production_update
 
 DRY_RUN = "HAGLIO_LAUNCHER_DRY_RUN"
 INTERPRETERS = ("python.exe", "pythonw.exe")
@@ -36,7 +38,7 @@ VENVS = ("own", "primary")
 
 _KEYS = frozenset({
     "app", "run", "interpreter", "named-interpreter", "venv", "log", "watch",
-    "note", "environment", "copy-from-primary", "checkout-argument",
+    "note", "environment", "copy-from-primary", "checkout-argument", "upkeep",
 })
 _CHECKOUT_KEYS = frozenset({"missing", "gone", "flags"})
 _FLAG_KEYS = frozenset({"app", "log"})
@@ -76,6 +78,7 @@ class Launcher:
     environment: tuple[tuple[str, str], ...] = ()
     copy_from_primary: tuple[str, ...] = ()
     checkout_argument: CheckoutArgument | None = None
+    also_runs: tuple[str, ...] = ()
 
 
 # --- Reading the specs --------------------------------------------------------
@@ -85,7 +88,8 @@ def launchers(checkout: Path) -> list[Launcher]:
     """Every launcher *checkout*'s pyproject declares, checked and in file order."""
     document = tomllib.loads((Path(checkout) / "pyproject.toml").read_text(encoding="utf-8"))
     specs = document.get("tool", {}).get("haglio", {}).get("launchers", {})
-    return [_launcher(file, spec) for file, spec in specs.items()]
+    also_runs = production_update.declared(checkout).also_runs
+    return [replace(_launcher(file, spec), also_runs=also_runs) for file, spec in specs.items()]
 
 
 def _launcher(file: str, spec: dict) -> Launcher:
@@ -97,6 +101,9 @@ def _launcher(file: str, spec: dict) -> Launcher:
     for key in ("app", "run"):
         if not isinstance(spec.get(key), str) or not spec[key]:
             raise refuse(f"{key} is required")
+    if not isinstance(spec.get("upkeep", False), bool):
+        raise refuse("upkeep is true or false")
+    upkeep = ((production_update.UPKEEP_MARK, "1"),) if spec.get("upkeep") else ()
     launcher = Launcher(
         file=file,
         app=spec["app"],
@@ -107,7 +114,7 @@ def _launcher(file: str, spec: dict) -> Launcher:
         log=spec.get("log"),
         watch=spec.get("watch", False),
         note=spec.get("note"),
-        environment=tuple(spec.get("environment", {}).items()),
+        environment=(*spec.get("environment", {}).items(), *upkeep),
         copy_from_primary=tuple(spec.get("copy-from-primary", ())),
         checkout_argument=_checkout_argument(refuse, spec.get("checkout-argument")),
     )
@@ -207,6 +214,7 @@ def render(launcher: Launcher) -> str:
         _command(launcher),
         _QUOTE.splitlines(),
         _TELL.splitlines(),
+        _gates().splitlines(),
     ]
     if launcher.log:
         sections.append(_LOG.splitlines())
@@ -232,7 +240,8 @@ def _header(launcher: Launcher) -> list[str]:
 
 
 def _declarations(launcher: Launcher) -> str:
-    names = ["fso", "shell", "root", "app", "interpreter", "directory", "arguments"]
+    names = ["fso", "shell", "root", "app", "interpreter", "directory", "arguments", "base", "updater",
+             "gates", "held()"]
     if launcher.venv == "primary":
         names.append("primary")
     if launcher.checkout_argument:
@@ -321,8 +330,22 @@ def _decide(launcher: Launcher) -> list[str]:
     if launcher.named_interpreter:
         named = _path(venv, ".venv\\Scripts\\" + launcher.named_interpreter)
         lines.append(f"  If fso.FileExists({named}) Then interpreter = {named}")
-    lines += ["  directory = root", "End Sub"]
+    lines += ["  directory = root", *_gates_decided(launcher), "End Sub"]
     return lines
+
+
+def _gates_decided(launcher: Launcher) -> list[str]:
+    """The checkout whose update a launch waits for -- the one whose venv it runs --
+    and every checkout that one starts programs from."""
+    turn = f".git\\{production_update.TURN}"
+    gates = [f"fso.BuildPath(base, {_text(turn)})"]
+    gates += [f"fso.BuildPath(fso.GetParentFolderName(base), {_text(name + chr(92) + turn)})"
+              for name in launcher.also_runs]
+    return [
+        f"  base = {'primary' if launcher.venv == 'primary' else 'root'}",
+        f"  updater = fso.BuildPath(fso.GetParentFolderName(base), {_text(production_update.UPDATER)})",
+        f"  gates = Array({', '.join(gates)})",
+    ]
 
 
 def _arguments_after_the_checkout(launcher: Launcher, base: str) -> list[str]:
@@ -370,7 +393,15 @@ def _report(launcher: Launcher) -> list[str]:
         lines.append(f'  WScript.Echo "environment: " & {_text(name)} & "=" & {_text(value)}')
     for name in launcher.copy_from_primary:
         lines.append(f'  WScript.Echo "copy: " & {_path("primary", name)} & " > " & {_path("root", name)}')
-    lines += ['  WScript.Echo "command: " & Command()', "End Sub"]
+    lines += [
+        '  WScript.Echo "command: " & Command()',
+        '  WScript.Echo "update: " & Update()',
+        "  Dim gate",
+        "  For Each gate In gates",
+        '    WScript.Echo "gate: " & gate',
+        "  Next",
+        "End Sub",
+    ]
     return lines
 
 
@@ -384,6 +415,8 @@ def _launch(launcher: Launcher) -> list[str]:
         "  If Not fso.FileExists(interpreter) Then",
         f"    Refuse {missing} & vbCrLf & interpreter, vbCritical",
         "  End If",
+        "  CatchUp",
+        "  HoldGates",
     ]
     lines += [f"  CopyFromPrimary {_text(name)}" for name in launcher.copy_from_primary]
     lines += [f'  shell.Environment("Process").Item({_text(name)}) = {_text(value)}'
@@ -398,7 +431,7 @@ def _launch(launcher: Launcher) -> list[str]:
                   "  If fso.FileExists(exitedFlag) Then fso.DeleteFile exitedFlag"]
     if launcher.note:
         lines.append("  If fso.FileExists(notePath) Then fso.DeleteFile notePath")
-    lines.append("  shell.Run Command(), 0, False")
+    lines += ["  shell.Run Command(), 0, False", "  ReleaseGates"]
     if launcher.watch:
         lines += ["  If Not Started() Then", *_refusal_of_a_launch_that_never_came_up(launcher),
                   "  End If"]
@@ -459,6 +492,48 @@ def _started(launcher: Launcher) -> list[str]:
         "  End If",
         "End Function",
     ]
+
+
+def _gates() -> str:
+    return f"""\
+Function Update()
+  Update = Quote(updater) & " -m {production_update.__name__} --before-launch " & Quote(base)
+End Function
+
+Sub CatchUp()
+  If fso.FileExists(updater) Then shell.Run Update(), 0, True
+End Sub
+
+Sub HoldGates()
+  Dim index, waited
+  ReDim held(UBound(gates))
+  For index = 0 To UBound(gates)
+    If fso.FolderExists(fso.GetParentFolderName(gates(index))) Then
+      waited = 0
+      Do Until Holds(index)
+        If waited >= {int(production_update.LAUNCH_WAIT_S * 1000)} Then WScript.Quit 1
+        WScript.Sleep 500
+        waited = waited + 500
+      Loop
+    End If
+  Next
+End Sub
+
+Function Holds(index)
+  On Error Resume Next
+  Set held(index) = fso.OpenTextFile(gates(index), 1, True)
+  Holds = (Err.Number = 0)
+  Err.Clear
+  On Error GoTo 0
+End Function
+
+Sub ReleaseGates()
+  Dim index
+  For index = 0 To UBound(held)
+    If IsObject(held(index)) Then held(index).Close
+  Next
+End Sub
+"""
 
 
 _QUOTE = """\
