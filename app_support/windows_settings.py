@@ -33,6 +33,7 @@ from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 
 from app_support import launcher, scheduled_tasks, win32
+from app_support.siblings import workspace_of
 
 PLACES = ("taskbar", "start-menu", "startup", "checkout")
 TASK_FOLDER = "\\Haglio"
@@ -339,17 +340,6 @@ def _task_changes(checkouts: dict[str, tuple[Path, Declarations]], run) -> list[
             found.append(Change(f"delete the scheduled task {path}: {owner} no longer lists it",
                                 functools.partial(scheduled_tasks.delete, path, run=run)))
     return found
-
-
-def workspace_of(module_file: Path) -> Path:
-    checkout = Path(module_file).resolve().parents[1]
-    if checkout.parent.name == "worktrees" and checkout.parent.parent.name == ".claude":
-        checkout = checkout.parents[2]
-    if not (checkout / "pyproject.toml").is_file():
-        raise WindowsSettingsError(
-            f"{module_file} is not in a checkout, so the checkouts beside it cannot be found: "
-            "name the folder that holds them with --workspace")
-    return checkout.parent
 
 
 def main(argv: list[str] | None = None, *, run=scheduled_tasks.schtasks) -> int:

@@ -43,6 +43,19 @@ def names_of(sibling: str) -> tuple[str, ...]:
     return (sibling, *(old for old, new in RENAMED_SIBLINGS.items() if new == sibling))
 
 
+def workspace_of(module_file: Path) -> Path:
+    """The folder holding the checkouts beside the one *module_file* is in, from a
+    worktree of it as well."""
+    checkout = Path(module_file).resolve().parents[1]
+    if checkout.parent.name == "worktrees" and checkout.parent.parent.name == ".claude":
+        checkout = checkout.parents[2]
+    if not (checkout / "pyproject.toml").is_file():
+        raise ValueError(
+            f"{module_file} is not in a checkout, so the checkouts beside it cannot be found: "
+            "name the folder that holds them with --workspace")
+    return checkout.parent
+
+
 def sibling_checkout(name: str, *, near: Path) -> Path:
     """The *name* checkout beside the one *near* is in; its ``name/`` child is the package.
 
