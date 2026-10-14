@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from app_support.dependencies import (
+    SiblingPin,
     assert_every_dependency_is_bounded,
     assert_every_dependency_is_imported,
     assert_every_import_is_declared,
@@ -17,6 +18,8 @@ from app_support.dependencies import (
     assert_the_version_comes_from_the_tag,
     declared_dependencies,
     inherited_siblings,
+    pinned_siblings,
+    sibling_pins_in,
     third_party_imports,
     unbounded_requirements,
     undeclared_imports,
@@ -478,3 +481,33 @@ class TestEverySiblingIsPinned:
 
     def test_a_repo_with_no_siblings_at_all_passes(self, tmp_path: Path):
         assert_every_sibling_is_pinned(self._pyproject(tmp_path, "", ""))
+
+
+class TestTheSiblingPins:
+    """What a pyproject pins, read from its text: a commit's, as git shows it."""
+
+    PYPROJECT = """\
+[project]
+name = "someapp"
+dependencies = [
+    "app-support @ git+https://github.com/haglio/app_support@v0.1.201",
+    "numpy>=2.4,<3",
+    "unfinished @ git+https://github.com/haglio/unfinished@main",
+]
+[project.optional-dependencies]
+voice = ["voice-core @ git+https://github.com/haglio/voice_core@v0.1.45"]
+"""
+
+    def test_each_sibling_named_at_a_tag_is_read_with_the_requirement_as_written(self):
+        assert sibling_pins_in(self.PYPROJECT) == [
+            SiblingPin(package="app-support", repo="app_support", tag="v0.1.201",
+                       spec="app-support @ git+https://github.com/haglio/app_support@v0.1.201"),
+            SiblingPin(package="voice-core", repo="voice_core", tag="v0.1.45",
+                       spec="voice-core @ git+https://github.com/haglio/voice_core@v0.1.45"),
+        ]
+
+    def test_the_tags_a_checkout_pins_are_named_by_repo(self, tmp_path: Path):
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text(self.PYPROJECT, encoding="utf-8")
+
+        assert pinned_siblings(pyproject) == {"app_support": "v0.1.201", "voice_core": "v0.1.45"}
