@@ -14,6 +14,7 @@ import logging
 import subprocess
 import sys
 import threading
+import uuid
 from pathlib import Path
 from unittest.mock import patch
 
@@ -100,6 +101,65 @@ def _held_open(path: Path, *, access: int, share: int, disposition: int):
 @pytest.fixture
 def held_open():
     return _held_open
+
+
+@pytest.fixture
+def child_on_its_own_desktop():
+    """A sleeping child on a desktop made for the test, as ``(desktop name, pid)``."""
+    from ctypes import wintypes
+
+    class StartupInfo(ctypes.Structure):
+        _fields_ = [
+            ("cb", wintypes.DWORD), ("lpReserved", wintypes.LPWSTR), ("lpDesktop", wintypes.LPWSTR),
+            ("lpTitle", wintypes.LPWSTR), ("dwX", wintypes.DWORD), ("dwY", wintypes.DWORD),
+            ("dwXSize", wintypes.DWORD), ("dwYSize", wintypes.DWORD), ("dwXCountChars", wintypes.DWORD),
+            ("dwYCountChars", wintypes.DWORD), ("dwFillAttribute", wintypes.DWORD),
+            ("dwFlags", wintypes.DWORD), ("wShowWindow", wintypes.WORD), ("cbReserved2", wintypes.WORD),
+            ("lpReserved2", ctypes.POINTER(wintypes.BYTE)), ("hStdInput", wintypes.HANDLE),
+            ("hStdOutput", wintypes.HANDLE), ("hStdError", wintypes.HANDLE),
+        ]
+
+    class ProcessInformation(ctypes.Structure):
+        _fields_ = [("hProcess", wintypes.HANDLE), ("hThread", wintypes.HANDLE),
+                    ("dwProcessId", wintypes.DWORD), ("dwThreadId", wintypes.DWORD)]
+
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    user32.CreateDesktopW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.LPVOID,
+                                      wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID]
+    user32.CreateDesktopW.restype = wintypes.HANDLE
+    user32.CloseDesktop.argtypes = [wintypes.HANDLE]
+    kernel32.CreateProcessW.argtypes = [
+        wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.LPVOID, wintypes.LPVOID, wintypes.BOOL,
+        wintypes.DWORD, wintypes.LPVOID, wintypes.LPCWSTR, ctypes.POINTER(StartupInfo),
+        ctypes.POINTER(ProcessInformation)]
+    kernel32.CreateProcessW.restype = wintypes.BOOL
+    kernel32.TerminateProcess.argtypes = [wintypes.HANDLE, wintypes.UINT]
+    kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    generic_all, create_no_window = 0x10000000, 0x08000000
+
+    desktop = "AppSupportTest" + uuid.uuid4().hex
+    handle = user32.CreateDesktopW(desktop, None, None, 0, generic_all, None)
+    if not handle:
+        raise ctypes.WinError(ctypes.get_last_error())
+    startup = StartupInfo(cb=ctypes.sizeof(StartupInfo), lpDesktop=desktop)
+    started = ProcessInformation()
+    command = ctypes.create_unicode_buffer(
+        subprocess.list2cmdline([sys._base_executable, "-c", "import time; time.sleep(120)"]))
+    try:
+        if not kernel32.CreateProcessW(None, command, None, None, False, create_no_window, None, None,
+                                       ctypes.byref(startup), ctypes.byref(started)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        try:
+            yield desktop, started.dwProcessId
+        finally:
+            kernel32.TerminateProcess(started.hProcess, 1)
+            kernel32.WaitForSingleObject(started.hProcess, 5000)
+            kernel32.CloseHandle(started.hThread)
+            kernel32.CloseHandle(started.hProcess)
+    finally:
+        user32.CloseDesktop(handle)
 
 
 @pytest.fixture
