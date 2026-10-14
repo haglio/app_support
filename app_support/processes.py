@@ -26,6 +26,7 @@ _COMMAND_LINE_INFORMATION = 60
 _BASIC_INFORMATION = 0
 _INFO_LENGTH_MISMATCH = 0xC0000004
 _UNIX_EPOCH_AS_FILETIME = 116444736000000000
+_STILL_ACTIVE = 259
 # The x64 layouts psutil reads through as well: PEB.ProcessParameters, and in
 # RTL_USER_PROCESS_PARAMETERS the Environment pointer, DesktopInfo (a UNICODE_STRING:
 # length, maximum, padding, pointer) and EnvironmentSize.
@@ -82,6 +83,8 @@ def _api():
                                                      ctypes.POINTER(wintypes.DWORD)]
     kernel32.GetProcessTimes.restype = wintypes.BOOL
     kernel32.GetProcessTimes.argtypes = [wintypes.HANDLE, *[ctypes.POINTER(ctypes.c_ulonglong)] * 4]
+    kernel32.GetExitCodeProcess.restype = wintypes.BOOL
+    kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
     kernel32.ReadProcessMemory.restype = wintypes.BOOL
     kernel32.ReadProcessMemory.argtypes = [wintypes.HANDLE, ctypes.c_void_p, ctypes.c_void_p,
                                            ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)]
@@ -110,17 +113,26 @@ def running() -> list[Process]:
             more = _kernel32.Process32NextW(snapshot, ctypes.byref(entry))
     finally:
         _kernel32.CloseHandle(snapshot)
-    return [_described(pid, ppid, name) for pid, ppid, name in entries]
+    return [process for pid, ppid, name in entries if (process := _described(pid, ppid, name))]
 
 
-def _described(pid: int, ppid: int, name: str) -> Process:
+def _described(pid: int, ppid: int, name: str) -> Process | None:
+    """The process, or None for one that has ended and is listed only while
+    something still holds a handle to it."""
     handle = _kernel32.OpenProcess(_QUERY_LIMITED_INFORMATION, False, pid) if pid else None
     if not handle:
         return Process(pid, ppid, 0.0, name, "", "")
     try:
+        if _has_ended(handle):
+            return None
         return Process(pid, ppid, _started(handle), name, _exe(handle), _command_line(handle))
     finally:
         _kernel32.CloseHandle(handle)
+
+
+def _has_ended(handle) -> bool:
+    code = wintypes.DWORD()
+    return bool(_kernel32.GetExitCodeProcess(handle, ctypes.byref(code))) and code.value != _STILL_ACTIVE
 
 
 def _started(handle) -> float:

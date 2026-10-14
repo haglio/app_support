@@ -75,7 +75,7 @@ class TestWhatIsRunning:
         assert found.name.lower() == os.path.basename(PYTHON).lower()
         assert os.path.normcase(found.exe) == os.path.normcase(PYTHON)
 
-    def test_a_process_that_has_ended_is_not_running(self, sleeper):
+    def test_a_process_that_has_ended_is_not_running_while_its_handle_is_still_held(self, sleeper):
         child = sleeper(_marker())
         _the(child)
         child.kill()
