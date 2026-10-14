@@ -341,8 +341,13 @@ class TestACheckoutThatMovesOnlyToWhatPassed:
 
 
 class TestTheDeclaration:
-    def test_a_checkout_that_declares_nothing_follows_origin_and_runs_nothing_else(self, tmp_path):
+    def test_a_checkout_that_declares_nothing_says_nothing(self, tmp_path):
         (tmp_path / "pyproject.toml").write_text(pins(), encoding="utf-8")
+
+        assert production_update.declared(tmp_path) is None
+
+    def test_an_empty_table_follows_origin_and_runs_nothing_else(self, tmp_path):
+        (tmp_path / "pyproject.toml").write_text(pins() + "\n[tool.haglio.production]\n", encoding="utf-8")
 
         assert production_update.declared(tmp_path) == production_update.Declaration()
 
@@ -370,7 +375,7 @@ class TestTheDeclaration:
             production_update.declared(tmp_path)
 
     def test_a_folder_with_no_pyproject_declares_nothing(self, tmp_path):
-        assert production_update.declared(tmp_path) == production_update.Declaration()
+        assert production_update.declared(tmp_path) is None
 
 
 class TestTheLibraries:

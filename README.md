@@ -73,11 +73,12 @@ More that every repo in the family needs, and used to keep its own copy of:
   commit pins go in before its code, and nothing moves while one of his
   programs runs out of the checkout's venv, or out of the venv of a checkout
   that declares it starts programs from this one
-  (`[tool.haglio.production] also-runs`). Every launcher runs it for its own
-  checkout just before it starts its app, and holds `.git/production-update.turn`
-  shared while the app starts, so a launch waits for an update rather than
-  starting half way through one. This checkout's own launcher runs a pass over
-  every checkout, from a scheduled task, every two minutes.
+  (`[tool.haglio.production] also-runs`). The launchers of a checkout that
+  declares `[tool.haglio.production]`, even empty, run it for that checkout just
+  before they start its app, and hold `.git/production-update.turn` shared
+  while the app starts, so a launch waits for an update rather than starting
+  half way through one. This checkout's own launcher runs a pass over every
+  checkout, from a scheduled task, every two minutes.
 - **`processes`** — what is running on the machine and whose it is (his, an
   agent's, or on a hidden desktop of its own), read through Win32 alone.
 - **`process_identity`** — the copy of its interpreter an app starts each of its

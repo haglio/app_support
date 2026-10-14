@@ -808,7 +808,8 @@ class TestTheChecksBite:
 
 
 UPDATER = Path("app_support") / ".venv" / "Scripts" / "pythonw.exe"
-HOSTING = MINIMAL + '\n[tool.haglio.production]\nalso-runs = ["hosted"]\n'
+KEPT = "\n[tool.haglio.production]\n"
+HOSTING = MINIMAL + KEPT + 'also-runs = ["hosted"]\n'
 
 
 def _updater_beside(checkout: Path) -> Path:
@@ -840,8 +841,17 @@ class TestTheUpkeepMark:
 
 @windows_only
 class TestTheUpdateBeforeALaunch:
-    def test_a_dry_run_names_the_update_it_runs_first_and_the_gate_it_holds(self, tmp_path: Path):
+    def test_a_checkout_that_declares_nothing_for_the_updater_starts_its_app_at_once(self, tmp_path: Path):
         checkout = _checkout(tmp_path, MINIMAL)
+
+        report = dry_run(_rendered(checkout))
+
+        assert report.values("update") == []
+        assert report.values("gate") == []
+        assert "production-update" not in (checkout / "launch_example.vbs").read_text(encoding="utf-8")
+
+    def test_a_dry_run_names_the_update_it_runs_first_and_the_gate_it_holds(self, tmp_path: Path):
+        checkout = _checkout(tmp_path, MINIMAL + KEPT)
 
         report = dry_run(_rendered(checkout))
 
@@ -849,7 +859,7 @@ class TestTheUpdateBeforeALaunch:
         assert report.values("gate") == [_gate_of(checkout)]
 
     def test_a_worktree_launcher_brings_up_and_waits_on_the_primary_it_runs_from(self, tmp_path: Path):
-        primary, worktree = _worktree(tmp_path, WORKTREE)
+        primary, worktree = _worktree(tmp_path, WORKTREE + KEPT)
 
         report = dry_run(_rendered(worktree))
 
@@ -866,7 +876,7 @@ class TestTheUpdateBeforeALaunch:
         assert report.values("gate") == [_gate_of(checkout), _gate_of(tmp_path / "hosted")]
 
     def test_the_update_runs_hidden_and_to_its_end_before_the_app_starts(self, tmp_path: Path):
-        checkout = _checkout(tmp_path, WINDOWED)
+        checkout = _checkout(tmp_path, WINDOWED + KEPT)
         _venv(checkout, "pythonw.exe")
         _updater_beside(checkout)
 
@@ -878,7 +888,7 @@ class TestTheUpdateBeforeALaunch:
         assert _line_index(run, update) < _line_index(run, app)
 
     def test_with_no_updater_on_this_machine_the_app_starts_at_once(self, tmp_path: Path):
-        checkout = _checkout(tmp_path, WINDOWED)
+        checkout = _checkout(tmp_path, WINDOWED + KEPT)
         _venv(checkout, "pythonw.exe")
 
         run = _rehearsed_to_the_end(_rehearse(_rendered(checkout)))
@@ -886,7 +896,7 @@ class TestTheUpdateBeforeALaunch:
         assert "production_update" not in run.output
 
     def test_the_updates_own_runs_never_carry_what_the_app_is_given(self, tmp_path: Path):
-        checkout = _checkout(tmp_path, WINDOWED + "upkeep = true\n")
+        checkout = _checkout(tmp_path, WINDOWED + "upkeep = true\n" + KEPT)
         _venv(checkout, "pythonw.exe")
         _updater_beside(checkout)
 
@@ -896,7 +906,7 @@ class TestTheUpdateBeforeALaunch:
             run, f"rehearsal: environment {production_update.UPKEEP_MARK}=1")
 
     def test_a_launch_waits_out_an_update_under_way_and_starts_when_it_ends(self, tmp_path: Path):
-        checkout = _checkout(tmp_path, WINDOWED)
+        checkout = _checkout(tmp_path, WINDOWED + KEPT)
         _venv(checkout, "pythonw.exe")
         (checkout / ".git").mkdir()
         script = _rehearsal_of(_rendered(checkout))
@@ -913,7 +923,7 @@ class TestTheUpdateBeforeALaunch:
         _rehearsed_to_the_end(ScriptHostRun(rehearsal.returncode, output))
 
     def test_an_update_waits_out_a_launch_until_the_app_has_started(self, tmp_path: Path):
-        checkout = _checkout(tmp_path, WINDOWED)
+        checkout = _checkout(tmp_path, WINDOWED + KEPT)
         _venv(checkout, "pythonw.exe")
         (checkout / ".git").mkdir()
         script = _rehearsal_of(_rendered(checkout), child="    WScript.Sleep 3000")
