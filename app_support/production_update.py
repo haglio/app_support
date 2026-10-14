@@ -40,6 +40,9 @@ from app_support.siblings import workspace_of
 from app_support.subprocess_utils import hidden_subprocess_kwargs
 
 TURN = "production-update.turn"
+# Where every launcher finds the interpreter that runs this module, from the
+# folder holding the checkouts: this repo's own launcher runs out of it too.
+UPDATER = r"app_support\.venv\Scripts\pythonw.exe"
 ONE_PASS = "production_update.pass"
 LOG_NAME = "production_update.log"
 STATUS_NAME = "production_update.json"

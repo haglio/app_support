@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from app_support import launcher
+from app_support import launcher, production_update
 from app_support.launcher import (
     LauncherSpecError,
     ScriptHostRun,
@@ -805,3 +805,129 @@ class TestTheChecksBite:
 
         with pytest.raises(AssertionError, match="Variable is undefined: 'rot'"):
             dry_run(script)
+
+
+UPDATER = Path("app_support") / ".venv" / "Scripts" / "pythonw.exe"
+HOSTING = MINIMAL + '\n[tool.haglio.production]\nalso-runs = ["hosted"]\n'
+
+
+def _updater_beside(checkout: Path) -> Path:
+    updater = checkout.parent / UPDATER
+    updater.parent.mkdir(parents=True, exist_ok=True)
+    updater.write_bytes(b"")
+    return updater
+
+
+def _update_of(checkout: Path) -> str:
+    return (f'"{checkout.parent / UPDATER}" -m app_support.production_update '
+            f'--before-launch "{checkout}"')
+
+
+def _gate_of(checkout: Path) -> str:
+    return str(checkout / ".git" / production_update.TURN)
+
+
+class TestTheUpkeepMark:
+    def test_a_launcher_of_the_machines_upkeep_marks_what_it_starts(self, tmp_path: Path):
+        (found,) = launchers(_checkout(tmp_path, MINIMAL + "upkeep = true\n"))
+
+        assert found.environment == ((production_update.UPKEEP_MARK, "1"),)
+
+    def test_upkeep_is_said_with_true_or_false(self, tmp_path: Path):
+        with pytest.raises(LauncherSpecError, match="upkeep"):
+            launchers(_checkout(tmp_path, MINIMAL + 'upkeep = "yes"\n'))
+
+
+@windows_only
+class TestTheUpdateBeforeALaunch:
+    def test_a_dry_run_names_the_update_it_runs_first_and_the_gate_it_holds(self, tmp_path: Path):
+        checkout = _checkout(tmp_path, MINIMAL)
+
+        report = dry_run(_rendered(checkout))
+
+        assert report.value("update") == _update_of(checkout)
+        assert report.values("gate") == [_gate_of(checkout)]
+
+    def test_a_worktree_launcher_brings_up_and_waits_on_the_primary_it_runs_from(self, tmp_path: Path):
+        primary, worktree = _worktree(tmp_path, WORKTREE)
+
+        report = dry_run(_rendered(worktree))
+
+        assert report.value("update") == _update_of(primary)
+        assert report.values("gate") == [_gate_of(primary)]
+
+    def test_an_app_that_starts_programs_from_another_checkout_waits_on_its_update_too(
+        self, tmp_path: Path,
+    ):
+        checkout = _checkout(tmp_path, HOSTING)
+
+        report = dry_run(_rendered(checkout))
+
+        assert report.values("gate") == [_gate_of(checkout), _gate_of(tmp_path / "hosted")]
+
+    def test_the_update_runs_hidden_and_to_its_end_before_the_app_starts(self, tmp_path: Path):
+        checkout = _checkout(tmp_path, WINDOWED)
+        _venv(checkout, "pythonw.exe")
+        _updater_beside(checkout)
+
+        run = _rehearsed_to_the_end(_rehearse(_rendered(checkout)))
+
+        update = f"rehearsal: run {_update_of(checkout)} (style 0, wait True)"
+        app = f'rehearsal: run "{checkout / ".venv" / "Scripts" / "pythonw.exe"}" -m example'
+        assert update in run.output
+        assert _line_index(run, update) < _line_index(run, app)
+
+    def test_with_no_updater_on_this_machine_the_app_starts_at_once(self, tmp_path: Path):
+        checkout = _checkout(tmp_path, WINDOWED)
+        _venv(checkout, "pythonw.exe")
+
+        run = _rehearsed_to_the_end(_rehearse(_rendered(checkout)))
+
+        assert "production_update" not in run.output
+
+    def test_the_updates_own_runs_never_carry_what_the_app_is_given(self, tmp_path: Path):
+        checkout = _checkout(tmp_path, WINDOWED + "upkeep = true\n")
+        _venv(checkout, "pythonw.exe")
+        _updater_beside(checkout)
+
+        run = _rehearsed_to_the_end(_rehearse(_rendered(checkout)))
+
+        assert _line_index(run, "rehearsal: run " + _update_of(checkout)) < _line_index(
+            run, f"rehearsal: environment {production_update.UPKEEP_MARK}=1")
+
+    def test_a_launch_waits_out_an_update_under_way_and_starts_when_it_ends(self, tmp_path: Path):
+        checkout = _checkout(tmp_path, WINDOWED)
+        _venv(checkout, "pythonw.exe")
+        (checkout / ".git").mkdir()
+        script = _rehearsal_of(_rendered(checkout))
+        host = Path(os.environ.get("SYSTEMROOT", r"C:\Windows")) / "System32" / "cscript.exe"
+
+        with production_update.the_turn(checkout, wait_s=5):
+            rehearsal = subprocess.Popen([str(host), "//Nologo", str(script)], stdout=subprocess.PIPE,
+                                         stderr=subprocess.STDOUT, text=True)
+            time.sleep(2)
+            started_during_the_update = (checkout / "rehearsal.ran").exists()
+        output, _ = rehearsal.communicate(timeout=30)
+
+        assert not started_during_the_update
+        _rehearsed_to_the_end(ScriptHostRun(rehearsal.returncode, output))
+
+    def test_an_update_waits_out_a_launch_until_the_app_has_started(self, tmp_path: Path):
+        checkout = _checkout(tmp_path, WINDOWED)
+        _venv(checkout, "pythonw.exe")
+        (checkout / ".git").mkdir()
+        script = _rehearsal_of(_rendered(checkout), child="    WScript.Sleep 3000")
+        host = Path(os.environ.get("SYSTEMROOT", r"C:\Windows")) / "System32" / "cscript.exe"
+
+        with subprocess.Popen([str(host), "//Nologo", str(script)], stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT, text=True) as rehearsal:
+            deadline = time.monotonic() + 30
+            while not (checkout / "rehearsal.ran").exists() and time.monotonic() < deadline:
+                time.sleep(0.05)
+            with pytest.raises(production_update.Busy), production_update.the_turn(checkout, wait_s=0.5):
+                pass
+            output, _ = rehearsal.communicate(timeout=30)
+
+        _rehearsed_to_the_end(ScriptHostRun(rehearsal.returncode, output))
+        with production_update.the_turn(checkout, wait_s=0.5):
+            pass
