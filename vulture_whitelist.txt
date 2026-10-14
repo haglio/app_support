@@ -14,6 +14,7 @@
 
 # --- pytest fixtures (collected by name, never called by our code) ---
 _the_process_is_given_back  # tests/conftest.py
+_the_updaters_log_is_given_back  # tests/test_production_update.py
 
 # --- pytest hooks (called by pytest, never by our code) ---
 pytest_collection_modifyitems  # app_support/coverage_gate.py
