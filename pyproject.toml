@@ -68,6 +68,10 @@ upkeep = true
 launcher = "launch_production_updater.vbs"
 every-minutes = 2
 
+# Declared, so that the updater's own launcher waits out an update of this
+# checkout and brings it up first, as every app's launcher does for its own.
+[tool.haglio.production]
+
 [tool.pytest.ini_options]
 # A ceiling on a hang, not a performance budget. The slowest test on a
 # developer machine is the tracked-tree content scan, but it is not the

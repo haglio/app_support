@@ -78,6 +78,7 @@ class Launcher:
     environment: tuple[tuple[str, str], ...] = ()
     copy_from_primary: tuple[str, ...] = ()
     checkout_argument: CheckoutArgument | None = None
+    waits_for_updates: bool = False
     also_runs: tuple[str, ...] = ()
 
 
@@ -88,8 +89,10 @@ def launchers(checkout: Path) -> list[Launcher]:
     """Every launcher *checkout*'s pyproject declares, checked and in file order."""
     document = tomllib.loads((Path(checkout) / "pyproject.toml").read_text(encoding="utf-8"))
     specs = document.get("tool", {}).get("haglio", {}).get("launchers", {})
-    also_runs = production_update.declared(checkout).also_runs
-    return [replace(_launcher(file, spec), also_runs=also_runs) for file, spec in specs.items()]
+    production = production_update.declared(checkout)
+    also_runs = production.also_runs if production else ()
+    return [replace(_launcher(file, spec), waits_for_updates=production is not None, also_runs=also_runs)
+            for file, spec in specs.items()]
 
 
 def _launcher(file: str, spec: dict) -> Launcher:
@@ -214,8 +217,9 @@ def render(launcher: Launcher) -> str:
         _command(launcher),
         _QUOTE.splitlines(),
         _TELL.splitlines(),
-        _gates().splitlines(),
     ]
+    if launcher.waits_for_updates:
+        sections.append(_gates().splitlines())
     if launcher.log:
         sections.append(_LOG.splitlines())
     if launcher.watch:
@@ -240,8 +244,9 @@ def _header(launcher: Launcher) -> list[str]:
 
 
 def _declarations(launcher: Launcher) -> str:
-    names = ["fso", "shell", "root", "app", "interpreter", "directory", "arguments", "base", "updater",
-             "gates", "held()"]
+    names = ["fso", "shell", "root", "app", "interpreter", "directory", "arguments"]
+    if launcher.waits_for_updates:
+        names += ["base", "updater", "gates", "held()"]
     if launcher.venv == "primary":
         names.append("primary")
     if launcher.checkout_argument:
@@ -337,6 +342,8 @@ def _decide(launcher: Launcher) -> list[str]:
 def _gates_decided(launcher: Launcher) -> list[str]:
     """The checkout whose update a launch waits for -- the one whose venv it runs --
     and every checkout that one starts programs from."""
+    if not launcher.waits_for_updates:
+        return []
     turn = f".git\\{production_update.TURN}"
     gates = [f"fso.BuildPath(base, {_text(turn)})"]
     gates += [f"fso.BuildPath(fso.GetParentFolderName(base), {_text(name + chr(92) + turn)})"
@@ -393,15 +400,11 @@ def _report(launcher: Launcher) -> list[str]:
         lines.append(f'  WScript.Echo "environment: " & {_text(name)} & "=" & {_text(value)}')
     for name in launcher.copy_from_primary:
         lines.append(f'  WScript.Echo "copy: " & {_path("primary", name)} & " > " & {_path("root", name)}')
-    lines += [
-        '  WScript.Echo "command: " & Command()',
-        '  WScript.Echo "update: " & Update()',
-        "  Dim gate",
-        "  For Each gate In gates",
-        '    WScript.Echo "gate: " & gate',
-        "  Next",
-        "End Sub",
-    ]
+    lines.append('  WScript.Echo "command: " & Command()')
+    if launcher.waits_for_updates:
+        lines += ['  WScript.Echo "update: " & Update()', "  Dim gate", "  For Each gate In gates",
+                  '    WScript.Echo "gate: " & gate', "  Next"]
+    lines.append("End Sub")
     return lines
 
 
@@ -415,9 +418,9 @@ def _launch(launcher: Launcher) -> list[str]:
         "  If Not fso.FileExists(interpreter) Then",
         f"    Refuse {missing} & vbCrLf & interpreter, vbCritical",
         "  End If",
-        "  CatchUp",
-        "  HoldGates",
     ]
+    if launcher.waits_for_updates:
+        lines += ["  CatchUp", "  HoldGates"]
     lines += [f"  CopyFromPrimary {_text(name)}" for name in launcher.copy_from_primary]
     lines += [f'  shell.Environment("Process").Item({_text(name)}) = {_text(value)}'
               for name, value in launcher.environment]
@@ -431,7 +434,9 @@ def _launch(launcher: Launcher) -> list[str]:
                   "  If fso.FileExists(exitedFlag) Then fso.DeleteFile exitedFlag"]
     if launcher.note:
         lines.append("  If fso.FileExists(notePath) Then fso.DeleteFile notePath")
-    lines += ["  shell.Run Command(), 0, False", "  ReleaseGates"]
+    lines.append("  shell.Run Command(), 0, False")
+    if launcher.waits_for_updates:
+        lines.append("  ReleaseGates")
     if launcher.watch:
         lines += ["  If Not Started() Then", *_refusal_of_a_launch_that_never_came_up(launcher),
                   "  End If"]

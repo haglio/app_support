@@ -90,12 +90,17 @@ Run = Callable[..., str]
 InUse = Callable[[list[Path]], list[processes.Process]]
 
 
-def declared(checkout: Path) -> Declaration:
+def declared(checkout: Path) -> Declaration | None:
+    """What *checkout*'s pyproject tells the updater, or None when it says nothing.
+    A checkout that declares the table at all has launchers that bring it up, and
+    wait out an update of it, before they start its app."""
     try:
         text = (Path(checkout) / "pyproject.toml").read_text(encoding="utf-8")
     except FileNotFoundError:
-        return Declaration()
-    table = tomllib.loads(text).get("tool", {}).get("haglio", {}).get("production", {})
+        return None
+    table = tomllib.loads(text).get("tool", {}).get("haglio", {}).get("production")
+    if table is None:
+        return None
     unknown = sorted(set(table) - _KEYS)
     if unknown:
         raise ProductionSpecError(f"[tool.haglio.production]: unknown key {', '.join(unknown)}")
@@ -274,9 +279,14 @@ def _venvs_watched(checkout: Path, workspace: Path) -> list[Path]:
         if other == checkout:
             continue
         with contextlib.suppress(ProductionSpecError, tomllib.TOMLDecodeError, OSError):
-            if checkout.name.casefold() in (name.casefold() for name in declared(other).also_runs):
+            if checkout.name.casefold() in (name.casefold() for name in _also_runs(other)):
                 watched.append(other / ".venv")
     return watched
+
+
+def _also_runs(checkout: Path) -> tuple[str, ...]:
+    declaration = declared(checkout)
+    return declaration.also_runs if declaration else ()
 
 
 def checkouts_in(workspace: Path) -> list[Path]:
@@ -313,7 +323,7 @@ def _branch_and_target(checkout: Path, *, run: Run) -> tuple[str, str]:
     if branch is None:
         raise _LeftAlone("follows no branch; left where it is")
     try:
-        commit_file = declared(checkout).commit_file
+        commit_file = (declared(checkout) or Declaration()).commit_file
     except (ProductionSpecError, tomllib.TOMLDecodeError) as wrong:
         raise _LeftAlone(f"failed: its pyproject: {wrong}", failed=True) from None
     if commit_file is None:
@@ -467,7 +477,7 @@ def before_launch(checkout: Path, workspace: Path, state: Path, *, run: Run = ru
     previous = _previous(state)
     checkout = Path(checkout)
     try:
-        also_runs = declared(checkout).also_runs
+        also_runs = _also_runs(checkout)
     except (ProductionSpecError, tomllib.TOMLDecodeError):
         also_runs = ()
     started_by_it = [checkout, *(Path(workspace) / name for name in also_runs)]
