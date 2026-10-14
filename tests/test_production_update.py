@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from app_support import processes, production_update
+from app_support import launcher, processes, production_update, windows_settings
 from app_support.production_update import Outcome
 
 windows_only = pytest.mark.skipif(sys.platform != "win32", reason="Win32's file sharing and processes")
@@ -631,3 +631,23 @@ class TestTheCommandLine:
         assert code == 0
         assert machine.head(app) == machine.origin_head(app)
         assert machine.head(other) != machine.origin_head(other)
+
+
+class TestThisCheckoutRunsTheUpdater:
+    CHECKOUT = Path(__file__).resolve().parents[1]
+
+    def test_its_launcher_is_what_its_spec_renders(self):
+        launcher.assert_launchers_match_their_specs(self.CHECKOUT)
+
+    def test_a_scheduled_task_starts_a_pass_marked_as_upkeep(self):
+        (task,) = windows_settings.declared(self.CHECKOUT).scheduled_tasks
+        (started,) = [found for found in launcher.launchers(self.CHECKOUT) if found.file == task.launcher]
+
+        assert started.run == f"-m {production_update.__name__}"
+        assert (production_update.UPKEEP_MARK, "1") in started.environment
+
+    def test_every_launcher_finds_the_updater_where_this_checkouts_launcher_runs_it(self):
+        (started,) = launcher.launchers(self.CHECKOUT)
+
+        assert started.venv == "own"
+        assert Path("app_support", ".venv", "Scripts", started.interpreter) == Path(production_update.UPDATER)

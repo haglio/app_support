@@ -8,8 +8,9 @@ per rule. If editing this file, remove or consolidate — never just append.
 
 ## Running tests
 
-This repo has no venv of its own. Use any consumer's — all have this package
-installed editable — and point `PYTHONPATH` at the checkout under test:
+Run the suite in any consumer's venv and point `PYTHONPATH` at the checkout
+under test. The production checkout's own `.venv` runs the production updater
+and holds nothing else, so never run a suite or install anything into it:
 
 ```bash
 PYTHONPATH="<checkout>" "C:/path/to/fun_time/.venv/Scripts/python.exe" -m pytest "<checkout>/tests"
@@ -83,10 +84,14 @@ This repo is public at `github.com/haglio/app_support` with a merge-queue rulese
   `main`, runs the required check, and merges it when green. Don't ff-merge into
   the primary checkout, don't push `main` directly, and never force-push `main`.
 - **The `.git/agent-merge.lock` is retired here** — the GitHub queue serializes.
-- **Sync local checkouts by pulling.** `main` advances only on origin (via the
-  queue), so the primary checkout and worktrees update with
-  `git pull --ff-only origin main`; the running app self-updates the same way.
-  The primary is only ever fast-forwarded — never reset or merged-into.
+- **The production updater moves the primary checkout; never pull it yourself.**
+  `main` advances only on origin (via the queue), and the production updater
+  (`app_support.production_update`, run every two minutes by the "Production
+  updater" scheduled task this repo declares) brings this checkout and every
+  checkout beside it up to what has shipped, never while one of his programs
+  runs from it. Worktrees update with `git rebase origin/main`. What it did is
+  in this checkout's `state/production_update.log`, and where each checkout
+  stands in `state/production_update.json`.
 - **A red required check** (`.github/workflows/merge-gate.yml`) can't land.
 
 Everything else in the global CLAUDE.md — work in a worktree, green tests before

@@ -51,6 +51,23 @@ include = ["app_support*"]
 # package's own idea of its version can never disagree.
 [tool.setuptools_scm]
 
+# The one thing this machine runs out of this checkout: the production updater,
+# app_support.production_update, which keeps every checkout beside this one at
+# what has shipped. Every launcher of the family runs it just before it starts
+# its app, from this checkout's own venv, and a scheduled task runs a pass over
+# all of them every two minutes. The launcher is rendered from this by
+# `python -m app_support.launcher --write`, and
+# `python -m app_support.windows_settings --write` registers the task.
+[tool.haglio.launchers."launch_production_updater.vbs"]
+app = "Production updater"
+interpreter = "pythonw.exe"
+run = "-m app_support.production_update"
+upkeep = true
+
+[tool.haglio.scheduled-tasks."Production updater"]
+launcher = "launch_production_updater.vbs"
+every-minutes = 2
+
 [tool.pytest.ini_options]
 # A ceiling on a hang, not a performance budget. The slowest test on a
 # developer machine is the tracked-tree content scan, but it is not the

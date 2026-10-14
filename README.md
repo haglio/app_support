@@ -67,6 +67,19 @@ More that every repo in the family needs, and used to keep its own copy of:
   changes. A pin is only ever corrected, since Windows lets no program pin,
   and what a person must unpin is named for one. `scheduled_tasks` is Task
   Scheduler underneath it, through Windows' own command-line tool.
+- **`production_update`** — keeps every production checkout in the workspace at
+  what has shipped: origin's default branch, or only the commit a file of the
+  checkout's names (`[tool.haglio.production] commit-file`). The libraries a
+  commit pins go in before its code, and nothing moves while one of his
+  programs runs out of the checkout's venv, or out of the venv of a checkout
+  that declares it starts programs from this one
+  (`[tool.haglio.production] also-runs`). Every launcher runs it for its own
+  checkout just before it starts its app, and holds `.git/production-update.turn`
+  shared while the app starts, so a launch waits for an update rather than
+  starting half way through one. This checkout's own launcher runs a pass over
+  every checkout, from a scheduled task, every two minutes.
+- **`processes`** — what is running on the machine and whose it is (his, an
+  agent's, or on a hidden desktop of its own), read through Win32 alone.
 - **`process_identity`** — the copy of its interpreter an app starts each of its
   processes through, named and described for the task list; `name_this_process`
   is the call at the top of every `main()`. **`process_identity_check`** runs an
