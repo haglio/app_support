@@ -6,8 +6,8 @@ beside this one, and a scheduled task runs it every couple of minutes:
 start its app, so an app closed and opened again between two passes still opens
 on what has shipped.
 
-A checkout follows origin's default branch, or, when its pyproject says so, only
-the commit a file of its own names.  Its libraries go in at exactly the versions
+A checkout follows origin's default branch, or, when the pyproject on that branch
+says so, only the commit a file of its own names.  Its libraries go in at exactly the versions
 that commit pins, before its code, and neither moves while one of his programs
 runs out of its venv, or out of the venv of a checkout that declares it starts
 programs from this one.  An update holds ``.git/production-update.turn`` alone
@@ -101,7 +101,11 @@ def declared(checkout: Path) -> Declaration | None:
         text = (Path(checkout) / "pyproject.toml").read_text(encoding="utf-8")
     except FileNotFoundError:
         return None
-    table = tomllib.loads(text).get("tool", {}).get("haglio", {}).get("production")
+    return _declared_in(text)
+
+
+def _declared_in(pyproject_text: str) -> Declaration | None:
+    table = tomllib.loads(pyproject_text).get("tool", {}).get("haglio", {}).get("production")
     if table is None:
         return None
     unknown = sorted(set(table) - _KEYS)
@@ -338,10 +342,11 @@ def _branch_and_target(checkout: Path, *, run: Run) -> tuple[str, str]:
     branch = default_branch(checkout, run=run)
     if branch is None:
         raise _LeftAlone("follows no branch; left where it is")
+    shipped = _git_or_none(checkout, "show", f"refs/remotes/origin/{branch}:pyproject.toml", run=run) or ""
     try:
-        commit_file = (declared(checkout) or Declaration()).commit_file
+        commit_file = (_declared_in(shipped) or Declaration()).commit_file
     except (ProductionSpecError, tomllib.TOMLDecodeError) as wrong:
-        raise _LeftAlone(f"failed: its pyproject: {wrong}", failed=True) from None
+        raise _LeftAlone(f"failed: the pyproject on origin/{branch}: {wrong}", failed=True) from None
     if commit_file is None:
         target = _git_or_none(checkout, "rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{branch}", run=run)
         missing = f"has no origin/{branch} to follow"

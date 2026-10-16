@@ -372,6 +372,16 @@ class TestACheckoutThatMovesOnlyToWhatPassed:
 
         assert not production_update.waits_for_programs_to_close(checkout)
 
+    def test_a_commit_file_that_has_shipped_holds_a_checkout_that_does_not_declare_it_yet(self, machine):
+        checkout = machine.checkout()
+        before = machine.head(checkout)
+        machine.ship(checkout, {"pyproject.toml": self.DECLARED})
+
+        outcome = machine.bring_up(checkout)
+
+        assert machine.head(checkout) == before
+        assert outcome.said == "nothing has passed yet: state/passed.txt names no commit"
+
     def test_it_never_moves_back_to_an_older_passed_commit(self, machine):
         checkout = machine.checkout(files={"pyproject.toml": self.DECLARED})
         older = machine.head(checkout)
