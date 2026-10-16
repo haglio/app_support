@@ -38,7 +38,7 @@ VENVS = ("own", "primary")
 
 _KEYS = frozenset({
     "app", "run", "interpreter", "named-interpreter", "venv", "log", "watch",
-    "note", "environment", "copy-from-primary", "checkout-argument", "upkeep",
+    "note", "environment", "copy-from-primary", "checkout-argument",
 })
 _CHECKOUT_KEYS = frozenset({"missing", "gone", "flags"})
 _FLAG_KEYS = frozenset({"app", "log"})
@@ -104,9 +104,6 @@ def _launcher(file: str, spec: dict) -> Launcher:
     for key in ("app", "run"):
         if not isinstance(spec.get(key), str) or not spec[key]:
             raise refuse(f"{key} is required")
-    if not isinstance(spec.get("upkeep", False), bool):
-        raise refuse("upkeep is true or false")
-    upkeep = ((production_update.UPKEEP_MARK, "1"),) if spec.get("upkeep") else ()
     launcher = Launcher(
         file=file,
         app=spec["app"],
@@ -117,7 +114,7 @@ def _launcher(file: str, spec: dict) -> Launcher:
         log=spec.get("log"),
         watch=spec.get("watch", False),
         note=spec.get("note"),
-        environment=(*spec.get("environment", {}).items(), *upkeep),
+        environment=tuple(spec.get("environment", {}).items()),
         copy_from_primary=tuple(spec.get("copy-from-primary", ())),
         checkout_argument=_checkout_argument(refuse, spec.get("checkout-argument")),
     )
