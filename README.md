@@ -83,7 +83,9 @@ More that every repo in the family needs, and used to keep its own copy of:
   for his programs it leaves `.git/production-update.waiting`, and an app that
   is never closed beats an `UpdateWatch` on its own timer: at a good moment of
   the app's choosing it starts the app again through its launcher, which
-  takes the update.
+  takes the update. `start_again_after` is how an app starts again: it runs the
+  launcher once this copy has ended, from the plain interpreter, so nothing
+  runs out of the venv while the catch-up updates it.
 - **`processes`** — what is running on the machine and whose it is (his, an
   agent's, or on a hidden desktop of its own), read through Win32 alone.
 - **`process_identity`** — the copy of its interpreter an app starts each of its
