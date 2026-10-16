@@ -745,6 +745,37 @@ class TestAnAppThatIsNeverClosed:
             f"An update of {checkout} is waiting for this app to close; starting it again to take the update"]
 
 
+class TestStartingAnAppAgainThroughItsLauncher:
+    @windows_only
+    def test_the_launcher_runs_once_the_copy_it_waited_for_has_ended(self, tmp_path):
+        ran = tmp_path / "launcher.ran"
+        launcher = tmp_path / "launch_example.vbs"
+        launcher.write_text(
+            'CreateObject("Scripting.FileSystemObject").CreateTextFile("' + str(ran) + '", True).Close\n',
+            encoding="ascii")
+        ending = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(2)"])
+
+        production_update.start_again_after(ending.pid, launcher)
+        time.sleep(1)
+        started_too_early = ran.exists()
+        ending.wait()
+        deadline = time.monotonic() + 30
+        while not ran.exists() and time.monotonic() < deadline:
+            time.sleep(0.1)
+
+        assert not started_too_early
+        assert ran.exists()
+
+    def test_the_wait_runs_on_the_plain_interpreter_never_out_of_the_apps_venv(self, tmp_path):
+        started = []
+
+        production_update.start_again_after(1234, tmp_path / "launch_example.vbs",
+                                            popen=lambda command, **kwargs: started.append(command))
+
+        assert Path(started[0][0]) == Path(sys._base_executable).with_name("pythonw.exe")
+        assert started[0][-2:] == ["1234", str(tmp_path / "launch_example.vbs")]
+
+
 class TestThisCheckoutRunsTheUpdater:
     CHECKOUT = Path(__file__).resolve().parents[1]
 

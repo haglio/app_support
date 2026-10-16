@@ -263,6 +263,26 @@ class UpdateWatch:
             self._start_again()
 
 
+_THEN_THE_LAUNCHER = """\
+import ctypes, subprocess, sys
+kernel32 = ctypes.WinDLL("kernel32")
+kernel32.OpenProcess.restype = ctypes.c_void_p
+kernel32.WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+ending = kernel32.OpenProcess(0x00100000, False, int(sys.argv[1]))
+if ending:
+    kernel32.WaitForSingleObject(ending, 120000)
+subprocess.run(["wscript.exe", sys.argv[2]])
+"""
+
+
+def start_again_after(pid: int, launcher: Path, *, popen=subprocess.Popen) -> None:
+    """Run *launcher* once the process *pid* has ended, from the plain interpreter:
+    its catch-up updates the checkout only while nothing runs out of the venv."""
+    popen([str(Path(sys._base_executable).with_name("pythonw.exe")), "-c", _THEN_THE_LAUNCHER,
+           str(pid), str(launcher)],
+          creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP)
+
+
 # --- What runs from a venv -------------------------------------------------------
 
 
