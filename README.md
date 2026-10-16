@@ -69,8 +69,9 @@ More that every repo in the family needs, and used to keep its own copy of:
   Scheduler underneath it, through Windows' own command-line tool.
 - **`production_update`** — keeps every production checkout in the workspace at
   what has shipped: origin's default branch, or only the commit a file of the
-  checkout's names (`[tool.haglio.production] commit-file`). The libraries a
-  commit pins go in before its code, and nothing moves while one of his
+  checkout's names (`[tool.haglio.production] commit-file`). The libraries go
+  in at exactly the versions that commit pins, before its code, and nothing
+  moves while one of his
   programs runs out of the checkout's venv, or out of the venv of a checkout
   that declares it starts programs from this one
   (`[tool.haglio.production] also-runs`). The launchers of a checkout that

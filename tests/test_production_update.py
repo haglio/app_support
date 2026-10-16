@@ -172,14 +172,19 @@ class TestBringingOneCheckoutUp:
         ]
         assert "shared-ui v0.1.200" in outcome.said
 
-    def test_a_library_newer_than_the_pin_is_never_taken_back(self, machine):
-        checkout = machine.checkout(files={"pyproject.toml": pins(shared_ui="0.1.200")})
-        machine.install(checkout, "shared_ui", "0.1.204")
+    def test_a_library_newer_than_its_pin_is_put_back_to_the_pin_that_shipped(self, machine):
+        # A taken-back change once left its newer funestra under older code that the
+        # newer copy no longer answered, and production Fun Time would not start.
+        checkout = machine.checkout(files={"pyproject.toml": pins(funestra="0.1.498")})
+        machine.install(checkout, "funestra", "0.1.507")
 
         outcome = machine.bring_up(checkout)
 
-        assert machine.ran == []
-        assert outcome.said.startswith("up to date")
+        assert machine.ran == [
+            ("pip", "install", spec("funestra", "0.1.498")),
+            ("pip", "install", "-e", str(checkout), "--config-settings", "editable_mode=compat"),
+        ]
+        assert "funestra v0.1.498" in outcome.said
 
     def test_a_shipped_change_to_what_the_checkout_installs_reinstalls_it(self, machine):
         checkout = machine.checkout()
@@ -379,40 +384,21 @@ class TestTheDeclaration:
 
 
 class TestTheLibraries:
-    def test_a_library_missing_or_older_than_its_pin_is_behind(self, tmp_path):
+    def test_a_library_missing_older_or_newer_than_its_pin_is_off_it(self, tmp_path):
         venv = tmp_path / ".venv"
         (venv / "Lib" / "site-packages" / "shared_ui-0.1.199.dist-info").mkdir(parents=True)
         (venv / "Lib" / "site-packages" / "app_support-0.1.210.dist-info").mkdir()
+        (venv / "Lib" / "site-packages" / "funestra-0.1.509.dist-info").mkdir()
 
-        behind = production_update.libraries_behind(
-            pins(shared_ui="0.1.200", app_support="0.1.201", voice_core="0.1.45"),
+        off = production_update.libraries_off_their_pins(
+            pins(shared_ui="0.1.200", app_support="0.1.201", voice_core="0.1.45", funestra="0.1.509"),
             production_update.installed_versions(venv))
 
-        assert [pin.spec for pin in behind] == [spec("shared_ui", "0.1.200"), spec("voice_core", "0.1.45")]
+        assert [pin.spec for pin in off] == [spec("shared_ui", "0.1.200"), spec("app_support", "0.1.201"),
+                                             spec("voice_core", "0.1.45")]
 
     def test_a_venv_that_is_not_there_holds_nothing(self, tmp_path):
         assert production_update.installed_versions(tmp_path / ".venv") == {}
-
-    def test_an_installation_is_brought_up_to_what_a_commit_pins(self, tmp_path):
-        python = tmp_path / ".venv" / "Scripts" / "python.exe"
-        (tmp_path / ".venv" / "Lib" / "site-packages" / "funestra-0.1.498.dist-info").mkdir(parents=True)
-        ran = []
-
-        installed = production_update.bring_libraries_up_to(
-            python, pins(funestra="0.1.507"), run=lambda arguments, **kwargs: ran.append(arguments) or "")
-
-        assert ran == [[str(python), "-m", "pip", "install", spec("funestra", "0.1.507")]]
-        assert [pin.tag for pin in installed] == ["v0.1.507"]
-
-    def test_an_installation_already_up_to_date_runs_nothing(self, tmp_path):
-        (tmp_path / ".venv" / "Lib" / "site-packages" / "funestra-0.1.507.dist-info").mkdir(parents=True)
-        ran = []
-
-        production_update.bring_libraries_up_to(tmp_path / ".venv" / "Scripts" / "python.exe",
-                                                pins(funestra="0.1.507"),
-                                                run=lambda arguments, **kwargs: ran.append(arguments))
-
-        assert ran == []
 
 
 @windows_only
