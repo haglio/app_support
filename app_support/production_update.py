@@ -41,6 +41,7 @@ from app_support.siblings import workspace_of
 from app_support.subprocess_utils import hidden_subprocess_kwargs
 
 TURN = "production-update.turn"
+WAITING = "production-update.waiting"
 # Where every launcher finds the interpreter that runs this module, from the
 # folder holding the checkouts: this repo's own launcher runs out of it too.
 UPDATER = r"app_support\.venv\Scripts\pythonw.exe"
@@ -239,6 +240,10 @@ def the_turn(checkout: Path, *, wait_s: float, poll_s: float = 0.25):
     return _holding_alone(Path(checkout) / ".git" / TURN, wait_s=wait_s, poll_s=poll_s)
 
 
+def waits_for_programs_to_close(checkout: Path) -> bool:
+    return (Path(checkout) / ".git" / WAITING).is_file()
+
+
 # --- What runs from a venv -------------------------------------------------------
 
 
@@ -396,7 +401,7 @@ def bring_up(checkout: Path, *, workspace: Path, run: Run = run, wait_s: float =
         said = _bring_up_to(checkout, branch, target, workspace=workspace, run=run, wait_s=wait_s, in_use=in_use)
         return Outcome(said, now(), False, target)
     except _LeftAlone as left:
-        return Outcome(str(left), now(), left.failed, target)
+        return Outcome(_not_waiting(checkout, str(left)), now(), left.failed, target)
     except Busy as busy:
         return Outcome(f"busy: {busy}", now(), False, target)
     except StepFailed as failed:
@@ -407,14 +412,25 @@ def _bring_up_to(checkout: Path, branch: str, target: str, *, workspace: Path, r
                  in_use: InUse) -> str:
     settled = _plan(checkout, branch, target, run=run).settled
     if settled:
-        return settled
+        return _not_waiting(checkout, settled)
     with the_turn(checkout, wait_s=wait_s):
         plan = _plan(checkout, branch, target, run=run)
         if plan.settled:
-            return plan.settled
+            return _not_waiting(checkout, plan.settled)
         if running := in_use(_venvs_watched(checkout, workspace)):
-            return f"waiting for {', '.join(sorted({process.name for process in running}))} to close"
-        return _carry_out(checkout, plan, run=run)
+            return _waiting_for(checkout, running)
+        return _not_waiting(checkout, _carry_out(checkout, plan, run=run))
+
+
+def _waiting_for(checkout: Path, running: list[processes.Process]) -> str:
+    said = f"waiting for {', '.join(sorted({process.name for process in running}))} to close"
+    (checkout / ".git" / WAITING).write_text(said + "\n", encoding="utf-8")
+    return said
+
+
+def _not_waiting(checkout: Path, said: str) -> str:
+    (checkout / ".git" / WAITING).unlink(missing_ok=True)
+    return said
 
 
 # --- A pass, and a launch ---------------------------------------------------------

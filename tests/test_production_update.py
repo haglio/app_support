@@ -220,6 +220,35 @@ class TestBringingOneCheckoutUp:
         assert outcome.said == "waiting for Example-Example.exe to close"
         assert [checkout / ".venv"] == asked[0]
 
+    def test_an_update_waiting_for_his_programs_leaves_word_in_the_checkout(self, machine):
+        checkout = machine.checkout()
+        machine.ship(checkout, {"feature.txt": "new\n"})
+
+        machine.bring_up(checkout, in_use=lambda venvs: [a_process("Example-Example.exe")])
+
+        assert production_update.waits_for_programs_to_close(checkout)
+
+    def test_the_word_goes_once_the_update_is_made(self, machine):
+        checkout = machine.checkout()
+        machine.ship(checkout, {"feature.txt": "new\n"})
+        machine.bring_up(checkout, in_use=lambda venvs: [a_process("Example-Example.exe")])
+
+        machine.bring_up(checkout)
+
+        assert machine.head(checkout) == machine.origin_head(checkout)
+        assert not production_update.waits_for_programs_to_close(checkout)
+
+    def test_the_word_goes_once_there_is_nothing_left_to_update(self, machine):
+        checkout = machine.checkout()
+        machine.ship(checkout, {"feature.txt": "new\n"})
+        machine.bring_up(checkout, in_use=lambda venvs: [a_process("Example-Example.exe")])
+        git("merge", "-q", "--ff-only", "origin/main", cwd=checkout)
+
+        outcome = machine.bring_up(checkout, in_use=lambda venvs: [a_process("Example-Example.exe")])
+
+        assert outcome.said.startswith("up to date")
+        assert not production_update.waits_for_programs_to_close(checkout)
+
     def test_a_checkout_another_app_runs_programs_out_of_waits_for_that_app_too(self, machine):
         hosted = machine.checkout("hosted")
         host = machine.checkout("host", files={
@@ -330,6 +359,18 @@ class TestACheckoutThatMovesOnlyToWhatPassed:
 
         assert machine.head(checkout) == before
         assert outcome.said == "nothing has passed yet: state/passed.txt names no commit"
+
+    def test_a_checkout_left_where_it_is_waits_for_no_program(self, machine):
+        checkout = machine.checkout(files={"pyproject.toml": self.DECLARED})
+        passed = machine.ship(checkout, {"one.txt": "1\n"})
+        (checkout / "state").mkdir()
+        (checkout / "state" / "passed.txt").write_text(passed + "\n", encoding="utf-8")
+        machine.bring_up(checkout, in_use=lambda venvs: [a_process("Example-Example.exe")])
+        (checkout / "state" / "passed.txt").write_text("", encoding="utf-8")
+
+        machine.bring_up(checkout, in_use=lambda venvs: [a_process("Example-Example.exe")])
+
+        assert not production_update.waits_for_programs_to_close(checkout)
 
     def test_it_never_moves_back_to_an_older_passed_commit(self, machine):
         checkout = machine.checkout(files={"pyproject.toml": self.DECLARED})
