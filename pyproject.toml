@@ -62,7 +62,7 @@ include = ["app_support*"]
 app = "Production updater"
 interpreter = "pythonw.exe"
 run = "-m app_support.production_update"
-upkeep = true
+environment = { HAGLIO_UPKEEP = "1" }
 
 [tool.haglio.scheduled-tasks."Production updater"]
 launcher = "launch_production_updater.vbs"

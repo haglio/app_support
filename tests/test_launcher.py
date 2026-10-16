@@ -828,17 +828,6 @@ def _gate_of(checkout: Path) -> str:
     return str(checkout / ".git" / production_update.TURN)
 
 
-class TestTheUpkeepMark:
-    def test_a_launcher_of_the_machines_upkeep_marks_what_it_starts(self, tmp_path: Path):
-        (found,) = launchers(_checkout(tmp_path, MINIMAL + "upkeep = true\n"))
-
-        assert found.environment == ((production_update.UPKEEP_MARK, "1"),)
-
-    def test_upkeep_is_said_with_true_or_false(self, tmp_path: Path):
-        with pytest.raises(LauncherSpecError, match="upkeep"):
-            launchers(_checkout(tmp_path, MINIMAL + 'upkeep = "yes"\n'))
-
-
 @windows_only
 class TestTheUpdateBeforeALaunch:
     def test_a_checkout_that_declares_nothing_for_the_updater_starts_its_app_at_once(self, tmp_path: Path):
@@ -896,7 +885,7 @@ class TestTheUpdateBeforeALaunch:
         assert "production_update" not in run.output
 
     def test_the_updates_own_runs_never_carry_what_the_app_is_given(self, tmp_path: Path):
-        checkout = _checkout(tmp_path, WINDOWED + "upkeep = true\n" + KEPT)
+        checkout = _checkout(tmp_path, WINDOWED + f'environment = {{ {production_update.UPKEEP_MARK} = "1" }}\n' + KEPT)
         _venv(checkout, "pythonw.exe")
         _updater_beside(checkout)
 
