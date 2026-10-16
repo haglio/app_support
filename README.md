@@ -80,9 +80,10 @@ More that every repo in the family needs, and used to keep its own copy of:
   while the app starts, so a launch waits for an update rather than starting
   half way through one. This checkout's own launcher runs a pass over every
   checkout, from a scheduled task, every two minutes. While an update waits
-  for his programs it leaves `.git/production-update.waiting`, so an app that
-  is never closed can ask `waits_for_programs_to_close` and start again
-  through its launcher at a moment that suits it, which takes the update.
+  for his programs it leaves `.git/production-update.waiting`, and an app that
+  is never closed beats an `UpdateWatch` on its own timer: at a good moment of
+  the app's choosing it starts the app again through its launcher, which
+  takes the update.
 - **`processes`** — what is running on the machine and whose it is (his, an
   agent's, or on a hidden desktop of its own), read through Win32 alone.
 - **`process_identity`** — the copy of its interpreter an app starts each of its
