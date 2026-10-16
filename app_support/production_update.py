@@ -7,12 +7,13 @@ start its app, so an app closed and opened again between two passes still opens
 on what has shipped.
 
 A checkout follows origin's default branch, or, when its pyproject says so, only
-the commit a file of its own names.  Its libraries go in before its code, and
-neither moves while one of his programs runs out of its venv, or out of the venv
-of a checkout that declares it starts programs from this one.  An update holds
-``.git/production-update.turn`` alone for as long as it runs, and every launcher
-holds it shared while it starts its app, so a launch waits for an update rather
-than starting half way through one.
+the commit a file of its own names.  Its libraries go in at exactly the versions
+that commit pins, before its code, and neither moves while one of his programs
+runs out of its venv, or out of the venv of a checkout that declares it starts
+programs from this one.  An update holds ``.git/production-update.turn`` alone
+for as long as it runs, and the launchers of a checkout that declares
+``[tool.haglio.production]`` hold it shared while they start its app, so a launch
+waits for an update rather than starting half way through one.
 
 Standard library only.
 """
@@ -194,19 +195,10 @@ def installed_versions(venv: Path) -> dict[str, str]:
     return found
 
 
-def libraries_behind(pyproject_text: str, installed: Mapping[str, str]) -> list[SiblingPin]:
-    """The pins a venv holds an older copy of, or none at all.  A copy newer than
-    its pin stays: a library keeps every name an older consumer still uses."""
+def libraries_off_their_pins(pyproject_text: str, installed: Mapping[str, str]) -> list[SiblingPin]:
     return [pin for pin in sibling_pins_in(pyproject_text)
             if (have := installed.get(_distribution(pin.package))) is None
-            or _release(have) < _release(pin.tag)]
-
-
-def bring_libraries_up_to(python: Path, pyproject_text: str, *, run: Run = run) -> list[SiblingPin]:
-    behind = libraries_behind(pyproject_text, installed_versions(Path(python).parents[1]))
-    if behind:
-        run([str(python), "-m", "pip", "install", *(pin.spec for pin in behind)], timeout=PIP_TIMEOUT_S)
-    return behind
+            or _release(have) != _release(pin.tag)]
 
 
 # --- The turn ------------------------------------------------------------------
@@ -355,7 +347,7 @@ def _plan(checkout: Path, branch: str, target: str, *, run: Run) -> _Plan:
     wanted = target if behind else head
     pyproject = _git_or_none(checkout, "show", f"{wanted}:pyproject.toml", run=run) or ""
     venv = checkout / ".venv"
-    libraries = libraries_behind(pyproject, installed_versions(venv)) if venv.is_dir() else []
+    libraries = libraries_off_their_pins(pyproject, installed_versions(venv)) if venv.is_dir() else []
     if (behind or libraries) and _git(checkout, "status", "--porcelain", "--untracked-files=no", run=run):
         return _Plan(head, target, behind, libraries, "has uncommitted changes; left where it is")
     return _Plan(head, target, behind, libraries)
