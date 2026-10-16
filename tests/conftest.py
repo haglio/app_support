@@ -105,7 +105,8 @@ def held_open():
 
 @pytest.fixture
 def child_on_its_own_desktop():
-    """A sleeping child on a desktop made for the test, as ``(desktop name, pid)``."""
+    """A child started suspended on a desktop made for the test, as ``(desktop name, pid)``.
+    It never runs a line, and its parameters name the desktop from the moment it exists."""
     from ctypes import wintypes
 
     class StartupInfo(ctypes.Structure):
@@ -137,7 +138,7 @@ def child_on_its_own_desktop():
     kernel32.TerminateProcess.argtypes = [wintypes.HANDLE, wintypes.UINT]
     kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
     kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
-    generic_all, create_no_window = 0x10000000, 0x08000000
+    generic_all, create_no_window, create_suspended = 0x10000000, 0x08000000, 0x4
 
     desktop = "AppSupportTest" + uuid.uuid4().hex
     handle = user32.CreateDesktopW(desktop, None, None, 0, generic_all, None)
@@ -148,8 +149,8 @@ def child_on_its_own_desktop():
     command = ctypes.create_unicode_buffer(
         subprocess.list2cmdline([sys._base_executable, "-c", "import time; time.sleep(120)"]))
     try:
-        if not kernel32.CreateProcessW(None, command, None, None, False, create_no_window, None, None,
-                                       ctypes.byref(startup), ctypes.byref(started)):
+        if not kernel32.CreateProcessW(None, command, None, None, False, create_no_window | create_suspended,
+                                       None, None, ctypes.byref(startup), ctypes.byref(started)):
             raise ctypes.WinError(ctypes.get_last_error())
         try:
             yield desktop, started.dwProcessId
