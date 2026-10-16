@@ -665,6 +665,86 @@ class TestTheCommandLine:
         assert machine.head(other) != machine.origin_head(other)
 
 
+class Clock:
+    def __init__(self):
+        self.now = 1000.0
+
+    def __call__(self):
+        return self.now
+
+
+class TestAnAppThatIsNeverClosed:
+    @pytest.fixture
+    def checkout(self, tmp_path):
+        (tmp_path / ".git").mkdir()
+        return tmp_path
+
+    @pytest.fixture
+    def clock(self):
+        return Clock()
+
+    @staticmethod
+    def an_update_waits(checkout):
+        (checkout / ".git" / production_update.WAITING).write_text(
+            "waiting for App-App.exe to close\n", encoding="utf-8")
+
+    @staticmethod
+    def watching(checkout, clock, *, a_good_moment=True):
+        started = []
+        watch = production_update.UpdateWatch(
+            checkout, a_good_moment=lambda: a_good_moment, start_again=lambda: started.append(True),
+            logger=logging.getLogger("test.update_watch"), clock=clock)
+        return watch, started
+
+    def test_it_starts_again_for_a_waiting_update_at_a_good_moment(self, checkout, clock):
+        watch, started = self.watching(checkout, clock)
+        self.an_update_waits(checkout)
+        clock.now += production_update.UP_BEFORE_AN_UPDATE_S
+
+        watch.tick()
+
+        assert started == [True]
+
+    def test_a_waiting_update_waits_on_for_a_good_moment(self, checkout, clock):
+        watch, started = self.watching(checkout, clock, a_good_moment=False)
+        self.an_update_waits(checkout)
+        clock.now += production_update.UP_BEFORE_AN_UPDATE_S
+
+        watch.tick()
+
+        assert started == []
+
+    def test_an_app_no_update_waits_for_goes_on_as_it_is(self, checkout, clock):
+        watch, started = self.watching(checkout, clock)
+        clock.now += production_update.UP_BEFORE_AN_UPDATE_S
+
+        watch.tick()
+
+        assert started == []
+
+    def test_an_app_just_started_stays_up_a_while_before_it_starts_again(self, checkout, clock):
+        """A launch that could not make the update -- something else of his still
+        ran from the venv -- leaves it waiting, so the new copy would start again at once."""
+        watch, started = self.watching(checkout, clock)
+        self.an_update_waits(checkout)
+        clock.now += production_update.UP_BEFORE_AN_UPDATE_S - 1
+
+        watch.tick()
+
+        assert started == []
+
+    def test_the_log_says_why_the_app_started_again(self, checkout, clock, caplog):
+        watch, _started = self.watching(checkout, clock)
+        self.an_update_waits(checkout)
+        clock.now += production_update.UP_BEFORE_AN_UPDATE_S
+
+        with caplog.at_level("INFO", logger="test.update_watch"):
+            watch.tick()
+
+        assert [record.getMessage() for record in caplog.records] == [
+            f"An update of {checkout} is waiting for this app to close; starting it again to take the update"]
+
+
 class TestThisCheckoutRunsTheUpdater:
     CHECKOUT = Path(__file__).resolve().parents[1]
 

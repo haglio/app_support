@@ -55,6 +55,7 @@ UPKEEP_MARK = "HAGLIO_UPKEEP"
 SCHEDULED_WAIT_S = 30.0
 LAUNCH_WAIT_S = 15 * 60.0
 RETRY_FAILED_AFTER_S = 30 * 60.0
+UP_BEFORE_AN_UPDATE_S = 10 * 60.0
 GIT_TIMEOUT_S = 120.0
 PIP_TIMEOUT_S = 15 * 60.0
 
@@ -242,6 +243,24 @@ def the_turn(checkout: Path, *, wait_s: float, poll_s: float = 0.25):
 
 def waits_for_programs_to_close(checkout: Path) -> bool:
     return (Path(checkout) / ".git" / WAITING).is_file()
+
+
+class UpdateWatch:
+    def __init__(self, checkout: Path, *, a_good_moment: Callable[[], bool], start_again: Callable[[], None],
+                 logger: logging.Logger, clock: Callable[[], float] = time.monotonic):
+        self._checkout = Path(checkout)
+        self._a_good_moment = a_good_moment
+        self._start_again = start_again
+        self._logger = logger
+        self._clock = clock
+        self._up_since = clock()
+
+    def tick(self) -> None:
+        if (self._clock() - self._up_since >= UP_BEFORE_AN_UPDATE_S
+                and self._a_good_moment() and waits_for_programs_to_close(self._checkout)):
+            self._logger.info("An update of %s is waiting for this app to close; "
+                              "starting it again to take the update", self._checkout)
+            self._start_again()
 
 
 # --- What runs from a venv -------------------------------------------------------
