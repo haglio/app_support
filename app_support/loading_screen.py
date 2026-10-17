@@ -38,7 +38,8 @@ TAKEN = "taken"
 STARTED = "started"
 ENDED = "ended"
 CANCELED = "canceled"
-SAID_AT_EACH_LAUNCH = (SHOWN, TAKEN, STARTED, ENDED, CANCELED)
+UPDATED = "updated"
+SAID_AT_EACH_LAUNCH = (SHOWN, TAKEN, STARTED, ENDED, CANCELED, UPDATED)
 # Longer than any app takes from its start to its own loading screen, so an app
 # that never puts one up is not covered for long.
 TAKING_OVER_WITHIN_S = 30.0

@@ -9,6 +9,7 @@ a stand-in, so every line runs and nothing is started.
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -547,23 +548,14 @@ Class RehearsalShell
     WScript.Echo "rehearsal: run " & command & " (style " & style & ", wait " & wait & ")"
     If InStr(command, "app_support.loading_screen") > 0 Then
 {screen}
+    ElseIf InStr(command, "app_support.production_update") > 0 Then
+      If InStr(command, "type nul") > 0 Then fso.CreateTextFile(fso.BuildPath(screenFolder, "updated"), True).Close
     Else
       fso.CreateTextFile(fso.BuildPath(root, "rehearsal.ran"), True).Close
 {child}
     End If
     Run = 0
   End Function
-
-  Public Function Exec(command)
-    WScript.Echo "rehearsal: exec " & command
-    Set Exec = New RehearsalJob
-  End Function
-End Class
-
-Class RehearsalJob
-  Public Property Get Status()
-    Status = 1
-  End Property
 End Class
 """
 
@@ -1014,7 +1006,8 @@ class TestTheLoadingScreenAtTheClick:
         lines = _line_index(run, f'rehearsal: environment {loading_screen.LINES}='
                                  '["Updating Example...", "Updating Hosted..."]')
         screen = _line_index(run, f"rehearsal: run {_loading_screen_of(checkout)} (style 1, wait False)")
-        update = _line_index(run, f"rehearsal: exec {_update_of(checkout)}")
+        update = _line_index(run, f'rehearsal: run cmd /c "{_update_of(checkout)} & type nul > '
+                                  f'"{_screen_of(checkout) / loading_screen.UPDATED}"" (style 0, wait False)')
         app = _line_index(run, f'rehearsal: run cmd /c cd /d "{checkout}"')
         assert max(told, lines) < screen < update < app
 
@@ -1026,6 +1019,13 @@ class TestTheLoadingScreenAtTheClick:
         assert "app_support.loading_screen" not in run.output
         assert f"rehearsal: environment {loading_screen.FOLDER}={_screen_of(checkout)}" in run.output
 
+    def test_the_first_launch_before_the_app_left_pictures_still_waits_out_its_update(self, tmp_path: Path):
+        checkout = _screened(tmp_path, pictures=False)
+
+        run = _rehearsed_to_the_end(_rehearse(_rendered(checkout), child=CHILD_COMES_UP))
+
+        assert "app_support.production_update" in run.output
+
     def test_each_launch_clears_what_the_last_one_said_and_keeps_the_pictures(self, tmp_path: Path):
         checkout = _screened(tmp_path)
         for said in loading_screen.SAID_AT_EACH_LAUNCH:
@@ -1035,6 +1035,7 @@ class TestTheLoadingScreenAtTheClick:
 
         left = {path.name for path in _screen_of(checkout).iterdir()}
         assert left & {loading_screen.SHOWN, loading_screen.TAKEN, loading_screen.CANCELED} == set()
+        assert loading_screen.UPDATED in left
         assert loading_screen.PICTURES in left
 
     def test_it_is_told_once_the_app_is_started_and_again_once_the_app_is_up(self, tmp_path: Path):
@@ -1061,3 +1062,18 @@ class TestTheLoadingScreenAtTheClick:
 
         assert "dialog: Example failed to start." in run.output
         assert (_screen_of(checkout) / loading_screen.ENDED).exists()
+
+    def test_a_real_launch_waits_its_update_out_through_cmd_and_starts_the_app(
+            self, tmp_path: Path, desktop_of_its_own):
+        stands_in = Path(os.environ.get("SYSTEMROOT", r"C:\Windows")) / "System32" / "whoami.exe"
+        checkout = _checkout(tmp_path, SCREENED.replace("watch = true\n", "").replace(
+            ', "Updating Hosted..."', "").replace('also-runs = ["hosted"]\n', ""))
+        for program in (_venv(checkout) / "python.exe", _updater_beside(checkout)):
+            shutil.copyfile(stands_in, program)
+        host = Path(os.environ.get("SYSTEMROOT", r"C:\Windows")) / "System32" / "cscript.exe"
+
+        launch = desktop_of_its_own.start([str(host), "//Nologo", str(_rendered(checkout))])
+
+        assert desktop_of_its_own.ended_within(launch, 30)
+        said = {path.name for path in _screen_of(checkout).iterdir()}
+        assert {loading_screen.UPDATED, loading_screen.STARTED} <= said
