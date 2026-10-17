@@ -496,9 +496,11 @@ def _refusal_of_a_launch_that_never_came_up(launcher: Launcher) -> list[str]:
 
 def _command(launcher: Launcher) -> list[str]:
     if launcher.log:
-        exit_stamp = ' & type nul > " & Quote(exitedFlag)' if launcher.watch else '"'
+        stamps = [*(["exitedFlag"] if launcher.watch else []),
+                  *([f"fso.BuildPath(screenFolder, {_text(loading_screen.ENDED)})"] if launcher.loading_screen else [])]
+        exit_stamp = ' & " & '.join(f'type nul > " & Quote({stamp})' for stamp in stamps)
         command = ('"cmd /c cd /d " & Quote(directory) & " && " & Quote(interpreter) & " " & '
-                   f'arguments & " >> " & Quote(logPath) & " 2>&1{exit_stamp}')
+                   f'arguments & " >> " & Quote(logPath) & " 2>&1{" & " + exit_stamp if stamps else chr(34)}')
     else:
         command = 'Quote(interpreter) & " " & arguments'
     return ["Function Command()", f"  Command = {command}", "End Function"]
