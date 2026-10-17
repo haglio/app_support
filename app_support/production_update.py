@@ -64,6 +64,9 @@ LAUNCH_WAIT_S = 15 * 60.0
 RETRY_FAILED_AFTER_S = 30 * 60.0
 FETCH_UNASKED_AFTER_S = 30 * 60.0
 GITHUB_ANSWERS = "answers what has shipped again, so only a checkout whose main moved is fetched"
+# The Claude app fast-forwards the checked-out main of a project it starts a session in, and its
+# preflight passes over a checkout while that checkout's info/attributes holds any rule.
+HANDS_OFF_RULE = "/.moved-only-by-the-production-updater moved-only-by-the-production-updater"
 UP_BEFORE_AN_UPDATE_S = 10 * 60.0
 GIT_TIMEOUT_S = 120.0
 PIP_TIMEOUT_S = 15 * 60.0
@@ -624,6 +627,14 @@ def _ask_github(checkouts: list[Path], *, run: Run) -> tuple[dict[Path, tuple[st
                 f"{FETCH_UNASKED_AFTER_S / 60:g} minutes instead: {why}")
 
 
+def keep_the_claude_app_off(checkout: Path) -> None:
+    attributes = Path(checkout) / ".git" / "info" / "attributes"
+    held = (attributes.read_text(encoding="utf-8") if attributes.is_file() else "").splitlines()
+    if HANDS_OFF_RULE not in held:
+        attributes.parent.mkdir(exist_ok=True)
+        attributes.write_text("\n".join([*held, HANDS_OFF_RULE]) + "\n", encoding="utf-8", newline="\n")
+
+
 def keep_up(workspace: Path, state: Path, *, fetch: bool = True, run: Run = run,
             wait_s: float = SCHEDULED_WAIT_S, in_use: InUse = running_from,
             now: Callable[[], float] = time.time) -> dict[str, Outcome]:
@@ -635,6 +646,10 @@ def keep_up(workspace: Path, state: Path, *, fetch: bool = True, run: Run = run,
     if github is not None and github != status.get("github", GITHUB_ANSWERS):
         (_log.info if github == GITHUB_ANSWERS else _log.warning)("GitHub: %s", github)
     for checkout in checkouts:
+        try:
+            keep_the_claude_app_off(checkout)
+        except OSError as stuck:
+            _log.warning("%s: could not keep the Claude app off: %s", checkout.name, stuck)
         branch = default_branch(checkout, run=run)
         if fetch and branch and _worth_fetching(checkout, branch, heads.get(checkout), run=run, now=now):
             try:
