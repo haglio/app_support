@@ -647,6 +647,48 @@ class TestKeepingTheWorkspaceUp:
         assert [record.getMessage() for record in caplog.records if "GitHub" in record.getMessage()] == [
             out_of_reach, back]
 
+    def test_a_pass_leaves_each_checkout_a_rule_that_keeps_the_claude_app_from_moving_its_main(self, machine):
+        # Starting a session in a project, the Claude app fast-forwards the project's checked-out
+        # main itself, libraries skipped, unless its preflight finds a rule in info/attributes:
+        # production Origenerator met its new code without them and would not start (2026-10-17).
+        app = machine.checkout("app")
+        what_git_said_of_a_file = git("check-attr", "-a", "pyproject.toml", cwd=app)
+
+        production_update.keep_up(machine.workspace, machine.base / "state", run=machine.run,
+                                  in_use=lambda venvs: [])
+
+        lines = (app / ".git" / "info" / "attributes").read_text(encoding="utf-8").splitlines()
+        assert [line for line in lines if line.strip() and not line.lstrip().startswith("#")]
+        assert git("check-attr", "-a", "pyproject.toml", cwd=app) == what_git_said_of_a_file
+
+    def test_that_rule_is_written_once_beside_whatever_the_file_already_held(self, machine):
+        app = machine.checkout("app")
+        attributes = app / ".git" / "info" / "attributes"
+        attributes.write_text("*.example binary", encoding="utf-8")
+
+        for _ in range(2):
+            production_update.keep_up(machine.workspace, machine.base / "state", run=machine.run,
+                                      in_use=lambda venvs: [])
+
+        lines = attributes.read_text(encoding="utf-8").splitlines()
+        assert lines.count(production_update.HANDS_OFF_RULE) == 1
+        assert "*.example binary" in lines
+
+    def test_a_checkout_whose_rule_cannot_be_written_is_said_and_the_pass_goes_on(self, machine, caplog):
+        stuck = machine.checkout("stuck")
+        (stuck / ".git" / "info" / "attributes").mkdir()
+        other = machine.checkout("other")
+        machine.ship(other, {"feature.txt": "new\n"})
+
+        with caplog.at_level("WARNING", logger="production_update"):
+            outcomes = production_update.keep_up(machine.workspace, machine.base / "state", run=machine.run,
+                                                 in_use=lambda venvs: [])
+
+        assert sorted(outcomes) == ["other", "stuck"]
+        assert machine.head(other) == machine.origin_head(other)
+        assert [record.getMessage() for record in caplog.records
+                if record.getMessage().startswith("stuck: could not keep the Claude app off")]
+
     def test_a_folder_that_is_not_a_checkout_is_passed_over(self, machine):
         (machine.workspace / "notes").mkdir()
         machine.checkout("app")
