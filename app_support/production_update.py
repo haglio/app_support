@@ -28,6 +28,7 @@ import ctypes
 import dataclasses
 import json
 import logging
+import math
 import os
 import re
 import subprocess
@@ -38,14 +39,16 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from ctypes import wintypes
 from pathlib import Path, PureWindowsPath
 
-from app_support import json_store, processes
+from app_support import json_store, processes, win32
 from app_support.dependencies import SiblingPin, sibling_pins_in
+from app_support.file_channel import publish_whole
 from app_support.logging_utils import configure_logging
 from app_support.siblings import workspace_of
 from app_support.subprocess_utils import hidden_subprocess_kwargs
 
 TURN = "production-update.turn"
 WAITING = "production-update.waiting"
+PROGRESS = "production-update.progress"
 # Where every launcher finds the interpreter that runs this module, from the
 # folder holding the checkouts: this repo's own launcher runs out of it too.
 UPDATER = r"app_support\.venv\Scripts\pythonw.exe"
@@ -64,6 +67,11 @@ GITHUB_ANSWERS = "answers what has shipped again, so only a checkout whose main 
 UP_BEFORE_AN_UPDATE_S = 10 * 60.0
 GIT_TIMEOUT_S = 120.0
 PIP_TIMEOUT_S = 15 * 60.0
+# How long each step of an update usually takes, so that a loading screen
+# waiting on one can move its bar: a library comes from GitHub as a clone.
+LIBRARY_S = 15.0
+MOVE_S = 2.0
+REINSTALL_S = 10.0
 
 _KEYS = frozenset({"commit-file", "also-runs"})
 _ON_GITHUB = re.compile(r"github\.com[:/](?P<owner>[^/]+)/(?P<name>[^/]+?)(?:\.git)?/?$", re.IGNORECASE)
@@ -89,6 +97,21 @@ class Busy(Exception):
 class Declaration:
     commit_file: str | None = None
     also_runs: tuple[str, ...] = ()
+
+
+@dataclasses.dataclass(frozen=True)
+class UpdateProgress:
+    steps: tuple[tuple[str, float], ...]
+    step: int
+    since: float
+    pid: int
+    started: int | None
+
+    def fraction(self, *, now: float) -> float:
+        seconds = [usual for _name, usual in self.steps]
+        under_way = seconds[self.step]
+        gone_by = 1 - math.exp(-max(0.0, now - self.since) / under_way)
+        return (sum(seconds[:self.step]) + under_way * gone_by) / sum(seconds)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -426,21 +449,60 @@ def _describe(checkout: Path, branch: str, target: str, *, run: Run) -> str:
 
 
 def _carry_out(checkout: Path, plan: _Plan, *, run: Run) -> str:
-    python = checkout / ".venv" / "Scripts" / "python.exe"
-    done = []
+    python = str(checkout / ".venv" / "Scripts" / "python.exe")
+    changed = _git(checkout, "diff", "--name-only", plan.head, plan.target, run=run).splitlines() if plan.behind else []
+    steps = []
     if plan.libraries:
-        run([str(python), "-m", "pip", "install", *(pin.spec for pin in plan.libraries)], cwd=checkout,
-            timeout=PIP_TIMEOUT_S)
-        done.append("installed " + ", ".join(f"{pin.package} {pin.tag}" for pin in plan.libraries))
-    changed = []
+        steps.append(("installing its libraries", LIBRARY_S * len(plan.libraries), lambda: run(
+            [python, "-m", "pip", "install", *(pin.spec for pin in plan.libraries)], cwd=checkout,
+            timeout=PIP_TIMEOUT_S)))
     if plan.behind:
-        changed = _git(checkout, "diff", "--name-only", plan.head, plan.target, run=run).splitlines()
-        _git(checkout, "merge", "--ff-only", "--quiet", plan.target, run=run)
-        done.insert(0, f"moved from {plan.head[:8]} to {plan.target[:8]}")
+        steps.append(("moving its code", MOVE_S,
+                      lambda: _git(checkout, "merge", "--ff-only", "--quiet", plan.target, run=run)))
     if (checkout / ".venv").is_dir() and (plan.libraries or "pyproject.toml" in changed):
-        run([str(python), "-m", "pip", "install", "-e", str(checkout), "--config-settings", "editable_mode=compat"],
-            cwd=checkout, timeout=PIP_TIMEOUT_S)
+        steps.append(("installing it", REINSTALL_S, lambda: run(
+            [python, "-m", "pip", "install", "-e", str(checkout), "--config-settings", "editable_mode=compat"],
+            cwd=checkout, timeout=PIP_TIMEOUT_S)))
+    with _saying_how_far(checkout, tuple((name, seconds) for name, seconds, _ in steps)) as entering:
+        for index, (_name, _seconds, take) in enumerate(steps):
+            entering(index)
+            take()
+    done = [f"moved from {plan.head[:8]} to {plan.target[:8]}"] if plan.behind else []
+    if plan.libraries:
+        done.append("installed " + ", ".join(f"{pin.package} {pin.tag}" for pin in plan.libraries))
     return "; ".join(done)
+
+
+@contextlib.contextmanager
+def _saying_how_far(checkout: Path, steps: tuple[tuple[str, float], ...]):
+    path = checkout / ".git" / PROGRESS
+    pid = os.getpid()
+
+    def entering(step: int) -> None:
+        publish_whole(path, json.dumps({"steps": steps, "step": step, "since": time.time(), "pid": pid,
+                                        "started": _started(pid)}))
+
+    try:
+        yield entering
+    finally:
+        path.unlink(missing_ok=True)
+
+
+def progress_of(checkout: Path) -> UpdateProgress | None:
+    """How far the update of *checkout* under way has got, or None when none is."""
+    try:
+        document = json.loads((Path(checkout) / ".git" / PROGRESS).read_text(encoding="utf-8"))
+        progress = UpdateProgress(
+            steps=tuple((str(name), float(seconds)) for name, seconds in document["steps"]),
+            step=int(document["step"]), since=float(document["since"]), pid=int(document["pid"]),
+            started=document["started"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return progress if _started(progress.pid) == progress.started else None
+
+
+def _started(pid: int) -> int | None:
+    return win32.process_started(pid) if os.name == "nt" else None
 
 
 def bring_up(checkout: Path, *, workspace: Path, run: Run = run, wait_s: float = SCHEDULED_WAIT_S,

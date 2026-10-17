@@ -350,6 +350,56 @@ class TestBringingOneCheckoutUp:
         assert machine.head(checkout) == target
 
 
+class TestSayingHowFarAnUpdateHasGot:
+    @staticmethod
+    def watched(machine, checkout, seen):
+        def run(arguments, **kwargs):
+            if "pip" in arguments or arguments[1:2] == ["merge"]:
+                seen.append(production_update.progress_of(checkout))
+            return machine.run(arguments, **kwargs)
+        return run
+
+    def test_each_step_of_an_update_is_written_in_the_checkout_while_it_runs(self, machine):
+        checkout = machine.checkout(files={"pyproject.toml": pins(app_support="0.1.375")})
+        machine.install(checkout, "app_support", "0.1.375")
+        machine.ship(checkout, {"pyproject.toml": pins(app_support="0.1.376")})
+        seen = []
+
+        production_update.bring_up(checkout, workspace=machine.workspace, run=self.watched(machine, checkout, seen),
+                                   in_use=lambda venvs: [], wait_s=5.0)
+
+        assert [progress.step for progress in seen] == [0, 1, 2]
+        assert {len(progress.steps) for progress in seen} == {3}
+        assert production_update.progress_of(checkout) is None
+
+    @staticmethod
+    def under_way(step: int, since: float = 1000.0) -> production_update.UpdateProgress:
+        return production_update.UpdateProgress(steps=(("installing its libraries", 10.0), ("moving its code", 30.0)),
+                                                step=step, since=since, pid=1, started=1)
+
+    def test_an_update_has_got_as_far_as_the_steps_it_has_finished(self):
+        assert self.under_way(0).fraction(now=1000.0) == 0.0
+        assert self.under_way(1).fraction(now=1000.0) == 0.25
+
+    def test_the_step_under_way_moves_on_with_time_and_never_past_its_end(self):
+        progress = self.under_way(0)
+        moments = [progress.fraction(now=1000.0 + seconds) for seconds in (1, 5, 10, 100, 10_000)]
+
+        assert moments == sorted(set(moments))
+        assert moments[-1] <= 0.25
+
+    @windows_only
+    def test_word_left_by_an_update_that_ended_mid_way_is_no_update(self, tmp_path):
+        ended = subprocess.run([sys.executable, "-c", "import os; print(os.getpid())"], capture_output=True,
+                               text=True, check=True)
+        (tmp_path / ".git").mkdir()
+        (tmp_path / ".git" / production_update.PROGRESS).write_text(json.dumps(
+            {"steps": [["moving its code", 2.0]], "step": 0, "since": time.time(),
+             "pid": int(ended.stdout), "started": 1}), encoding="utf-8")
+
+        assert production_update.progress_of(tmp_path) is None
+
+
 class TestACheckoutThatMovesOnlyToWhatPassed:
     DECLARED = pins() + '\n[tool.haglio.production]\ncommit-file = "state/passed.txt"\n'
 
