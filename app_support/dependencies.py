@@ -443,10 +443,11 @@ def assert_the_declared_floor_is_the_one_the_gate_runs(pyproject: Path, workflow
         f"{proven[0]}.{proven[1]}; the floor is whatever is actually run")
 
 
+FAMILY_ON_GITHUB = "https://github.com/haglio/"
 # A family repo named at a tag: `name @ git+https://github.com/haglio/repo@v0.1.138`.
 _SIBLING_PIN = re.compile(
-    r"^(?P<package>[A-Za-z0-9._-]+)\s*@\s*git\+https://github\.com/haglio/"
-    r"(?P<repo>[A-Za-z0-9._-]+)@(?P<tag>v[0-9]\S*)$"
+    r"^(?P<package>[A-Za-z0-9._-]+)\s*@\s*git\+" + re.escape(FAMILY_ON_GITHUB)
+    + r"(?P<repo>[A-Za-z0-9._-]+)@(?P<tag>v[0-9]\S*)$"
 )
 
 
@@ -456,6 +457,10 @@ class SiblingPin:
     repo: str
     tag: str
     spec: str
+
+    @property
+    def url(self) -> str:
+        return FAMILY_ON_GITHUB + self.repo
 
 
 def sibling_pins_in(pyproject_text: str) -> list[SiblingPin]:
