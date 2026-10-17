@@ -143,6 +143,13 @@ class TestWhoseItIs:
     def test_a_process_that_lost_its_parents_still_carries_the_session_it_came_from(self):
         assert processes.whose(HIS_DESKTOP, environment=["PATH", processes.SESSION_MARK]) == processes.AGENT
 
+    def test_a_process_that_only_hands_the_session_on_to_what_it_starts_is_an_agents(self):
+        # Git's env.exe, a stub of its POSIX runtime, keeps a Windows environment of a few names
+        # and loses its parent when the shell that ran it ends; what it starts carries the mark.
+        # Judged his, an agent's `env -C <dir> python -m pytest` held back his updates (2026-10-17).
+        assert processes.whose(HIS_DESKTOP, environment=["PATH"],
+                               child_environments=[["PATH"], ["PATH", processes.SESSION_MARK]]) == processes.AGENT
+
     def test_the_claude_desktop_app_is_not_an_agent_so_what_he_opens_from_it_stays_his(self):
         ancestors = [DESKTOP_APP, r"C:\windows\explorer.exe"]
 
@@ -154,6 +161,24 @@ class TestWhoseItIs:
     def test_a_process_whose_desktop_cannot_be_read_is_treated_as_his(self):
         assert processes.whose(None) == processes.HIS
         assert processes.whose("") == processes.HIS
+
+    def test_whose_a_process_is_also_read_from_the_processes_it_started(self, monkeypatch):
+        stub = processes.Process(pid=10, ppid=1, started=100.0, name="env.exe", exe="env.exe", cmdline="env")
+        started = processes.Process(pid=11, ppid=10, started=101.0, name="python.exe", exe=PYTHON, cmdline="")
+        marks = {10: frozenset({"PATH"}), 11: frozenset({"PATH", processes.SESSION_MARK})}
+        monkeypatch.setattr(processes, "desktop_of", lambda pid: HIS_DESKTOP)
+        monkeypatch.setattr(processes, "environment_names", lambda pid: marks[pid])
+
+        assert processes.whose_process(stub, {10: stub, 11: started}) == processes.AGENT
+
+    def test_a_process_older_than_the_one_it_names_as_its_parent_was_never_started_by_it(self, monkeypatch):
+        stub = processes.Process(pid=10, ppid=1, started=100.0, name="env.exe", exe="env.exe", cmdline="env")
+        stranger = processes.Process(pid=12, ppid=10, started=50.0, name="python.exe", exe=PYTHON, cmdline="")
+        marks = {10: frozenset({"PATH"}), 12: frozenset({"PATH", processes.SESSION_MARK})}
+        monkeypatch.setattr(processes, "desktop_of", lambda pid: HIS_DESKTOP)
+        monkeypatch.setattr(processes, "environment_names", lambda pid: marks[pid])
+
+        assert processes.whose_process(stub, {10: stub, 12: stranger}) == processes.HIS
 
     @windows_only
     def test_whose_a_running_process_is_comes_from_its_desktop(self, child_on_its_own_desktop):

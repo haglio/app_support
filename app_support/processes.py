@@ -189,6 +189,10 @@ def ancestors(process: Process, among: Mapping[int, Process]) -> list[Process]:
     return found
 
 
+def children(process: Process, among: Mapping[int, Process]) -> list[Process]:
+    return [child for child in among.values() if child.ppid == process.pid and child.started >= process.started]
+
+
 def this_process_and_its_parents(among: Mapping[int, Process]) -> set[int]:
     me = among.get(os.getpid())
     return {os.getpid(), os.getppid(), *(parent.pid for parent in ancestors(me, among) if me)}
@@ -250,14 +254,17 @@ def _is_claude_code(exe: str) -> bool:
     return "\\claude-code\\" in exe.lower().replace("/", "\\")
 
 
-def whose(desktop: str | None, *, environment: Iterable[str] = (), ancestor_exes: Iterable[str] = ()) -> str:
+def whose(desktop: str | None, *, environment: Iterable[str] = (), ancestor_exes: Iterable[str] = (),
+          child_environments: Iterable[Iterable[str]] = ()) -> str:
     if desktop and not desktop.lower().endswith("default"):
         return OFFSCREEN
-    if SESSION_MARK in set(environment) or any(_is_claude_code(exe) for exe in ancestor_exes):
+    if (SESSION_MARK in set(environment) or any(_is_claude_code(exe) for exe in ancestor_exes)
+            or any(SESSION_MARK in set(child) for child in child_environments)):
         return AGENT
     return HIS
 
 
 def whose_process(process: Process, among: Mapping[int, Process]) -> str:
     return whose(desktop_of(process.pid), environment=environment_names(process.pid),
-                 ancestor_exes=[parent.exe for parent in ancestors(process, among)])
+                 ancestor_exes=[parent.exe for parent in ancestors(process, among)],
+                 child_environments=[environment_names(child.pid) for child in children(process, among)])
