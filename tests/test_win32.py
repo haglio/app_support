@@ -36,6 +36,7 @@ from app_support.win32 import (
     is_mutex_held,
     mutex_name,
     read_shortcut,
+    seconds_since_input,
     set_app_user_model_id,
     set_shortcut_app_user_model_id,
     show_error_popup,
@@ -967,3 +968,51 @@ class TestWindowExists:
         user32 = _FakeDll(IsWindow=_FakeFunction(answer))
 
         assert window_exists(4321, user32=lambda: user32) is exists
+
+
+class _LastInputAt(_FakeFunction):
+    def __init__(self, tick: int, *, answer: int = 1) -> None:
+        super().__init__(answer)
+        self._tick = tick
+
+    def __call__(self, info):
+        super().__call__(info)
+        info.contents.dwTime = self._tick
+        return self.result
+
+
+def _a_session(*, last_input_tick: int, now_tick: int, answer: int = 1) -> tuple:
+    user32 = _FakeDll(GetLastInputInfo=_LastInputAt(last_input_tick, answer=answer))
+    kernel32 = _FakeDll(GetTickCount=_FakeFunction(now_tick))
+    return user32, kernel32
+
+
+class TestSecondsSinceInput:
+    def test_it_is_the_time_since_the_mouse_or_keyboard_was_last_touched(self):
+        user32, kernel32 = _a_session(last_input_tick=5_000, now_tick=12_500)
+
+        assert seconds_since_input(user32=lambda: user32, kernel32=lambda: kernel32) == 7.5
+
+    def test_a_tick_count_that_wrapped_since_the_last_input_still_reads_the_time_between(self):
+        user32, kernel32 = _a_session(last_input_tick=2**32 - 1_000, now_tick=2_000)
+
+        assert seconds_since_input(user32=lambda: user32, kernel32=lambda: kernel32) == 3.0
+
+    def test_windows_is_told_how_big_the_record_it_fills_in_is(self):
+        user32, kernel32 = _a_session(last_input_tick=0, now_tick=0)
+
+        seconds_since_input(user32=lambda: user32, kernel32=lambda: kernel32)
+
+        (info,) = user32.GetLastInputInfo.calls[0]
+        assert info.contents.cbSize == ctypes.sizeof(info.contents)
+
+    def test_a_refusal_reaches_the_caller(self):
+        user32, kernel32 = _a_session(last_input_tick=0, now_tick=0, answer=0)
+
+        with pytest.raises(OSError, match="GetLastInputInfo"):
+            seconds_since_input(user32=lambda: user32, kernel32=lambda: kernel32)
+
+
+@pytest.mark.skipif(not hasattr(ctypes, "windll"), reason="the input clock: only Windows can say")
+def test_the_session_s_own_last_input_is_never_in_the_future():
+    assert seconds_since_input() >= 0
