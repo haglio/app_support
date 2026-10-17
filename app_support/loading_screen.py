@@ -20,8 +20,12 @@ import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from app_support import production_update, win32
+from app_support import win32
+
+if TYPE_CHECKING:
+    from app_support.production_update import UpdateProgress
 
 FOLDER = "HAGLIO_LOADING_SCREEN"
 LINES = "HAGLIO_LOADING_SCREEN_LINES"
@@ -151,8 +155,8 @@ class Frame:
 
 class Showing:
     def __init__(self, place: MeetingPlace, pictures: Pictures, checkouts: Sequence[Path], *,
-                 progress_of: Callable[[Path], production_update.UpdateProgress | None] = production_update.progress_of,
-                 clock: Callable[[], float] = time.time, launcher_running: Callable[[], bool]):
+                 progress_of: Callable[[Path], UpdateProgress | None], clock: Callable[[], float],
+                 launcher_running: Callable[[], bool]):
         self._place = place
         self._pictures = pictures
         self._checkouts = tuple(checkouts)
@@ -188,7 +192,7 @@ class Showing:
         line = self._place.lines[index] if index < len(self._place.lines) else None
         return (line is not None and self._pictures.updating(line)) or self._pictures.opening
 
-    def _moved_on(self, index: int, progress: production_update.UpdateProgress) -> float:
+    def _moved_on(self, index: int, progress: UpdateProgress) -> float:
         if self._update is None or self._update[0] != index:
             self._update = (index, self._fraction)
         began_at = self._update[1]
@@ -331,13 +335,16 @@ def _the_launcher_running() -> Callable[[], bool]:  # pragma: no cover -- the pr
 
 
 def main(argv: Sequence[str] | None = None) -> int:  # pragma: no cover -- a window, run on a desktop of its own
+    from app_support.production_update import progress_of  # noqa: PLC0415
+
     place = meeting_place(os.environ)
     pictures = place.pictures() if place else None
     if pictures is None:
         return 0
     checkouts = [Path(each) for each in (sys.argv[1:] if argv is None else argv)]
-    _Window(place, pictures, Showing(place, pictures, checkouts, launcher_running=_the_launcher_running()),
-            screens()).run()
+    showing = Showing(place, pictures, checkouts, progress_of=progress_of, clock=time.time,
+                      launcher_running=_the_launcher_running())
+    _Window(place, pictures, showing, screens()).run()
     return 0
 
 
