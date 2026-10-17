@@ -339,6 +339,17 @@ class TestBringingOneCheckoutUp:
         assert outcome == failed
         assert machine.ran == []
 
+    def test_code_that_ran_ahead_of_its_libraries_gets_them_even_right_after_a_failure(self, machine):
+        # Production Origenerator's code was moved past its libraries by another hand, and its
+        # launch, ten minutes after a failed install, left them missing and the app dead (2026-10-17).
+        checkout = machine.checkout(files={"pyproject.toml": pins(app_support="0.1.376")})
+        machine.install(checkout, "app_support", "0.1.375")
+        failed = Outcome("failed: pip install said: no", at=1000.0, failed=True, target=machine.head(checkout))
+
+        machine.bring_up(checkout, previous=failed, now=lambda: 1001.0)
+
+        assert ("pip", "install", spec("app_support", "0.1.376")) in machine.ran
+
     def test_a_target_that_failed_long_enough_ago_is_tried_again(self, machine):
         checkout = machine.checkout()
         target = machine.ship(checkout, {"feature.txt": "new\n"})

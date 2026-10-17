@@ -429,13 +429,18 @@ def _plan(checkout: Path, branch: str, target: str, *, run: Run) -> _Plan:
     if head != target and not behind and not _ancestor(checkout, target, head, run=run):
         return _Plan(head, target, False, [],
                      f"has commits {_describe(checkout, branch, target, run=run)} does not; left where it is")
-    wanted = target if behind else head
-    pyproject = _git_or_none(checkout, "show", f"{wanted}:pyproject.toml", run=run) or ""
-    venv = checkout / ".venv"
-    libraries = libraries_off_their_pins(pyproject, installed_versions(venv)) if venv.is_dir() else []
+    libraries = _libraries_off(checkout, target if behind else head, run=run)
     if (behind or libraries) and _git(checkout, "status", "--porcelain", "--untracked-files=no", run=run):
         return _Plan(head, target, behind, libraries, "has uncommitted changes; left where it is")
     return _Plan(head, target, behind, libraries)
+
+
+def _libraries_off(checkout: Path, commit: str, *, run: Run) -> list[SiblingPin]:
+    venv = checkout / ".venv"
+    if not venv.is_dir():
+        return []
+    pyproject = _git_or_none(checkout, "show", f"{commit}:pyproject.toml", run=run) or ""
+    return libraries_off_their_pins(pyproject, installed_versions(venv))
 
 
 def _ancestor(checkout: Path, older: str, newer: str, *, run: Run) -> bool:
@@ -515,7 +520,7 @@ def bring_up(checkout: Path, *, workspace: Path, run: Run = run, wait_s: float =
     try:
         branch, target = _branch_and_target(checkout, run=run)
         if (previous is not None and previous.failed and previous.target == target
-                and now() - previous.at < RETRY_FAILED_AFTER_S):
+                and now() - previous.at < RETRY_FAILED_AFTER_S and not _libraries_off(checkout, "HEAD", run=run)):
             return previous
         said = _bring_up_to(checkout, branch, target, workspace=workspace, run=run, wait_s=wait_s, in_use=in_use)
         return Outcome(said, now(), False, target)
