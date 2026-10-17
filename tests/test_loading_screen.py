@@ -27,6 +27,14 @@ class TestWhereTheLauncherAndTheAppMeet:
     def test_an_app_started_without_a_launcher_that_shows_one_has_nowhere_to_meet_it(self):
         assert loading_screen.meeting_place({}) is None
 
+    def test_the_app_hands_the_place_to_its_loading_screen_alone(self, tmp_path):
+        environment = {loading_screen.FOLDER: str(tmp_path / "screen"), loading_screen.LINES: "[]", "PATH": "x"}
+
+        handed = loading_screen.handed_over(environment)
+
+        assert handed == {loading_screen.FOLDER: str(tmp_path / "screen"), loading_screen.LINES: "[]"}
+        assert environment == {"PATH": "x"}
+
 
 def a_place(tmp_path: Path, *lines: str) -> loading_screen.MeetingPlace:
     return loading_screen.MeetingPlace(tmp_path / "screen", lines or ("Updating Example...",))
