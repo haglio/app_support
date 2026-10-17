@@ -21,6 +21,7 @@ Standard library only.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import subprocess
@@ -30,7 +31,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path, PureWindowsPath
 
-from app_support import production_update
+from app_support import loading_screen, production_update
 
 DRY_RUN = "HAGLIO_LAUNCHER_DRY_RUN"
 INTERPRETERS = ("python.exe", "pythonw.exe")
@@ -38,7 +39,7 @@ VENVS = ("own", "primary")
 
 _KEYS = frozenset({
     "app", "run", "interpreter", "named-interpreter", "venv", "log", "watch",
-    "note", "environment", "copy-from-primary", "checkout-argument",
+    "note", "environment", "copy-from-primary", "checkout-argument", "loading-screen",
 })
 _CHECKOUT_KEYS = frozenset({"missing", "gone", "flags"})
 _FLAG_KEYS = frozenset({"app", "log"})
@@ -78,8 +79,13 @@ class Launcher:
     environment: tuple[tuple[str, str], ...] = ()
     copy_from_primary: tuple[str, ...] = ()
     checkout_argument: CheckoutArgument | None = None
+    loading_screen: tuple[str, ...] = ()
     waits_for_updates: bool = False
     also_runs: tuple[str, ...] = ()
+
+    @property
+    def waits_on(self) -> int:
+        return 1 + len(self.also_runs) if self.waits_for_updates else 0
 
 
 # --- Reading the specs --------------------------------------------------------
@@ -91,8 +97,14 @@ def launchers(checkout: Path) -> list[Launcher]:
     specs = document.get("tool", {}).get("haglio", {}).get("launchers", {})
     production = production_update.declared(checkout)
     also_runs = production.also_runs if production else ()
-    return [replace(_launcher(file, spec), waits_for_updates=production is not None, also_runs=also_runs)
-            for file, spec in specs.items()]
+    found = [replace(_launcher(file, spec), waits_for_updates=production is not None, also_runs=also_runs)
+             for file, spec in specs.items()]
+    for each in found:
+        if each.loading_screen and len(each.loading_screen) != each.waits_on:
+            raise LauncherSpecError(
+                f"{each.file}: loading-screen says {len(each.loading_screen)} lines for the "
+                f"{each.waits_on} checkouts a launch waits on, its own first and then each it also runs")
+    return found
 
 
 def _launcher(file: str, spec: dict) -> Launcher:
@@ -117,6 +129,7 @@ def _launcher(file: str, spec: dict) -> Launcher:
         environment=tuple(spec.get("environment", {}).items()),
         copy_from_primary=tuple(spec.get("copy-from-primary", ())),
         checkout_argument=_checkout_argument(refuse, spec.get("checkout-argument")),
+        loading_screen=tuple(spec.get("loading-screen", ())),
     )
     _refuse_contradictions(refuse, launcher)
     return launcher
@@ -170,6 +183,8 @@ def _refuse_contradictions(refuse, launcher: Launcher) -> None:
         raise refuse("note needs watch: the note is what a failed launch shows instead of the log")
     if launcher.copy_from_primary and launcher.venv != "primary":
         raise refuse("copy-from-primary needs venv = \"primary\"")
+    if launcher.loading_screen and not launcher.log:
+        raise refuse("loading-screen needs a log: the app's own loading screen meets it beside the log")
     logs = [launcher.log, *(flag.log for flag in _flags(launcher))]
     for log in filter(None, logs):
         if PureWindowsPath(log).is_absolute() or ".." in PureWindowsPath(log).parts:
@@ -213,10 +228,12 @@ def render(launcher: Launcher) -> str:
         _launch(launcher),
         _command(launcher),
         _QUOTE.splitlines(),
-        _TELL.splitlines(),
+        _tell(launcher).splitlines(),
     ]
     if launcher.waits_for_updates:
-        sections.append(_gates().splitlines())
+        sections.append(_gates(launcher).splitlines())
+    if launcher.loading_screen:
+        sections.append(_loading_screen(launcher).splitlines())
     if launcher.log:
         sections.append(_LOG.splitlines())
     if launcher.watch:
@@ -254,6 +271,8 @@ def _declarations(launcher: Launcher) -> str:
         names += ["readyFile", "exitedFlag"]
     if launcher.note:
         names += ["notePath", "noteText"]
+    if launcher.loading_screen:
+        names += ["screenFolder", "screenUp"]
     return "Dim " + ", ".join(names)
 
 
@@ -301,6 +320,8 @@ def _log_paths(base: str, launcher: Launcher, log: str, indent: str) -> list[str
     if launcher.note:
         lines.append(
             f"{indent}notePath = {_path(base, str(PureWindowsPath(log).with_name(launcher.note)))}")
+    if launcher.loading_screen:
+        lines.append(f"{indent}screenFolder = {_path(base, str(PureWindowsPath(log).with_suffix('.screen')))}")
     return lines
 
 
@@ -401,6 +422,9 @@ def _report(launcher: Launcher) -> list[str]:
     if launcher.waits_for_updates:
         lines += ['  WScript.Echo "update: " & Update()', "  Dim gate", "  For Each gate In gates",
                   '    WScript.Echo "gate: " & gate', "  Next"]
+    if launcher.loading_screen:
+        lines += ['  WScript.Echo "loading screen: " & LoadingScreen()',
+                  '  WScript.Echo "screen: " & screenFolder']
     lines.append("End Sub")
     return lines
 
@@ -410,12 +434,20 @@ def _launch(launcher: Launcher) -> list[str]:
         missing = '"The primary checkout\'s virtual environment is missing:"'
     else:
         missing = 'app & "\'s virtual environment is missing:"'
-    lines = [
+    return [
         "Sub Launch()",
         "  If Not fso.FileExists(interpreter) Then",
         f"    Refuse {missing} & vbCrLf & interpreter, vbCritical",
         "  End If",
+        *_before_the_app_runs(launcher),
+        "  shell.Run Command(), 0, False",
+        *_once_the_app_runs(launcher),
+        "End Sub",
     ]
+
+
+def _before_the_app_runs(launcher: Launcher) -> list[str]:
+    lines = ["  ShowLoadingScreen"] if launcher.loading_screen else []
     if launcher.waits_for_updates:
         lines += ["  CatchUp", "  HoldGates"]
     lines += [f"  CopyFromPrimary {_text(name)}" for name in launcher.copy_from_primary]
@@ -431,13 +463,19 @@ def _launch(launcher: Launcher) -> list[str]:
                   "  If fso.FileExists(exitedFlag) Then fso.DeleteFile exitedFlag"]
     if launcher.note:
         lines.append("  If fso.FileExists(notePath) Then fso.DeleteFile notePath")
-    lines.append("  shell.Run Command(), 0, False")
+    if launcher.loading_screen:
+        lines.append("  StopIfCanceled")
+    return lines
+
+
+def _once_the_app_runs(launcher: Launcher) -> list[str]:
+    lines = [f"  Say {_text(loading_screen.STARTED)}"] if launcher.loading_screen else []
     if launcher.waits_for_updates:
         lines.append("  ReleaseGates")
     if launcher.watch:
-        lines += ["  If Not Started() Then", *_refusal_of_a_launch_that_never_came_up(launcher),
-                  "  End If"]
-    lines.append("End Sub")
+        lines += ["  If Not Started() Then", *_refusal_of_a_launch_that_never_came_up(launcher), "  End If"]
+        if launcher.loading_screen:
+            lines.append(f"  Say {_text(loading_screen.ENDED)}")
     return lines
 
 
@@ -496,16 +534,14 @@ def _started(launcher: Launcher) -> list[str]:
     ]
 
 
-def _gates() -> str:
+def _gates(launcher: Launcher) -> str:
+    stop_if_canceled = "\n        StopIfCanceled" if launcher.loading_screen else ""
     return f"""\
 Function Update()
   Update = Quote(updater) & " -m {production_update.__name__} --before-launch " & Quote(base)
 End Function
 
-Sub CatchUp()
-  If fso.FileExists(updater) Then shell.Run Update(), 0, True
-End Sub
-
+{_catch_up(launcher)}
 Sub HoldGates()
   Dim index, waited
   ReDim held(UBound(gates))
@@ -513,7 +549,7 @@ Sub HoldGates()
     If fso.FolderExists(fso.GetParentFolderName(gates(index))) Then
       waited = 0
       Do Until Holds(index)
-        If waited >= {int(production_update.LAUNCH_WAIT_S * 1000)} Then WScript.Quit 1
+        If waited >= {int(production_update.LAUNCH_WAIT_S * 1000)} Then WScript.Quit 1{stop_if_canceled}
         WScript.Sleep 500
         waited = waited + 500
       Loop
@@ -538,15 +574,88 @@ End Sub
 """
 
 
+def _catch_up(launcher: Launcher) -> str:
+    if not launcher.loading_screen:
+        return """\
+Sub CatchUp()
+  If fso.FileExists(updater) Then shell.Run Update(), 0, True
+End Sub
+"""
+    return """\
+Sub CatchUp()
+  Dim job
+  If Not fso.FileExists(updater) Then Exit Sub
+  Set job = shell.Exec(Update())
+  Do While job.Status = 0
+    StopIfCanceled
+    WScript.Sleep 100
+  Loop
+End Sub
+"""
+
+
+def _loading_screen(launcher: Launcher) -> str:
+    flag = f"fso.BuildPath(screenFolder, {_text(loading_screen.CANCELED)})"
+    said = ", ".join(_text(name) for name in loading_screen.SAID_AT_EACH_LAUNCH)
+    return f"""\
+Function LoadingScreen()
+  Dim gate
+  LoadingScreen = Quote(updater) & " -m {loading_screen.__name__}"
+  For Each gate In gates
+    LoadingScreen = LoadingScreen & " " & Quote(fso.GetParentFolderName(fso.GetParentFolderName(gate)))
+  Next
+End Function
+
+Sub ShowLoadingScreen()
+  Dim name
+  shell.Environment("Process").Item({_text(loading_screen.FOLDER)}) = screenFolder
+  shell.Environment("Process").Item({_text(loading_screen.LINES)}) = {_text(json.dumps(list(launcher.loading_screen)))}
+  For Each name In Array({said})
+    If fso.FileExists(fso.BuildPath(screenFolder, name)) Then fso.DeleteFile fso.BuildPath(screenFolder, name)
+  Next
+  If fso.FileExists(updater) And fso.FileExists(fso.BuildPath(screenFolder, {_text(loading_screen.PICTURES)})) Then
+    shell.Run LoadingScreen(), 1, False
+    screenUp = True
+  End If
+End Sub
+
+Sub StopIfCanceled()
+  If fso.FileExists({flag}) Then WScript.Quit 0
+End Sub
+
+Sub Say(flag)
+  On Error Resume Next
+  fso.CreateTextFile(fso.BuildPath(screenFolder, flag), True).Close
+  Err.Clear
+  On Error GoTo 0
+End Sub
+
+Sub TakeDownLoadingScreen()
+  Dim waited
+  If screenUp <> True Then Exit Sub
+  screenUp = False
+  Say {_text(loading_screen.ENDED)}
+  waited = 0
+  Do While fso.FileExists(fso.BuildPath(screenFolder, {_text(loading_screen.SHOWN)})) And waited < 3000
+    WScript.Sleep 100
+    waited = waited + 100
+  Loop
+End Sub
+"""
+
+
 _QUOTE = """\
 Function Quote(text)
   Quote = Chr(34) & text & Chr(34)
 End Function
 """
 
-_TELL = """\
+
+def _tell(launcher: Launcher) -> str:
+    take_down = "  TakeDownLoadingScreen\n" if launcher.loading_screen else ""
+    return f"""\
 Sub Tell(message, icon)
-  If LCase(fso.GetFileName(WScript.FullName)) = "cscript.exe" Then
+{take_down}  If LCase(fso.GetFileName(WScript.FullName)) = "cscript.exe" Then
     WScript.Echo "dialog: " & message
   Else
     MsgBox message, icon, app

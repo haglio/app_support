@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from app_support import launcher, production_update
+from app_support import launcher, loading_screen, production_update
 from app_support.launcher import (
     LauncherSpecError,
     ScriptHostRun,
@@ -38,6 +38,13 @@ MINIMAL = """
 [tool.haglio.launchers."launch_example.vbs"]
 app = "Example"
 run = "-m example"
+"""
+SCREENED = MINIMAL + """log = 'state\\example.log'
+watch = true
+loading-screen = ["Updating Example...", "Updating Hosted..."]
+
+[tool.haglio.production]
+also-runs = ["hosted"]
 """
 
 
@@ -150,6 +157,23 @@ log = 'state\\two_launcher.log'
         with pytest.raises(LauncherSpecError, match="flags"):
             launchers(_checkout(tmp_path, spec))
 
+    def test_a_loading_screen_says_a_line_for_each_checkout_the_launch_waits_on(self, tmp_path: Path):
+        (found,) = launchers(_checkout(tmp_path, SCREENED))
+
+        assert found.loading_screen == ("Updating Example...", "Updating Hosted...")
+
+    def test_a_loading_screen_short_of_a_line_for_a_checkout_it_waits_on_is_refused(self, tmp_path: Path):
+        spec = SCREENED.replace(', "Updating Hosted..."', "")
+
+        with pytest.raises(LauncherSpecError, match="loading-screen"):
+            launchers(_checkout(tmp_path, spec))
+
+    def test_a_loading_screen_needs_the_log_it_meets_the_app_beside(self, tmp_path: Path):
+        spec = SCREENED.replace("log = 'state\\example.log'\nwatch = true\n", "")
+
+        with pytest.raises(LauncherSpecError, match="loading-screen needs a log"):
+            launchers(_checkout(tmp_path, spec))
+
 
 class TestTheFilesOnDisk:
     def test_a_launcher_rendered_from_its_spec_passes(self, tmp_path: Path):
@@ -221,6 +245,8 @@ EVERY_SHAPE = [
         checkout_argument=launcher.CheckoutArgument(
             "Nothing to run.", "Gone: {checkout}",
             (launcher.Flag("--two", "Example Two", "state\\two.log"),))),
+    launcher.Launcher("screened.vbs", "Example", "-m example", log="state\\example.log", watch=True,
+                      loading_screen=("Updating Example...",), waits_for_updates=True),
 ]
 
 
@@ -519,10 +545,25 @@ Class RehearsalShell
   Public Function Run(command, style, wait)
     Dim stream
     WScript.Echo "rehearsal: run " & command & " (style " & style & ", wait " & wait & ")"
-    fso.CreateTextFile(fso.BuildPath(root, "rehearsal.ran"), True).Close
+    If InStr(command, "app_support.loading_screen") > 0 Then
+{screen}
+    Else
+      fso.CreateTextFile(fso.BuildPath(root, "rehearsal.ran"), True).Close
 {child}
+    End If
     Run = 0
   End Function
+
+  Public Function Exec(command)
+    WScript.Echo "rehearsal: exec " & command
+    Set Exec = New RehearsalJob
+  End Function
+End Class
+
+Class RehearsalJob
+  Public Property Get Status()
+    Status = 1
+  End Property
 End Class
 """
 
@@ -547,19 +588,20 @@ CHILD_DIES_LEAVING_A_NOTE = """\
     fso.CreateTextFile(exitedFlag, True).Close"""
 
 
-def _rehearsal_of(script: Path, child: str = "") -> Path:
+def _rehearsal_of(script: Path, child: str = "", screen: str = "") -> Path:
     """*script* with the shell it launches through swapped for one that only
-    says what it was asked, and *child* standing in for the app it started."""
+    says what it was asked, and *child* standing in for the app it started and
+    *screen* for the loading screen."""
     text = script.read_text(encoding="utf-8")
     first_statement = 'Set fso = CreateObject("Scripting.FileSystemObject")\n'
     assert text.count(first_statement) == 1
-    script.write_text(text.replace(first_statement, _REHEARSAL.replace("{child}", child)),
-                      encoding="utf-8")
+    script.write_text(text.replace(first_statement, _REHEARSAL.replace("{child}", child).replace(
+        "{screen}", screen)), encoding="utf-8")
     return script
 
 
-def _rehearse(script: Path, *arguments: str, child: str = "") -> ScriptHostRun:
-    return run_under_script_host(_rehearsal_of(script, child), *arguments, dry_run=False)
+def _rehearse(script: Path, *arguments: str, child: str = "", screen: str = "") -> ScriptHostRun:
+    return run_under_script_host(_rehearsal_of(script, child, screen), *arguments, dry_run=False)
 
 
 def _rehearsed_to_the_end(run: ScriptHostRun) -> ScriptHostRun:
@@ -930,3 +972,92 @@ class TestTheUpdateBeforeALaunch:
         _rehearsed_to_the_end(ScriptHostRun(rehearsal.returncode, output))
         with production_update.the_turn(checkout, wait_s=0.5):
             pass
+
+
+def _screened(tmp_path: Path, *, pictures: bool = True) -> Path:
+    """A checkout whose launcher shows a loading screen, with its venv and the
+    updater beside it, and the pictures its app left at the last start."""
+    checkout = _checkout(tmp_path, SCREENED)
+    _venv(checkout, "python.exe")
+    _updater_beside(checkout)
+    if pictures:
+        loading_screen.MeetingPlace(_screen_of(checkout), ()).leave_pictures(
+            opening=b"", full=b"", updating=[], bar=(0, 0, 1, 1), covers_every_monitor=False)
+    return checkout
+
+
+def _screen_of(checkout: Path) -> Path:
+    return checkout / "state" / "example.screen"
+
+
+def _loading_screen_of(checkout: Path) -> str:
+    return (f'"{checkout.parent / UPDATER}" -m app_support.loading_screen '
+            f'"{checkout}" "{checkout.parent / "hosted"}"')
+
+
+@windows_only
+class TestTheLoadingScreenAtTheClick:
+    def test_a_dry_run_names_the_loading_screen_it_shows_first_and_where_it_meets_the_app(self, tmp_path: Path):
+        checkout = _screened(tmp_path)
+
+        report = dry_run(_rendered(checkout))
+
+        assert report.value("loading screen") == _loading_screen_of(checkout)
+        assert report.value("screen") == str(_screen_of(checkout))
+
+    def test_it_comes_up_before_the_update_and_the_app_both_told_where_to_meet(self, tmp_path: Path):
+        checkout = _screened(tmp_path)
+
+        run = _rehearsed_to_the_end(_rehearse(_rendered(checkout), child=CHILD_COMES_UP))
+
+        told = _line_index(run, f"rehearsal: environment {loading_screen.FOLDER}={_screen_of(checkout)}")
+        lines = _line_index(run, f'rehearsal: environment {loading_screen.LINES}='
+                                 '["Updating Example...", "Updating Hosted..."]')
+        screen = _line_index(run, f"rehearsal: run {_loading_screen_of(checkout)} (style 1, wait False)")
+        update = _line_index(run, f"rehearsal: exec {_update_of(checkout)}")
+        app = _line_index(run, f'rehearsal: run cmd /c cd /d "{checkout}"')
+        assert max(told, lines) < screen < update < app
+
+    def test_before_the_app_has_left_its_pictures_no_loading_screen_is_started(self, tmp_path: Path):
+        checkout = _screened(tmp_path, pictures=False)
+
+        run = _rehearsed_to_the_end(_rehearse(_rendered(checkout), child=CHILD_COMES_UP))
+
+        assert "app_support.loading_screen" not in run.output
+        assert f"rehearsal: environment {loading_screen.FOLDER}={_screen_of(checkout)}" in run.output
+
+    def test_each_launch_clears_what_the_last_one_said_and_keeps_the_pictures(self, tmp_path: Path):
+        checkout = _screened(tmp_path)
+        for said in loading_screen.SAID_AT_EACH_LAUNCH:
+            (_screen_of(checkout) / said).write_text("", encoding="utf-8")
+
+        _rehearsed_to_the_end(_rehearse(_rendered(checkout), child=CHILD_COMES_UP))
+
+        left = {path.name for path in _screen_of(checkout).iterdir()}
+        assert left & {loading_screen.SHOWN, loading_screen.TAKEN, loading_screen.CANCELED} == set()
+        assert loading_screen.PICTURES in left
+
+    def test_it_is_told_once_the_app_is_started_and_again_once_the_app_is_up(self, tmp_path: Path):
+        checkout = _screened(tmp_path)
+
+        _rehearsed_to_the_end(_rehearse(_rendered(checkout), child=CHILD_COMES_UP))
+
+        assert (_screen_of(checkout) / loading_screen.STARTED).exists()
+        assert (_screen_of(checkout) / loading_screen.ENDED).exists()
+
+    def test_esc_on_it_while_the_launcher_waits_starts_nothing(self, tmp_path: Path):
+        checkout = _screened(tmp_path)
+        pressed = f'    fso.CreateTextFile(fso.BuildPath(screenFolder, "{loading_screen.CANCELED}"), True).Close'
+
+        run = _rehearse(_rendered(checkout), screen=pressed)
+
+        assert run.returncode == 0
+        assert not (checkout / "rehearsal.ran").exists()
+
+    def test_a_launch_that_fails_takes_it_down_before_saying_so(self, tmp_path: Path):
+        checkout = _screened(tmp_path)
+
+        run = _rehearse(_rendered(checkout), child=CHILD_DIES)
+
+        assert "dialog: Example failed to start." in run.output
+        assert (_screen_of(checkout) / loading_screen.ENDED).exists()
