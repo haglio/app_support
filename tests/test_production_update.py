@@ -101,7 +101,7 @@ class Machine:
     def origin_head(checkout: Path) -> str:
         return git("rev-parse", "origin/main", cwd=checkout)
 
-    def run(self, arguments, *, cwd=None, timeout=production_update.GIT_TIMEOUT_S) -> str:
+    def run(self, arguments, *, cwd=None, timeout=production_update.GIT_TIMEOUT_S, env=None) -> str:
         if arguments[:3] == ["gh", "api", "graphql"]:
             self.ran.append(("github",))
             if self.github_down:
@@ -117,7 +117,7 @@ class Machine:
             self.ran.append(("fetch", Path(cwd).name))
         elif arguments[1:2] == ["merge"]:
             self.ran.append(("merge",))
-        return production_update.run(arguments, cwd=cwd, timeout=timeout)
+        return production_update.run(arguments, cwd=cwd, timeout=timeout, env=env)
 
     def bring_up(self, checkout: Path, **kwargs) -> Outcome:
         kwargs.setdefault("in_use", lambda venvs: [])
@@ -526,6 +526,27 @@ class TestTheLibraries:
 
     def test_a_venv_that_is_not_there_holds_nothing(self, tmp_path):
         assert production_update.installed_versions(tmp_path / ".venv") == {}
+
+    def test_a_library_whose_checkout_here_holds_its_pinned_tag_is_installed_from_that_checkout(self, machine):
+        # GitHub dropped every clone for an hour on 2026-10-17 while each library's checkout beside
+        # production Origenerator already held the tag its code pinned.
+        library = machine.checkout("example_library", venv=False)
+        git("tag", "v0.1.376", cwd=library)
+        checkout = machine.checkout(files={"pyproject.toml": pins(example_library="0.1.376")})
+        installs = []
+
+        def run(arguments, *, env=None, **kwargs):
+            if "pip" in arguments:
+                installs.append(env or {})
+            return machine.run(arguments, **kwargs)
+
+        production_update.bring_up(checkout, workspace=machine.workspace, run=run, in_use=lambda venvs: [],
+                                   wait_s=5.0)
+
+        clone = machine.base / "cloned"
+        subprocess.run(["git", "clone", "-q", "https://github.com/haglio/example_library", str(clone)],
+                       env={**os.environ, **installs[0], "GIT_TERMINAL_PROMPT": "0"}, check=True)
+        assert git("rev-parse", "v0.1.376^{commit}", cwd=clone) == git("rev-parse", "HEAD", cwd=library)
 
 
 @windows_only

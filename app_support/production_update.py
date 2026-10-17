@@ -170,10 +170,12 @@ def _a_folder_name(name: object) -> bool:
 # --- Running git and pip -------------------------------------------------------
 
 
-def run(arguments: Sequence[str], *, cwd: Path | None = None, timeout: float = GIT_TIMEOUT_S) -> str:
+def run(arguments: Sequence[str], *, cwd: Path | None = None, timeout: float = GIT_TIMEOUT_S,
+        env: Mapping[str, str] | None = None) -> str:
     try:
         finished = subprocess.run(list(arguments), cwd=cwd, capture_output=True, text=True,
                                   encoding="utf-8", errors="replace", timeout=timeout,
+                                  env={**os.environ, **env} if env else None,
                                   stdin=subprocess.DEVNULL, **hidden_subprocess_kwargs())
     except subprocess.TimeoutExpired:
         raise StepFailed(f"{_step(arguments)} did not finish in {timeout:g} s") from None
@@ -439,8 +441,21 @@ def _libraries_off(checkout: Path, commit: str, *, run: Run) -> list[SiblingPin]
     venv = checkout / ".venv"
     if not venv.is_dir():
         return []
-    pyproject = _git_or_none(checkout, "show", f"{commit}:pyproject.toml", run=run) or ""
-    return libraries_off_their_pins(pyproject, installed_versions(venv))
+    return libraries_off_their_pins(_pyproject_at(checkout, commit, run=run), installed_versions(venv))
+
+
+def _pyproject_at(checkout: Path, commit: str, *, run: Run) -> str:
+    return _git_or_none(checkout, "show", f"{commit}:pyproject.toml", run=run) or ""
+
+
+def _cloning_from_here(workspace: Path, pins: Iterable[SiblingPin], *, run: Run) -> dict[str, str]:
+    held = [pin for pin in pins if _git_or_none(
+        Path(workspace) / pin.repo, "rev-parse", "--verify", "--quiet", f"{pin.tag}^{{commit}}", run=run)]
+    settings = {"GIT_CONFIG_COUNT": str(len(held))}
+    for index, pin in enumerate(held):
+        settings[f"GIT_CONFIG_KEY_{index}"] = f"url.{(Path(workspace) / pin.repo).as_posix()}.insteadOf"
+        settings[f"GIT_CONFIG_VALUE_{index}"] = pin.url
+    return settings
 
 
 def _ancestor(checkout: Path, older: str, newer: str, *, run: Run) -> bool:
@@ -456,21 +471,23 @@ def _describe(checkout: Path, branch: str, target: str, *, run: Run) -> str:
     return f"origin/{branch}" if tracking == target else target[:8]
 
 
-def _carry_out(checkout: Path, plan: _Plan, *, run: Run) -> str:
+def _carry_out(checkout: Path, plan: _Plan, *, workspace: Path, run: Run) -> str:
     python = str(checkout / ".venv" / "Scripts" / "python.exe")
     changed = _git(checkout, "diff", "--name-only", plan.head, plan.target, run=run).splitlines() if plan.behind else []
+    pinned = sibling_pins_in(_pyproject_at(checkout, plan.target if plan.behind else plan.head, run=run))
+    local = _cloning_from_here(workspace, pinned, run=run)
     steps = []
     if plan.libraries:
         steps.append(("installing its libraries", LIBRARY_S * len(plan.libraries), lambda: run(
             [python, "-m", "pip", "install", *(pin.spec for pin in plan.libraries)], cwd=checkout,
-            timeout=PIP_TIMEOUT_S)))
+            timeout=PIP_TIMEOUT_S, env=local)))
     if plan.behind:
         steps.append(("moving its code", MOVE_S,
                       lambda: _git(checkout, "merge", "--ff-only", "--quiet", plan.target, run=run)))
     if (checkout / ".venv").is_dir() and (plan.libraries or "pyproject.toml" in changed):
         steps.append(("installing it", REINSTALL_S, lambda: run(
             [python, "-m", "pip", "install", "-e", str(checkout), "--config-settings", "editable_mode=compat"],
-            cwd=checkout, timeout=PIP_TIMEOUT_S)))
+            cwd=checkout, timeout=PIP_TIMEOUT_S, env=local)))
     with _saying_how_far(checkout, tuple((name, seconds) for name, seconds, _ in steps)) as entering:
         for index, (_name, _seconds, take) in enumerate(steps):
             entering(index)
@@ -543,7 +560,7 @@ def _bring_up_to(checkout: Path, branch: str, target: str, *, workspace: Path, r
             return _not_waiting(checkout, plan.settled)
         if running := in_use(_venvs_watched(checkout, workspace)):
             return _waiting_for(checkout, running)
-        return _not_waiting(checkout, _carry_out(checkout, plan, run=run))
+        return _not_waiting(checkout, _carry_out(checkout, plan, workspace=workspace, run=run))
 
 
 def _waiting_for(checkout: Path, running: list[processes.Process]) -> str:
