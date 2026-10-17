@@ -4,7 +4,10 @@
 beside this one, and a scheduled task runs it every couple of minutes:
 ``--before-launch <checkout>`` brings one checkout up as a launcher is about to
 start its app, so an app closed and opened again between two passes still opens
-on what has shipped.
+on what has shipped.  A pass asks GitHub once what every checkout's main is and
+fetches only the checkouts whose main moved, so the machine's agents are not
+competing with it for GitHub; a checkout the answer leaves out is fetched once
+its last fetch is half an hour old.
 
 A checkout follows origin's default branch, or, when the pyproject on that branch
 says so, only the commit a file of its own names.  Its libraries go in at exactly the versions
@@ -23,6 +26,7 @@ import argparse
 import contextlib
 import ctypes
 import dataclasses
+import json
 import logging
 import os
 import re
@@ -55,11 +59,17 @@ UPKEEP_MARK = "HAGLIO_UPKEEP"
 SCHEDULED_WAIT_S = 30.0
 LAUNCH_WAIT_S = 15 * 60.0
 RETRY_FAILED_AFTER_S = 30 * 60.0
+FETCH_UNASKED_AFTER_S = 30 * 60.0
+GITHUB_ANSWERS = "answers what has shipped again, so only a checkout whose main moved is fetched"
 UP_BEFORE_AN_UPDATE_S = 10 * 60.0
 GIT_TIMEOUT_S = 120.0
 PIP_TIMEOUT_S = 15 * 60.0
 
 _KEYS = frozenset({"commit-file", "also-runs"})
+_ON_GITHUB = re.compile(r"github\.com[:/](?P<owner>[^/]+)/(?P<name>[^/]+?)(?:\.git)?/?$", re.IGNORECASE)
+_HEADS_QUERY = ("query($owner: String!) { repositoryOwner(login: $owner) { repositories(first: 100, "
+                "orderBy: {field: PUSHED_AT, direction: DESC}) { nodes { name defaultBranchRef "
+                "{ name target { oid } } } } } }")
 _log = logging.getLogger("production_update")
 
 
@@ -480,17 +490,22 @@ def _not_waiting(checkout: Path, said: str) -> str:
 # --- A pass, and a launch ---------------------------------------------------------
 
 
-def _previous(state: Path) -> dict[str, Outcome]:
+def _status(state: Path) -> dict:
     try:
-        recorded = json_store.read_json(state / STATUS_NAME).get("checkouts", {})
+        document = json_store.read_json(state / STATUS_NAME)
     except (OSError, ValueError):
         return {}
+    return document if isinstance(document, dict) else {}
+
+
+def _previous(status: Mapping) -> dict[str, Outcome]:
+    recorded = status.get("checkouts", {})
     return {name: Outcome(**entry) for name, entry in recorded.items()
             if isinstance(entry, dict) and set(entry) == {field.name for field in dataclasses.fields(Outcome)}}
 
 
 def _record(state: Path, outcomes: Mapping[str, Outcome], previous: Mapping[str, Outcome], *,
-            finished: float | None = None) -> None:
+            finished: float | None = None, github: str | None = None) -> None:
     for name, outcome in outcomes.items():
         if outcome.said != getattr(previous.get(name), "said", None):
             (_log.warning if outcome.failed else _log.info)("%s: %s", name, outcome.said)
@@ -500,33 +515,80 @@ def _record(state: Path, outcomes: Mapping[str, Outcome], previous: Mapping[str,
             {name: dataclasses.asdict(outcome) for name, outcome in outcomes.items()})
         if finished is not None:
             document["pass_finished"] = finished
+        if github is not None:
+            document["github"] = github
         return document
 
     json_store.locked_update(state / STATUS_NAME, update)
 
 
+def _on_github(checkout: Path, *, run: Run) -> tuple[str, str] | None:
+    match = _ON_GITHUB.search(_git_or_none(checkout, "config", "--get", "remote.origin.url", run=run) or "")
+    return (match["owner"].casefold(), match["name"].casefold()) if match else None
+
+
+def _heads_on_github(checkouts: Iterable[Path], *, run: Run) -> dict[Path, tuple[str, str]]:
+    places = {checkout: _on_github(checkout, run=run) for checkout in checkouts}
+    heads = {}
+    for owner in sorted({place[0] for place in places.values() if place}):
+        answer = json.loads(run(["gh", "api", "graphql", "-f", f"query={_HEADS_QUERY}", "-f", f"owner={owner}"],
+                                timeout=GIT_TIMEOUT_S))
+        for node in answer["data"]["repositoryOwner"]["repositories"]["nodes"]:
+            if branch := node.get("defaultBranchRef"):
+                heads[(owner, node["name"].casefold())] = (branch["name"], branch["target"]["oid"])
+    return {checkout: heads[place] for checkout, place in places.items() if place in heads}
+
+
+def _worth_fetching(checkout: Path, branch: str, head: tuple[str, str] | None, *, run: Run,
+                    now: Callable[[], float]) -> bool:
+    if head is not None and head[0] == branch:
+        tracking = _git_or_none(checkout, "rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{branch}", run=run)
+        return tracking != head[1]
+    try:
+        fetched = (checkout / ".git" / "FETCH_HEAD").stat().st_mtime
+    except OSError:
+        return True
+    return now() - fetched >= FETCH_UNASKED_AFTER_S
+
+
+def _ask_github(checkouts: list[Path], *, run: Run) -> tuple[dict[Path, tuple[str, str]], str]:
+    try:
+        return _heads_on_github(checkouts, run=run), GITHUB_ANSWERS
+    except StepFailed as unreachable:
+        why = str(unreachable)
+    except (ValueError, KeyError, TypeError) as unreadable:
+        why = f"its answer could not be read ({unreadable!r})"
+    return {}, (f"could not be asked what has shipped, so each checkout is fetched every "
+                f"{FETCH_UNASKED_AFTER_S / 60:g} minutes instead: {why}")
+
+
 def keep_up(workspace: Path, state: Path, *, fetch: bool = True, run: Run = run,
             wait_s: float = SCHEDULED_WAIT_S, in_use: InUse = running_from,
             now: Callable[[], float] = time.time) -> dict[str, Outcome]:
-    previous = _previous(state)
+    status = _status(state)
+    previous = _previous(status)
     outcomes = {}
-    for checkout in checkouts_in(workspace):
+    checkouts = checkouts_in(workspace)
+    heads, github = _ask_github(checkouts, run=run) if fetch else ({}, None)
+    if github is not None and github != status.get("github", GITHUB_ANSWERS):
+        (_log.info if github == GITHUB_ANSWERS else _log.warning)("GitHub: %s", github)
+    for checkout in checkouts:
         branch = default_branch(checkout, run=run)
-        if fetch and branch:
+        if fetch and branch and _worth_fetching(checkout, branch, heads.get(checkout), run=run, now=now):
             try:
                 _git(checkout, "fetch", "--quiet", "origin", branch, run=run)
             except StepFailed as unreachable:
                 _log.warning("%s: could not fetch: %s", checkout.name, unreachable)
         outcomes[checkout.name] = bring_up(checkout, workspace=workspace, run=run, wait_s=wait_s,
                                            in_use=in_use, previous=previous.get(checkout.name), now=now)
-    _record(state, outcomes, previous, finished=now())
+    _record(state, outcomes, previous, finished=now(), github=github)
     return outcomes
 
 
 def before_launch(checkout: Path, workspace: Path, state: Path, *, run: Run = run,
                   wait_s: float = LAUNCH_WAIT_S, in_use: InUse = running_from,
                   now: Callable[[], float] = time.time) -> dict[str, Outcome]:
-    previous = _previous(state)
+    previous = _previous(_status(state))
     checkout = Path(checkout)
     try:
         also_runs = _also_runs(checkout)

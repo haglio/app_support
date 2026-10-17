@@ -46,6 +46,7 @@ class Machine:
         self.workspace.mkdir()
         self.ran: list[tuple[str, ...]] = []
         self.clones = 0
+        self.github_down = False
 
     def checkout(self, name: str = "example", *, venv: bool = True, files: dict[str, str] | None = None) -> Path:
         origin = self.base / "origins" / f"{name}.git"
@@ -60,6 +61,9 @@ class Machine:
         git("commit", "-q", "-m", "seed", cwd=checkout)
         git("push", "-q", "-u", "origin", "main", cwd=checkout)
         git("remote", "set-head", "origin", "main", cwd=checkout)
+        on_github = f"git@github.com:haglio/{name}.git"
+        git("config", f"url.{origin.as_posix()}.insteadOf", on_github, cwd=checkout)
+        git("remote", "set-url", "origin", on_github, cwd=checkout)
         if venv:
             (checkout / ".venv" / "Lib" / "site-packages").mkdir(parents=True)
             (checkout / ".venv" / "Scripts").mkdir()
@@ -71,7 +75,7 @@ class Machine:
         git("config", "user.email", "someone@example.com", cwd=repo)
         git("config", "user.name", "Someone", cwd=repo)
 
-    def ship(self, checkout: Path, files: dict[str, str]) -> str:
+    def ship(self, checkout: Path, files: dict[str, str], *, fetched: bool = True) -> str:
         self.clones += 1
         clone = self.base / f"clone-{self.clones}"
         git("clone", "-q", str(self.base / "origins" / f"{checkout.name}.git"), str(clone), cwd=self.base)
@@ -81,7 +85,8 @@ class Machine:
         git("add", "-A", cwd=clone)
         git("commit", "-q", "-m", "shipped", cwd=clone)
         git("push", "-q", "origin", "main", cwd=clone)
-        git("fetch", "-q", "origin", cwd=checkout)
+        if fetched:
+            git("fetch", "-q", "origin", cwd=checkout)
         return git("rev-parse", "HEAD", cwd=clone)
 
     @staticmethod
@@ -97,11 +102,21 @@ class Machine:
         return git("rev-parse", "origin/main", cwd=checkout)
 
     def run(self, arguments, *, cwd=None, timeout=production_update.GIT_TIMEOUT_S) -> str:
+        if arguments[:3] == ["gh", "api", "graphql"]:
+            self.ran.append(("github",))
+            if self.github_down:
+                raise production_update.StepFailed("gh api said: could not reach api.github.com")
+            return json.dumps({"data": {"repositoryOwner": {"repositories": {"nodes": [
+                {"name": origin.stem, "defaultBranchRef": {"name": "main", "target": {
+                    "oid": git("rev-parse", "main", cwd=origin)}}}
+                for origin in sorted((self.base / "origins").glob("*.git"))]}}}})
         if "pip" in arguments:
             self.ran.append(("pip", *arguments[arguments.index("pip") + 1:]))
             return ""
-        if arguments[1:2] in (["merge"], ["fetch"]):
-            self.ran.append((arguments[1],))
+        if arguments[1:2] == ["fetch"]:
+            self.ran.append(("fetch", Path(cwd).name))
+        elif arguments[1:2] == ["merge"]:
+            self.ran.append(("merge",))
         return production_update.run(arguments, cwd=cwd, timeout=timeout)
 
     def bring_up(self, checkout: Path, **kwargs) -> Outcome:
@@ -537,6 +552,51 @@ class TestKeepingTheWorkspaceUp:
         assert status["pass_finished"] == 5000.0
         assert status["checkouts"]["app"]["said"] == outcomes["app"].said
 
+    def test_a_pass_asks_github_once_and_fetches_only_the_checkout_whose_main_moved(self, machine):
+        moved = machine.checkout("moved")
+        machine.checkout("still")
+        machine.ship(moved, {"new.txt": "new\n"}, fetched=False)
+
+        production_update.keep_up(machine.workspace, machine.base / "state", run=machine.run,
+                                  in_use=lambda venvs: [])
+
+        assert [step for step in machine.ran if step[0] in ("github", "fetch")] == [("github",), ("fetch", "moved")]
+        assert machine.head(moved) == machine.origin_head(moved)
+
+    @pytest.mark.parametrize("unanswered", ["GitHub is out of reach", "its origin is not on GitHub"])
+    def test_a_checkout_github_does_not_answer_for_is_fetched_once_its_last_fetch_is_old(self, machine, unanswered):
+        app = machine.checkout("app")
+        if unanswered == "GitHub is out of reach":
+            machine.github_down = True
+        else:
+            git("remote", "set-url", "origin", str(machine.base / "origins" / "app.git"), cwd=app)
+        git("fetch", "-q", "origin", cwd=app)
+        fetched_at = (app / ".git" / "FETCH_HEAD").stat().st_mtime
+        machine.ship(app, {"new.txt": "new\n"}, fetched=False)
+        state = machine.base / "state"
+
+        for seconds_later in (60, production_update.FETCH_UNASKED_AFTER_S):
+            production_update.keep_up(machine.workspace, state, run=machine.run, in_use=lambda venvs: [],
+                                      now=lambda seconds_later=seconds_later: fetched_at + seconds_later)
+
+        assert [step for step in machine.ran if step[0] == "fetch"] == [("fetch", "app")]
+        assert machine.head(app) == machine.origin_head(app)
+
+    def test_github_going_out_of_reach_and_coming_back_is_each_said_once(self, machine, caplog):
+        machine.checkout("app")
+
+        with caplog.at_level("INFO", logger="production_update"):
+            for down in (False, True, True, False, False):
+                machine.github_down = down
+                production_update.keep_up(machine.workspace, machine.base / "state", run=machine.run,
+                                          in_use=lambda venvs: [])
+
+        out_of_reach = ("GitHub: could not be asked what has shipped, so each checkout is fetched every 30 minutes "
+                        "instead: gh api said: could not reach api.github.com")
+        back = "GitHub: answers what has shipped again, so only a checkout whose main moved is fetched"
+        assert [record.getMessage() for record in caplog.records if "GitHub" in record.getMessage()] == [
+            out_of_reach, back]
+
     def test_a_folder_that_is_not_a_checkout_is_passed_over(self, machine):
         (machine.workspace / "notes").mkdir()
         machine.checkout("app")
@@ -574,7 +634,7 @@ class TestKeepingTheWorkspaceUp:
         assert sorted(outcomes) == ["host", "hosted"]
         assert machine.head(host) == machine.origin_head(host)
         assert machine.head(hosted) == machine.origin_head(hosted)
-        assert not [step for step in machine.ran if step[0] == "fetch"]
+        assert not [step for step in machine.ran if step[0] in ("fetch", "github")]
 
 
 class TestFindingWhatRunsFromAVenv:
