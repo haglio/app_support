@@ -19,6 +19,7 @@ import os
 import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
+from ctypes import wintypes
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -234,23 +235,30 @@ def where_the_pointer_is(size: tuple[int, int], screens: Screens) -> Placement:
     return Placement((x + (width - size[0]) // 2, y + (height - size[1]) // 2, *size), (0, 0))
 
 
-def screens() -> Screens:  # pragma: no cover -- what Windows says, which the suite cannot set
-    from ctypes import wintypes  # noqa: PLC0415
+class _MonitorInfo(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT), ("rcWork", wintypes.RECT),
+                ("dwFlags", wintypes.DWORD)]
 
-    class MonitorInfo(ctypes.Structure):
-        _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT), ("rcWork", wintypes.RECT),
-                    ("dwFlags", wintypes.DWORD)]
 
+def _user32():  # pragma: no cover -- Windows itself
     user32 = ctypes.WinDLL("user32")
     user32.MonitorFromPoint.argtypes = [wintypes.POINT, wintypes.DWORD]
     user32.MonitorFromPoint.restype = wintypes.HMONITOR
-    user32.GetMonitorInfoW.argtypes = [wintypes.HMONITOR, ctypes.POINTER(MonitorInfo)]
-    user32.SetProcessDPIAware()
-    metric = user32.GetSystemMetrics
-    pointer = wintypes.POINT()
-    user32.GetCursorPos(ctypes.byref(pointer))
-    info = MonitorInfo(cbSize=ctypes.sizeof(MonitorInfo))
-    user32.GetMonitorInfoW(user32.MonitorFromPoint(pointer, _NEAREST), ctypes.byref(info))
+    user32.GetMonitorInfoW.argtypes = [wintypes.HMONITOR, ctypes.POINTER(_MonitorInfo)]
+    return user32
+
+
+def screens(*, user32: Callable[[], object] = _user32) -> Screens | None:
+    try:
+        windows = user32()
+        windows.SetProcessDPIAware()
+        metric = windows.GetSystemMetrics
+        pointer = wintypes.POINT()
+        windows.GetCursorPos(ctypes.byref(pointer))
+        info = _MonitorInfo(cbSize=ctypes.sizeof(_MonitorInfo))
+        windows.GetMonitorInfoW(windows.MonitorFromPoint(pointer, _NEAREST), ctypes.byref(info))
+    except (AttributeError, OSError):
+        return None
     work = info.rcWork
     return Screens(virtual=(metric(76), metric(77), metric(78), metric(79)), primary=(metric(0), metric(1)),
                    pointer_work_area=(work.left, work.top, work.right - work.left, work.bottom - work.top))
@@ -260,11 +268,14 @@ def screens() -> Screens:  # pragma: no cover -- what Windows says, which the su
 
 
 class _Window:  # pragma: no cover -- a window, run on a desktop of its own
-    def __init__(self, place: MeetingPlace, pictures: Pictures, showing: Showing, screens: Screens):
+    def __init__(self, place: MeetingPlace, pictures: Pictures, showing: Showing, screens: Screens | None):
         import tkinter  # noqa: PLC0415
 
         self._place, self._pictures, self._showing = place, pictures, showing
         self._root = tkinter.Tk()
+        if screens is None:
+            size = (self._root.winfo_screenwidth(), self._root.winfo_screenheight())
+            screens = Screens(virtual=(0, 0, *size), primary=size, pointer_work_area=(0, 0, *size))
         self._root.withdraw()
         self._root.overrideredirect(True)
         self._root.attributes("-topmost", True)
