@@ -79,7 +79,10 @@ More that every repo in the family needs, and used to keep its own copy of:
   before they start its app, and hold `.git/production-update.turn` shared
   while the app starts, so a launch waits for an update rather than starting
   half way through one. This checkout's own launcher runs a pass over every
-  checkout, from a scheduled task, every two minutes. While an update waits
+  checkout, from a scheduled task, every two minutes; a pass asks GitHub once
+  (`gh api graphql`) what every checkout's main is and fetches only those whose
+  main moved, and a checkout the answer leaves out once its last fetch is half
+  an hour old. While an update waits
   for his programs it leaves `.git/production-update.waiting`, and an app that
   is never closed beats an `UpdateWatch` on its own timer: at a good moment of
   the app's choosing it starts the app again through its launcher, which
