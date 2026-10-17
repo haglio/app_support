@@ -30,6 +30,8 @@ family ends up doing and had all grown its own spelling of:
   * **naming a process for good**: Windows gives a finished process's number to
     the next one it starts, so a pid names one process only together with the
     moment that process started.
+  * **asking whether the user is at the computer**: how long ago the mouse or
+    the keyboard was last touched, anywhere in the session.
 
 Every call raises ``OSError`` when Windows refuses -- ``show_error_popup``
 excepted, which says why at its own docstring -- and none of them decide what
@@ -699,6 +701,23 @@ def window_exists(hwnd: int, *, user32=_user32) -> bool:
     must reach *that* window and no other asks first.
     """
     return bool(hwnd) and bool(_declare(user32(), "IsWindow", wintypes.BOOL, wintypes.HWND)(hwnd))
+
+
+class _LASTINPUTINFO(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.UINT), ("dwTime", wintypes.DWORD)]
+
+
+_TICKS_WRAP = 2**32
+
+
+def seconds_since_input(*, user32=_user32, kernel32=_kernel32) -> float:
+    info = _LASTINPUTINFO(cbSize=ctypes.sizeof(_LASTINPUTINFO))
+    last_input = _declare(user32(), "GetLastInputInfo",
+                          wintypes.BOOL, ctypes.POINTER(_LASTINPUTINFO))
+    if not last_input(ctypes.pointer(info)):
+        raise OSError("GetLastInputInfo failed")
+    now = _declare(kernel32(), "GetTickCount", wintypes.DWORD)()
+    return ((now - info.dwTime) % _TICKS_WRAP) / 1000
 
 
 def force_foreground_window(hwnd: int, *, user32=_user32, kernel32=_kernel32) -> bool:
