@@ -188,11 +188,18 @@ class Showing:
             return not self._launcher_running()
         return self._clock() - started > TAKING_OVER_WITHIN_S
 
+    @property
+    def stands_over_every_window(self) -> bool:
+        return not self._the_app_has_started()
+
     def cancel(self) -> bool:
-        if (self._place.folder / STARTED).exists():
+        if self._the_app_has_started():
             return False
         (self._place.folder / CANCELED).touch()
         return True
+
+    def _the_app_has_started(self) -> bool:
+        return (self._place.folder / STARTED).exists()
 
     def _updating(self, index: int) -> Path:
         line = self._place.lines[index] if index < len(self._place.lines) else None
@@ -283,7 +290,8 @@ class _Window:  # pragma: no cover -- a window, run on a desktop of its own
             screens = Screens(virtual=(0, 0, *size), primary=size, pointer_work_area=(0, 0, *size))
         self._root.withdraw()
         self._root.overrideredirect(True)
-        self._root.attributes("-topmost", True)
+        self._on_top = showing.stands_over_every_window
+        self._root.attributes("-topmost", self._on_top)
         self._images: dict[Path, object] = {}
         opening, self._full = self._image(pictures.opening), self._image(pictures.full)
         size = (opening.width(), opening.height())
@@ -320,6 +328,7 @@ class _Window:  # pragma: no cover -- a window, run on a desktop of its own
             if self._showing.over():
                 self._go()
                 return
+            self._stand_over_every_window(self._showing.stands_over_every_window)
             self._draw(self._showing.tick())
         except OSError:
             pass
@@ -334,6 +343,11 @@ class _Window:  # pragma: no cover -- a window, run on a desktop of its own
                                     "-to", x, y)
             self._last = frame
         self._place.stand(Shown(*self._panel_on_screen, frame.fraction))
+
+    def _stand_over_every_window(self, on_top: bool) -> None:
+        if on_top != self._on_top:
+            self._root.attributes("-topmost", on_top)
+            self._on_top = on_top
 
     def _escape(self, _event: object = None) -> None:
         if self._showing.cancel():

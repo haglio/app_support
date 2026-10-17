@@ -107,6 +107,7 @@ class DesktopOfItsOwn:
     """A desktop made for one test, which nothing started on it can reach his screen from."""
 
     _SUSPENDED, _NO_WINDOW, _UNICODE_ENVIRONMENT = 0x4, 0x08000000, 0x400
+    _EXTENDED_STYLE, _TOPMOST = -20, 0x8
 
     def __init__(self):
         from ctypes import wintypes
@@ -168,6 +169,23 @@ class DesktopOfItsOwn:
     def ended_within(self, pid: int, seconds: float) -> bool:
         started = next(each for each in self._started if each.dwProcessId == pid)
         return self._kernel32.WaitForSingleObject(started.hProcess, int(seconds * 1000)) == 0
+
+    def shows_a_window_over_every_other(self) -> bool | None:
+        from ctypes import wintypes
+
+        each_window = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+        self._user32.EnumDesktopWindows.argtypes = [wintypes.HANDLE, each_window, wintypes.LPARAM]
+        self._user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
+        self._user32.IsWindowVisible.argtypes = [wintypes.HWND]
+        found = []
+
+        def look(window, _unused):
+            if self._user32.IsWindowVisible(window):
+                found.append(bool(self._user32.GetWindowLongW(window, self._EXTENDED_STYLE) & self._TOPMOST))
+            return True
+
+        self._user32.EnumDesktopWindows(self._handle, each_window(look), 0)
+        return found[0] if found else None
 
     def close(self) -> None:
         for started in self._started:
