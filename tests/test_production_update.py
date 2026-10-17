@@ -816,6 +816,24 @@ class TestFindingWhatRunsFromAVenv:
         assert agents.pid not in {process.pid for process in production_update.running_from([venv])}
 
 
+class TestAFailedStep:
+    def test_says_the_line_that_names_why_beside_the_last_one(self):
+        # pip ends a failed clone with three lines of its own; the record of 2026-10-17's
+        # failures kept only those, and the dropped connection that caused them went unsaid.
+        printed = ("Cloning https://github.com/haglio/example_library\n"
+                   "  error: RPC failed; curl 56 Recv failure: Connection was reset\n"
+                   "  fatal: early EOF\n"
+                   "  error: subprocess-exited-with-error\n"
+                   "  note: This error originates from a subprocess, and is likely not a problem with pip.\n"
+                   "ERROR: Failed to build 'example-library' when git clone\n")
+
+        with pytest.raises(production_update.StepFailed) as failed:
+            production_update.run([sys.executable, "-c", f"import sys; sys.stderr.write({printed!r}); sys.exit(1)"])
+
+        assert "error: RPC failed; curl 56 Recv failure: Connection was reset" in str(failed.value)
+        assert "Failed to build 'example-library'" in str(failed.value)
+
+
 class TestTheCommandLine:
     def test_a_pass_brings_every_checkout_up_and_writes_down_what_it_did(self, machine):
         app = machine.checkout("app")
