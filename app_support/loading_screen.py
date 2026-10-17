@@ -18,7 +18,7 @@ import json
 import os
 import sys
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping, MutableMapping, Sequence
 from ctypes import wintypes
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -133,6 +133,10 @@ def meeting_place(environment: Mapping[str, str]) -> MeetingPlace | None:
     if not environment.get(FOLDER):
         return None
     return MeetingPlace(Path(environment[FOLDER]), tuple(json.loads(environment.get(LINES) or "[]")))
+
+
+def handed_over(environment: MutableMapping[str, str]) -> dict[str, str]:
+    return {name: environment.pop(name) for name in (FOLDER, LINES) if name in environment}
 
 
 def _updating(index: int) -> str:
