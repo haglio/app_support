@@ -238,6 +238,16 @@ class TestWhenTheLaunchersLoadingScreenGoes:
         assert not (launch.place.folder / loading_screen.CANCELED).exists()
 
 
+class TestWhatTheLaunchersLoadingScreenStandsOver:
+    def test_every_window_while_the_launcher_waits(self, launch):
+        assert launch.showing.stands_over_every_window
+
+    def test_not_the_apps_own_windows_once_the_launcher_has_started_the_app(self, launch):
+        TestWhenTheLaunchersLoadingScreenGoes.the_launcher_says(launch, loading_screen.STARTED)
+
+        assert not launch.showing.stands_over_every_window
+
+
 class _FakeUser32:
     """user32 as far as measuring the screens reaches into it."""
 
@@ -352,6 +362,28 @@ class TestTheLoadingScreenItself:
         assert (came_up, moved) == (True, True)
         assert desktop_of_its_own.ended_within(pid, 10)
         assert place.standing() is None
+
+    def test_a_message_the_app_puts_up_before_its_own_loading_screen_comes_up_over_it(
+            self, tmp_path, desktop_of_its_own):
+        place = a_place(tmp_path, "Updating Example...")
+        place.leave_pictures(opening=a_png(40, 20, (26, 26, 46)), full=a_png(40, 20, (233, 69, 96)),
+                             updating=[a_png(40, 20, (26, 26, 46))], bar=(4, 12, 32, 4), covers_every_monitor=False)
+        checkout = tmp_path / "example"
+        (checkout / ".git").mkdir(parents=True)
+        environment = {**os.environ, loading_screen.FOLDER: str(place.folder),
+                       loading_screen.LINES: json.dumps(place.lines),
+                       "PYTHONPATH": str(Path(loading_screen.__file__).parents[1])}
+
+        pid = desktop_of_its_own.start([sys.executable, "-m", "app_support.loading_screen", str(checkout)],
+                                       environment=environment)
+        came_up = eventually(lambda: desktop_of_its_own.shows_a_window_over_every_other() is not None)
+        over_every_window_while_waiting = desktop_of_its_own.shows_a_window_over_every_other()
+        (place.folder / loading_screen.STARTED).touch()
+        made_way = eventually(lambda: desktop_of_its_own.shows_a_window_over_every_other() is False)
+        place.say_taken()
+
+        assert (came_up, over_every_window_while_waiting, made_way) == (True, True, True)
+        assert desktop_of_its_own.ended_within(pid, 10)
 
 
 class TestEachLaunchStartsAfresh:
