@@ -581,12 +581,12 @@ Sub CatchUp()
   If fso.FileExists(updater) Then shell.Run Update(), 0, True
 End Sub
 """
-    return """\
+    updated = f"fso.BuildPath(screenFolder, {_text(loading_screen.UPDATED)})"
+    return f"""\
 Sub CatchUp()
-  Dim job
   If Not fso.FileExists(updater) Then Exit Sub
-  Set job = shell.Exec(Update())
-  Do While job.Status = 0
+  shell.Run "cmd /c " & Quote(Update() & " & type nul > " & Quote({updated})), 0, False
+  Do Until fso.FileExists({updated})
     StopIfCanceled
     WScript.Sleep 100
   Loop
@@ -610,6 +610,8 @@ Sub ShowLoadingScreen()
   Dim name
   shell.Environment("Process").Item({_text(loading_screen.FOLDER)}) = screenFolder
   shell.Environment("Process").Item({_text(loading_screen.LINES)}) = {_text(json.dumps(list(launcher.loading_screen)))}
+  If Not fso.FolderExists(fso.GetParentFolderName(screenFolder)) Then fso.CreateFolder fso.GetParentFolderName(screenFolder)
+  If Not fso.FolderExists(screenFolder) Then fso.CreateFolder screenFolder
   For Each name In Array({said})
     If fso.FileExists(fso.BuildPath(screenFolder, name)) Then fso.DeleteFile fso.BuildPath(screenFolder, name)
   Next

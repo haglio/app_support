@@ -358,4 +358,4 @@ class TestEachLaunchStartsAfresh:
     def test_the_launcher_clears_everything_the_last_launch_said_but_the_pictures(self):
         assert set(loading_screen.SAID_AT_EACH_LAUNCH) == {
             loading_screen.SHOWN, loading_screen.TAKEN, loading_screen.STARTED, loading_screen.ENDED,
-            loading_screen.CANCELED}
+            loading_screen.CANCELED, loading_screen.UPDATED}
