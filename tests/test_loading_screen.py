@@ -230,6 +230,54 @@ class TestWhenTheLaunchersLoadingScreenGoes:
         assert not (launch.place.folder / loading_screen.CANCELED).exists()
 
 
+class _FakeUser32:
+    """user32 as far as measuring the screens reaches into it."""
+
+    def __init__(self):
+        self.asked: list[str] = []
+        self.metrics = {0: 2560, 1: 1440, 76: -1440, 77: 0, 78: 4000, 79: 3440}
+
+    def SetProcessDPIAware(self):  # noqa: N802 - Win32's name
+        self.asked.append("pixels")
+
+    def GetSystemMetrics(self, index):  # noqa: N802 - Win32's name
+        self.asked.append("metric")
+        return self.metrics[index]
+
+    def GetCursorPos(self, point):  # noqa: N802 - Win32's name
+        point._obj.x, point._obj.y = -100, 50
+        return 1
+
+    def MonitorFromPoint(self, point, flags):  # noqa: N802 - Win32's name
+        return 7 if point.x < 0 else 1
+
+    def GetMonitorInfoW(self, monitor, info):  # noqa: N802 - Win32's name
+        work = info._obj.rcWork
+        work.left, work.top, work.right, work.bottom = (-1440, 0, 0, 3410) if monitor == 7 else (0, 0, 2560, 1410)
+        return 1
+
+
+class TestMeasuringTheScreens:
+    def test_the_whole_desktop_the_main_monitor_and_the_one_he_clicked_on_are_read(self):
+        assert loading_screen.screens(user32=_FakeUser32) == loading_screen.Screens(
+            virtual=(-1440, 0, 4000, 3440), primary=(2560, 1440), pointer_work_area=(-1440, 0, 1440, 3410))
+
+    def test_pixels_are_asked_for_before_anything_is_measured(self):
+        # Unaware, Windows answers with scaled numbers, and a cover comes up
+        # short of the real desktop on a display that is not at 100%.
+        user32 = _FakeUser32()
+
+        loading_screen.screens(user32=lambda: user32)
+
+        assert user32.asked[0] == "pixels"
+
+    def test_screens_that_cannot_be_measured_are_no_answer(self):
+        def nothing_to_ask():
+            raise AttributeError("no windll")
+
+        assert loading_screen.screens(user32=nothing_to_ask) is None
+
+
 class TestWhereTheLoadingScreenStands:
     SCREENS = loading_screen.Screens(virtual=(-1440, 0, 4000, 3440), primary=(2560, 1440),
                                      pointer_work_area=(-1440, 0, 1440, 3410))
