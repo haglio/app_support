@@ -1077,3 +1077,11 @@ class TestTheLoadingScreenAtTheClick:
         assert desktop_of_its_own.ended_within(launch, 30)
         said = {path.name for path in _screen_of(checkout).iterdir()}
         assert {loading_screen.UPDATED, loading_screen.STARTED} <= said
+
+    def test_an_app_that_ends_before_its_own_loading_screen_is_up_takes_it_down(self, tmp_path: Path):
+        checkout = _screened(tmp_path)
+
+        report = dry_run(_rendered(checkout))
+
+        assert report.value("command").endswith(
+            f' & type nul > "{_screen_of(checkout) / loading_screen.ENDED}"')
