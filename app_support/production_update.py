@@ -182,9 +182,15 @@ def run(arguments: Sequence[str], *, cwd: Path | None = None, timeout: float = G
     except OSError as cannot:
         raise StepFailed(f"{_step(arguments)} could not start: {cannot}") from None
     if finished.returncode != 0:
-        said = " / ".join((finished.stderr or finished.stdout).strip().splitlines()[-3:])
+        said = " / ".join(_why_it_failed((finished.stderr or finished.stdout).strip().splitlines()))
         raise StepFailed(f"{_step(arguments)} said: {said or f'exit status {finished.returncode}'}")
     return finished.stdout
+
+
+def _why_it_failed(printed: list[str]) -> list[str]:
+    lines = [line.strip() for line in printed]
+    cause = next((line for line in lines if line.startswith(("error:", "fatal:"))), None)
+    return [cause, lines[-1]] if cause and cause != lines[-1] else lines[-3:]
 
 
 def _step(arguments: Sequence[str]) -> str:
