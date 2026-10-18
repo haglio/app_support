@@ -34,7 +34,12 @@ _ATTEMPTS_WHILE_HELD = 5
 _DELAY_WHILE_HELD_S = 0.005
 
 
-def _retried_while_held[T](act: Callable[[], T], attempts: int, delay_s: float) -> T:
+def retried_while_held[T](
+    act: Callable[[], T],
+    *,
+    attempts: int = _ATTEMPTS_WHILE_HELD,
+    delay_s: float = _DELAY_WHILE_HELD_S,
+) -> T:
     for _ in range(attempts - 1):
         try:
             return act()
@@ -79,7 +84,7 @@ def publish_whole(
     except OSError:
         return False
     try:
-        _retried_while_held(lambda: os.replace(mine, path), attempts, delay_s)
+        retried_while_held(lambda: os.replace(mine, path), attempts=attempts, delay_s=delay_s)
     except OSError:
         with contextlib.suppress(OSError):
             mine.unlink(missing_ok=True)
@@ -110,8 +115,7 @@ def write_whole(
 
 
 def read_whole(path: Path) -> str:
-    return _retried_while_held(lambda: path.read_text(encoding="utf-8"),
-                               _ATTEMPTS_WHILE_HELD, _DELAY_WHILE_HELD_S)
+    return retried_while_held(lambda: path.read_text(encoding="utf-8"))
 
 
 def append_command(
@@ -141,7 +145,7 @@ def append_command(
     """
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        _retried_while_held(lambda: _append_line(path, line), attempts, delay_s)
+        retried_while_held(lambda: _append_line(path, line), attempts=attempts, delay_s=delay_s)
     except OSError:
         return False
     return True
