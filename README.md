@@ -43,6 +43,15 @@ More that every repo in the family needs, and used to keep its own copy of:
   own ceiling, that turns a branch too big to repeat in full into a report
   rather than a cancelled job, which says nothing at all and turns a green
   branch away.
+- **`import_sweep`** — imports every module of the packages a checkout's
+  `[tool.setuptools.packages.find]` ships, in the interpreter it is given:
+  `python -m app_support.import_sweep --python <interpreter> <checkout>`. A
+  library's merge gate runs it over an app installed against the library's
+  pull request, so a release that leaves the app unable to start is refused
+  before it ships, for the cost of an install rather than the app's whole
+  suite. It leaves `__main__` alone, names each module that raised, ended the
+  interpreter or never finished importing, and refuses a checkout it finds
+  nothing to import in.
 - **`launch_smoke`** — reads everything a launcher's entry point imports off its
   AST so a test can replay it in a fresh interpreter. A windowed launch has no
   console, so an import that fails inside one leaves the icon doing nothing and
