@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 from contextlib import ExitStack
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 import pytest
 
@@ -14,6 +14,7 @@ from app_support.file_channel import (
     publish_whole,
     read_paused_state,
     read_whole,
+    retried_while_held,
     write_whole,
 )
 
@@ -251,6 +252,35 @@ def test_a_file_that_is_not_there_is_reported_at_once_rather_than_waited_for(tmp
         read_whole(tmp_path / "never-written.txt")
 
     waited.assert_not_called()
+
+
+def test_an_act_refused_while_its_file_is_held_is_tried_again_on_the_callers_budget():
+    answers = iter([PermissionError(13, "Permission denied"), PermissionError(13, "Permission denied"),
+                    "moved"])
+
+    def move():
+        answer = next(answers)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    with patch("app_support.file_channel.time.sleep") as waited:
+        assert retried_while_held(move, attempts=3, delay_s=0.2) == "moved"
+
+    assert waited.call_args_list == [call(0.2), call(0.2)]
+
+
+def test_a_refusal_that_outlasts_the_callers_attempts_is_raised():
+    tried = []
+
+    def move():
+        tried.append(move)
+        raise PermissionError(13, "Permission denied")
+
+    with patch("app_support.file_channel.time.sleep"), pytest.raises(PermissionError):
+        retried_while_held(move, attempts=4, delay_s=0.2)
+
+    assert len(tried) == 4
 
 
 def test_a_write_makes_the_directory_it_writes_into(tmp_path: Path):
