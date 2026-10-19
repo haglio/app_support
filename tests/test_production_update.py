@@ -863,6 +863,22 @@ class TestTheCommandLine:
         assert machine.ran == []
         assert machine.head(app) != machine.origin_head(app)
 
+    @pytest.mark.parametrize("which", ["keep_up", "before_launch"], ids=["a pass", "an update before a launch"])
+    def test_an_update_that_ends_on_an_error_says_what_it_was_in_its_log(self, machine, monkeypatch, which):
+        def ends_on_an_error(*args, **kwargs):
+            raise ValueError("the record of the last pass could not be read")
+
+        monkeypatch.setattr(production_update, which, ends_on_an_error)
+        state = machine.base / "state"
+        asked = (["--before-launch", str(machine.checkout("app"))] if which == "before_launch"
+                 else ["--workspace", str(machine.workspace)])
+
+        code = production_update.main([*asked, "--state", str(state)], run=machine.run, in_use=lambda venvs: [])
+
+        assert code == 1
+        logged = (state / production_update.LOG_NAME).read_text(encoding="utf-8")
+        assert "ValueError: the record of the last pass could not be read" in logged
+
     def test_before_a_launch_only_that_checkout_is_brought_up(self, machine):
         app = machine.checkout("app")
         other = machine.checkout("other")

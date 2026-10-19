@@ -720,12 +720,16 @@ def main(argv: list[str] | None = None, *, run: Run = run, in_use: InUse = runni
     here = Path(__file__).resolve()
     state = options.state or here.parents[1] / "state"
     configure_logging("production_update", state / LOG_NAME)
-    if options.before_launch:
-        checkout = options.before_launch.resolve()
-        before_launch(checkout, options.workspace or checkout.parent, state, run=run, in_use=in_use)
-        return 0
-    with contextlib.suppress(Busy), _holding_alone(state / ONE_PASS, wait_s=0):
-        keep_up(options.workspace or workspace_of(here), state, run=run, in_use=in_use)
+    try:
+        if options.before_launch:
+            checkout = options.before_launch.resolve()
+            before_launch(checkout, options.workspace or checkout.parent, state, run=run, in_use=in_use)
+        else:
+            with contextlib.suppress(Busy), _holding_alone(state / ONE_PASS, wait_s=0):
+                keep_up(options.workspace or workspace_of(here), state, run=run, in_use=in_use)
+    except Exception:
+        _log.exception("the %s ended on an error", "update before a launch" if options.before_launch else "pass")
+        return 1
     return 0
 
 

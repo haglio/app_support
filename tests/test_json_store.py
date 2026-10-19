@@ -27,6 +27,14 @@ def test_a_document_read_while_it_is_being_replaced_reads_whole(tmp_path, being_
         assert read_json(path) == {"video": {"act": "alpha"}}
 
 
+@pytest.mark.parametrize("left_by_a_crash", [b"\x00" * 3045, b""], ids=["zeros", "nothing"])
+def test_a_document_a_crash_left_with_no_record_in_it_reads_as_an_empty_one(tmp_path, left_by_a_crash):
+    path = tmp_path / "production_update.json"
+    path.write_bytes(left_by_a_crash)
+
+    assert read_json(path) == {}
+
+
 def test_a_document_that_will_not_parse_raises_rather_than_reading_as_empty(tmp_path):
     path = tmp_path / "torn.json"
     path.write_text('{"video": {"act"', encoding="utf-8")

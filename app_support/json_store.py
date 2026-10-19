@@ -44,7 +44,7 @@ _POLL_S = 0.005
 def read_json(path: Path) -> dict:
     """*path*'s document, or an empty one when there is no file there.
 
-    Absent is the ordinary first-run case and reads as empty.  Anything else
+    Absent, or left by a crash with no byte of a record in it, reads as empty.  Anything else
     that cannot be read as a JSON object raises, because this document belongs
     to several apps at once: reading a file we cannot parse as ``{}`` and then
     writing our own field into it replaces somebody else's record with ours.
@@ -52,6 +52,8 @@ def read_json(path: Path) -> dict:
     try:
         text = read_whole(path)
     except FileNotFoundError:
+        return {}
+    if not text.strip("\x00"):
         return {}
     payload = json.loads(text)
     if not isinstance(payload, dict):
