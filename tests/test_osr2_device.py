@@ -7,11 +7,20 @@ from app_support.osr2_device import (
     ANSWERING_TRUSTED_S,
     ANSWERS_ONCE_OFF_S,
     SILENT_ONCE_OFF_S,
+    TROUBLE_RENEWED_WITHIN_S,
     Osr2Mode,
+    Osr2Trouble,
     mode,
     switched_on,
+    trouble,
 )
-from app_support.state_files import BROKER_MODE, OSR2_SERIAL_ANSWER, OSR2_SERIAL_RX
+from app_support.state_files import (
+    BROKER_MODE,
+    OSR2_NOT_ANSWERING,
+    OSR2_NOT_FOUND,
+    OSR2_SERIAL_ANSWER,
+    OSR2_SERIAL_RX,
+)
 
 
 def _spoke_at(state_dir: Path, when: float) -> None:
@@ -95,3 +104,35 @@ def test_one_whose_broker_has_not_said_is_controlled(tmp_path):
     _spoke_at(tmp_path, 100.0)
 
     assert mode(tmp_path, now=100.5) is Osr2Mode.CONTROLLED
+
+
+def test_an_osr2_the_broker_cannot_find_is_not_found(tmp_path):
+    publish_stamp(tmp_path / OSR2_NOT_FOUND, 100.0)
+
+    assert trouble(tmp_path, now=101.0) is Osr2Trouble.NOT_FOUND
+
+
+def test_a_not_found_stamp_the_broker_stopped_renewing_is_no_trouble(tmp_path):
+    publish_stamp(tmp_path / OSR2_NOT_FOUND, 100.0)
+
+    assert trouble(tmp_path, now=100.0 + TROUBLE_RENEWED_WITHIN_S) is None
+
+
+def test_an_osr2_driven_for_minutes_without_a_word_back_is_not_answering(tmp_path):
+    publish_stamp(tmp_path / OSR2_NOT_ANSWERING, 100.0)
+
+    assert trouble(tmp_path, now=101.0) is Osr2Trouble.NOT_ANSWERING
+
+
+def test_an_osr2_heard_again_has_no_trouble_though_the_broker_said_so_a_moment_ago(tmp_path):
+    publish_stamp(tmp_path / OSR2_NOT_ANSWERING, 100.0)
+    _answered_at(tmp_path, 100.5)
+
+    assert trouble(tmp_path, now=100.6) is None
+
+
+def test_an_osr2_the_broker_lost_is_not_found_whatever_it_said_of_its_answers(tmp_path):
+    publish_stamp(tmp_path / OSR2_NOT_ANSWERING, 100.0)
+    publish_stamp(tmp_path / OSR2_NOT_FOUND, 100.5)
+
+    assert trouble(tmp_path, now=101.0) is Osr2Trouble.NOT_FOUND

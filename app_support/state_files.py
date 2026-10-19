@@ -48,6 +48,18 @@ OSR2_SERIAL_TX = "osr2_serial_tx.txt"
 """Broker -> Fun Time.  A stamp of the last word TO the device: a driver sending
 is a device in use even while it says nothing back."""
 
+OSR2_NOT_FOUND = "osr2_not_found.txt"
+"""Broker -> Fun Time, Origenerator and the broker's tray.  A stamp the broker
+renews about once a second while it runs and finds no USB adapter it can take
+for the OSR2's: none plugged in, or two it cannot tell apart."""
+
+OSR2_NOT_ANSWERING = "osr2_not_answering.txt"
+"""Broker -> Fun Time, Origenerator and the broker's tray.  A stamp the broker
+renews about once a second once Fun Time, Origenerator or MFP has been driving
+the OSR2 for minutes since it last heard a word from it.  A switched-off OSR2
+and one whose words no longer reach the computer both say nothing, so this is
+the most the computer can know of the second."""
+
 # --- Genau's channel, under the orchestrator's state directory ---------------
 
 GENAU_CMD = "genau_cmd.txt"
