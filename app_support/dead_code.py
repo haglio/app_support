@@ -31,9 +31,12 @@ venv where a scanner has no business being.
 from __future__ import annotations
 
 import ast
+import json
 import re
 import subprocess
 import sys
+import tempfile
+from collections.abc import Iterable
 from pathlib import Path
 
 from app_support import lint
@@ -89,10 +92,25 @@ def _refuse_a_whitelist_inside_the_scan(
             )
 
 
+def _refuse_a_target_inside_a_caller(
+    targets: tuple[Path | str, ...], callers: tuple[Path, ...]
+) -> None:
+    """What is inside a caller is left out of the report, so a target there
+    would be scanned and never reported on."""
+    for target in targets:
+        path = Path(target).resolve()
+        for caller in callers:
+            if path == caller or caller in path.parents:
+                raise ScanDidNotRun(
+                    f"{path} is inside {caller}, which is read as a caller and left out of the report"
+                )
+
+
 def scan(
     *targets: Path | str,
     whitelist: Path | str | None = None,
     min_confidence: int = 60,
+    callers: Iterable[Path | str] = (),
 ) -> str:
     """vulture's report over *targets*; empty when there is nothing to report.
 
@@ -101,30 +119,70 @@ def scan(
     is handed to vulture as one more thing to scan, so a name mentioned there
     counts as used.
 
+    *callers* are read alongside the targets, so a name they use counts as used,
+    and what is dead inside them is left to their own gate: a library's own tests,
+    and the apps that import it.
+
     Raises `ScanDidNotRun` rather than returning that same empty string when the
     scan did not happen. The two are the whole difficulty: a gate that reads
     "vulture is not installed" or "that directory is gone" as a clean tree is
     green for the rest of its life.
     """
+    callers = tuple(Path(caller).resolve() for caller in callers)
+    _refuse_a_target_inside_a_caller(targets, callers)
     if whitelist is not None:
         _refuse_a_whitelist_inside_the_scan(targets, whitelist)
         targets = (*targets, whitelist)
     _refuse_a_target_with_nothing_to_read(targets)
-    command = [sys.executable, "-m", "vulture",
-               *(str(target) for target in targets),
-               "--min-confidence", str(min_confidence)]
-    result = subprocess.run(command, capture_output=True, text=True)
+    with tempfile.TemporaryDirectory() as scratch:
+        config = Path(scratch) / "pyproject.toml"
+        config.write_text(_vulture_config_reading(*targets, *callers), encoding="utf-8")
+        command = [sys.executable, "-m", "vulture", "--config", str(config),
+                   "--min-confidence", str(min_confidence)]
+        result = subprocess.run(command, capture_output=True, text=True)
     if result.returncode == _REPORT_IS_NOT_EMPTY:
-        return result.stdout
+        return _without_what_is_inside(callers, result.stdout)
     if result.returncode != _NOTHING_TO_REPORT:
         raise ScanDidNotRun(
-            f"vulture exited {result.returncode} instead of scanning:\n"
-            f"  {' '.join(command)}\n{result.stdout}{result.stderr}"
+            f"vulture exited {result.returncode} instead of scanning "
+            f"{', '.join(str(target) for target in targets)}:\n{result.stdout}{result.stderr}"
         )
     return ""
 
 
-def _reports(targets, whitelist, min_confidence, each_alone) -> str:
+def _vulture_config_reading(*paths: Path | str) -> str:
+    """A JSON string is a TOML basic string, so each path is spelled by `json.dumps`."""
+    listed = ", ".join(json.dumps(Path(path).as_posix(), ensure_ascii=False) for path in paths)
+    return f"[tool.vulture]\npaths = [{listed}]\n"
+
+
+_FINDING = re.compile(r"^(?P<path>.+?):\d+: ")
+
+
+def _without_what_is_inside(callers: tuple[Path, ...], report: str) -> str:
+    files = {caller for caller in callers if not caller.is_dir()}
+    directories = [caller for caller in callers if caller.is_dir()]
+
+    def inside_a_caller(line: str) -> bool:
+        finding = _FINDING.match(line)
+        if finding is None:
+            return False
+        path = (Path.cwd() / finding["path"]).resolve()
+        return path in files or any(directory in path.parents for directory in directories)
+
+    return "".join(line for line in report.splitlines(keepends=True) if not inside_a_caller(line))
+
+
+def tracked_python(checkout: Path | str) -> list[Path]:
+    listed = subprocess.run(["git", "-C", str(checkout), "ls-files", "-z", "--", "*.py"],
+                            capture_output=True, text=True, encoding="utf-8")
+    files = [Path(checkout) / name for name in listed.stdout.split("\0") if name]
+    if not files:
+        raise ScanDidNotRun(f"nothing to read: {checkout} tracks no Python\n{listed.stderr}")
+    return files
+
+
+def _reports(targets, whitelist, min_confidence, each_alone, callers) -> str:
     """vulture's report over *targets* -- one run, or one run per target.
 
     Scanned together, packages hide each other's corpses: vulture matches by
@@ -132,9 +190,10 @@ def _reports(targets, whitelist, min_confidence, each_alone) -> str:
     is invisible while any other has a live name like it. One run each is
     narrower, and costs the cross-package readers, which the whitelist names.
     """
+    callers = tuple(callers)
     if not each_alone:
-        return scan(*targets, whitelist=whitelist, min_confidence=min_confidence)
-    return "".join(scan(target, whitelist=whitelist, min_confidence=min_confidence)
+        return scan(*targets, whitelist=whitelist, min_confidence=min_confidence, callers=callers)
+    return "".join(scan(target, whitelist=whitelist, min_confidence=min_confidence, callers=callers)
                    for target in targets)
 
 
@@ -143,9 +202,10 @@ def assert_no_dead_code(
     whitelist: Path | str | None = None,
     min_confidence: int = 60,
     each_alone: bool = False,
+    callers: Iterable[Path | str] = (),
 ) -> None:
     """Fail the suite with vulture's report over *targets*."""
-    report = _reports(targets, whitelist, min_confidence, each_alone)
+    report = _reports(targets, whitelist, min_confidence, each_alone, callers)
     assert not report, (
         "vulture found dead code. Delete it, or -- if the caller is a framework "
         "vulture cannot see -- add the name to the whitelist with a comment "
@@ -184,6 +244,7 @@ def assert_whitelist_is_live(
     whitelist: Path | str,
     min_confidence: int = 60,
     each_alone: bool = False,
+    callers: Iterable[Path | str] = (),
 ) -> None:
     """Fail on a whitelist entry that no longer suppresses anything.
 
@@ -194,7 +255,7 @@ def assert_whitelist_is_live(
     and its gate could not see what its own deletions had made stale.
     """
     _refuse_a_whitelist_inside_the_scan(targets, whitelist)
-    report = _reports(targets, None, min_confidence, each_alone)
+    report = _reports(targets, None, min_confidence, each_alone, callers)
     stale = sorted(
         _names_the_whitelist_suppresses(whitelist) - _names_the_report_carries(report)
     )
