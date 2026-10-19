@@ -4,15 +4,14 @@
 Every consumer of this library lives in another repo, so no production call site
 here reaches any published name: vulture pointed at `app_support/` alone reports
 essentially the entire surface, and the whitelist needed to quiet it would be a
-restatement of the API -- a gate that cannot fail, which is what `funestra`
-declined to keep for exactly this reason.
+restatement of the API -- a gate that cannot fail.
 
 Scanning `tests/` alongside asks a question that has an answer: is every name
 this package publishes reached by *something* in this repo? A name no test
 touches is either dead or untested, and both want the same next move. What it
-gives up is a name a test exercises and no consumer wants; the consumer-import
-scan `funestra` carries is the shape that catches those, and it needs the
-sibling checkouts this gate deliberately does not read.
+gives up is a name a test exercises and no consumer wants. funestra gives that
+up too: its gate reads the apps as `callers`, and its own tests with them, so
+that a name it adds for an app passes before the app can use it.
 """
 from __future__ import annotations
 
