@@ -17,6 +17,7 @@ def test_the_numbers_are_the_ones_the_running_configs_already_say():
     assert ports.GENAU_UDP == 50555
     assert ports.AUDIO_COMPANION == 50556
     assert ports.USERSCRIPT_HTTP == 8770
+    assert ports.OSR2_SLOT == 50558
 
 
 def test_no_two_agreements_claim_the_same_port():
