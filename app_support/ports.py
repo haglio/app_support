@@ -27,6 +27,13 @@ The device protocol: position-and-duration lines the broker relays over serial
 to the hardware.  ``funestra.tcode.UdpTCodeSink`` is the socket all four
 senders reach it through, and its own default is this number."""
 
+OSR2_SLOT = 50558
+"""The broker listens; whichever sender has the OSR2 connects and sends.
+
+Over TCP, unlike the rest: the connected sender is the only one that reaches the
+device, and connecting takes it from whoever was connected before.  What goes
+down the connection is :mod:`app_support.osr2_slot`."""
+
 GENAU_UDP = 50555
 """Genau listens; the broker and Fun Time's headset send.
 
