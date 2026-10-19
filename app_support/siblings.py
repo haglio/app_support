@@ -5,8 +5,8 @@ its shared widgets, the Funestras' core, Fun Time's favorites file -- asked wher
 it was in eight independent ways, four of them by spelling the directory's name
 into a path count.  Two of them put the sibling on ``sys.path`` with opposite
 ideas about where: one at the front, where the sibling's own ``tests`` and
-``tools`` packages then shadowed the app's, and one at the back.  Two questions,
-two answers:
+``tools`` packages then shadowed the app's, and one at the back.  Three
+questions, three answers:
 
   * **Where is the checkout named *name*?**  Beside this one.  Found by walking
     up from a file of this checkout until a directory holds ``name/name/`` with
@@ -20,6 +20,9 @@ two answers:
     root.  That is :func:`app_support.haglio_settings.project_roots` and
     :func:`project_dir`, for the apps that reach a sibling's *files* rather than
     its package.
+  * **Which checkouts import a package?**  The ones beside it whose tracked code
+    says so, which is how a library's dead-code gate finds the apps that call it
+    without naming them.  That is :func:`checkouts_that_import`.
 
 The same question asked about *this* checkout is
 :func:`assert_imported_from_checkout`, which a suite calls on itself.
@@ -29,6 +32,7 @@ Standard library only.
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 import sys
 from collections.abc import Iterable, Sequence
 from pathlib import Path
@@ -54,6 +58,20 @@ def workspace_of(module_file: Path) -> Path:
             f"{module_file} is not in a checkout, so the checkouts beside it cannot be found: "
             "name the folder that holds them with --workspace")
     return checkout.parent
+
+
+def checkouts_that_import(*packages: str, near: Path) -> list[Path]:
+    """The checkouts beside the one *near* is in whose tracked code imports one of
+    *packages*: found rather than named, so a library never has to know its apps."""
+    an_import = rf"^[[:space:]]*(from|import)[[:space:]]+({'|'.join(packages)})([.[:space:]]|$)"
+    return [
+        checkout for checkout in sorted(workspace_of(near).iterdir())
+        if checkout.is_dir()
+        and not any((checkout / package / "__init__.py").is_file() for package in packages)
+        and subprocess.run(
+            ["git", "-C", str(checkout), "grep", "-q", "-E", "-e", an_import, "--", "*.py"],
+            capture_output=True).returncode == 0
+    ]
 
 
 def sibling_checkout(name: str, *, near: Path) -> Path:

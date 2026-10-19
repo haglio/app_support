@@ -51,12 +51,15 @@ class Branch:
     def git(self, *args: str) -> None:
         subprocess.run(["git", "-C", str(self.path), *args], check=True, capture_output=True)
 
-    def commit(self, files: dict[str, str], message: str = "a change") -> None:
+    def track(self, files: dict[str, str]) -> None:
         for name, text in files.items():
             target = self.path / name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(text, encoding="utf-8")
         self.git("add", "-A")
+
+    def commit(self, files: dict[str, str], message: str = "a change") -> None:
+        self.track(files)
         self.git("commit", "-q", "-m", message)
 
 
@@ -72,6 +75,19 @@ def branch_from(tmp_path):
         branch.commit(files, "the base")
         branch.git("checkout", "-q", "-b", "branch")
         return branch
+    return make
+
+
+@pytest.fixture
+def checkout_tracking(tmp_path):
+    """Make a checkout named *name* in the folder the others sit in, its *files*
+    tracked and nothing committed."""
+    def make(name: str, files: dict[str, str]) -> Path:
+        checkout = Branch(tmp_path / name)
+        checkout.path.mkdir()
+        checkout.git("init", "-q")
+        checkout.track(files)
+        return checkout.path
     return make
 
 

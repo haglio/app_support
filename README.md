@@ -279,6 +279,20 @@ that each target has Python under it before starting, and treats every exit code
 but "clean" and "here is the report" as a scan that did not happen. A gate that
 conflates them goes green the day its target is renamed and stays green.
 
+**A library reads its callers.** Every caller of a library lives somewhere
+else -- its own tests, the apps that import it -- so the scan takes them as
+`callers`: read alongside the targets, so a name they use counts as used, and
+left out of the report, since what is dead inside them is their own gate's.
+`checkouts_that_import` finds the apps beside the checkout rather than naming
+them, and `tracked_python` reads only what a checkout tracks, never its venv or
+its worktrees:
+
+```python
+apps = checkouts_that_import("the_package", near=Path(__file__))
+callers = [ROOT / "tests", *(path for app in apps for path in tracked_python(app))]
+assert_no_dead_code(ROOT / "the_package", whitelist=WHITELIST, callers=callers)
+```
+
 **The rest of what a dead-code gate asks.** Two repos had grown checks the
 scan cannot make, and they are published beside it so every repo asks the same
 questions: `assert_every_package_is_scanned` (a package added beside the named

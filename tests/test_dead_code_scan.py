@@ -18,6 +18,7 @@ from app_support.dead_code import (
     assert_nothing_is_imported_or_assigned_and_left_unread,
     assert_whitelist_is_live,
     scan,
+    tracked_python,
 )
 
 
@@ -54,6 +55,88 @@ def test_the_gate_fails_on_a_function_nothing_calls(tmp_path):
         assert_no_dead_code(package)
 
     assert "polish_the_brass" in str(failure.value)
+
+
+def test_a_name_only_a_caller_uses_is_not_reported(tmp_path):
+    package = _tree(tmp_path, widgets="def polish_the_brass():\n    pass\n")
+    caller = tmp_path / "parlour.py"
+    caller.write_text(
+        "from example_package.widgets import polish_the_brass\n\npolish_the_brass()\n",
+        encoding="utf-8",
+    )
+
+    assert_no_dead_code(package, callers=[caller])
+
+
+def test_what_is_dead_inside_a_caller_is_left_to_its_own_gate(tmp_path):
+    package = _tree(tmp_path, widgets="def polish_the_brass():\n    pass\n")
+    caller = tmp_path / "parlour.py"
+    caller.write_text(
+        "from example_package.widgets import polish_the_brass\n\npolish_the_brass()\n\n\n"
+        "def wind_the_clock():\n    pass\n",
+        encoding="utf-8",
+    )
+
+    assert scan(package, callers=[caller]) == ""
+
+
+def test_more_callers_than_a_command_line_holds_are_all_read(tmp_path):
+    """A library's callers are a thousand files across the apps, and Windows
+    holds a command line to 32767 characters."""
+    package = _tree(tmp_path, widgets="def polish_the_brass():\n    pass\n")
+    callers = [tmp_path / f"a_caller_named_at_the_length_an_app_names_its_modules_{n:04}.py"
+               for n in range(400)]
+    for caller in callers:
+        caller.write_text("", encoding="utf-8")
+    callers[-1].write_text(
+        "from example_package.widgets import polish_the_brass\n\npolish_the_brass()\n",
+        encoding="utf-8",
+    )
+
+    assert_no_dead_code(package, callers=callers)
+
+
+def test_a_target_inside_a_caller_is_refused_rather_than_left_out_of_the_report(tmp_path):
+    package = _tree(tmp_path, widgets="def polish_the_brass():\n    pass\n")
+
+    with pytest.raises(ScanDidNotRun):
+        scan(package, callers=[tmp_path])
+
+
+def test_a_whitelist_entry_for_a_name_a_caller_uses_suppresses_nothing(tmp_path):
+    package = _tree(tmp_path, widgets="def polish_the_brass():\n    pass\n")
+    caller = tmp_path / "parlour.py"
+    caller.write_text(
+        "from example_package.widgets import polish_the_brass\n\npolish_the_brass()\n",
+        encoding="utf-8",
+    )
+    whitelist = tmp_path / "vulture_whitelist.py"
+    whitelist.write_text("polish_the_brass  # the parlour calls it\n", encoding="utf-8")
+
+    with pytest.raises(AssertionError, match="polish_the_brass"):
+        assert_whitelist_is_live(package, whitelist=whitelist, callers=[caller])
+
+
+def test_a_checkouts_python_is_what_it_tracks(checkout_tracking):
+    """Beside its own code a checkout holds a venv, worktrees and caches, none of
+    them a caller: read whole, fun_time's came to 27,000 files."""
+    app = checkout_tracking("an_app", {"parlour.py": "", "drawing_room.py": ""})
+    installed = app / ".venv" / "Lib" / "site-packages" / "example_package"
+    installed.mkdir(parents=True)
+    (installed / "widgets.py").write_text("", encoding="utf-8")
+
+    assert sorted(path.name for path in tracked_python(app)) == ["drawing_room.py", "parlour.py"]
+
+
+def test_a_folder_that_tracks_no_python_is_refused_rather_than_read_as_no_callers(
+        tmp_path, checkout_tracking):
+    (tmp_path / "not_a_checkout").mkdir()
+    (tmp_path / "not_a_checkout" / "parlour.py").write_text("", encoding="utf-8")
+    prose_only = checkout_tracking("prose_only", {"README.md": "prose only\n"})
+
+    for folder in (tmp_path / "not_a_checkout", prose_only):
+        with pytest.raises(ScanDidNotRun):
+            tracked_python(folder)
 
 
 def test_a_whitelist_entry_takes_a_name_out_of_the_report(tmp_path):

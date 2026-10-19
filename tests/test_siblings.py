@@ -12,6 +12,7 @@ import pytest
 
 from app_support.siblings import (
     assert_imported_from_checkout,
+    checkouts_that_import,
     ensure_sibling_importable,
     project_dir,
     project_roots,
@@ -206,3 +207,27 @@ class TestWhereTheCheckoutsAre:
 
         with pytest.raises(ValueError, match="--workspace"):
             workspace_of(module)
+
+
+class TestTheCheckoutsThatImportAPackage:
+    def test_they_are_the_checkouts_beside_it_whose_code_imports_it(self, checkout_tracking):
+        library = checkout_tracking("widgetlib", {"pyproject.toml": "", "widgetlib/__init__.py": ""})
+        someapp = checkout_tracking("someapp", {"parlour.py": "from widgetlib import hinges\n"})
+        otherapp = checkout_tracking(
+            "otherapp", {"drawing_room.py": "def f():\n    import widgetlib.hinges\n"})
+        checkout_tracking("unrelated", {"study.py": "import widgetlibrary\n"})
+
+        found = checkouts_that_import("widgetlib", near=library / "tests" / "test_dead_code.py")
+
+        assert found == [otherapp, someapp]
+
+    def test_a_checkout_holding_the_package_is_a_copy_of_it_and_no_caller(self, checkout_tracking):
+        """A worktree's own primary, and the old-named clone this machine keeps of
+        funestra: read as callers, they count the package's names as used."""
+        package = {"pyproject.toml": "", "widgetlib/__init__.py": "",
+                   "tests/test_hinges.py": "from widgetlib import hinges\n"}
+        primary = checkout_tracking("widgetlib", package)
+        checkout_tracking("widgetlib_before_the_rename", package)
+        worktree = primary / ".claude" / "worktrees" / "some-branch"
+
+        assert checkouts_that_import("widgetlib", near=worktree / "tests" / "test_dead_code.py") == []
