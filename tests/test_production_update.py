@@ -473,6 +473,68 @@ class TestAHotfix:
         assert machine.head(checkout) == second
 
 
+class TestTakingAHotfixBack:
+    def test_a_checkout_whose_hotfix_is_taken_back_goes_back_to_what_shipped(self, machine):
+        checkout = machine.checkout()
+        shipped = machine.head(checkout)
+        machine.hotfix(checkout, {"fix.txt": "fixed\n"})
+        machine.bring_up(checkout)
+
+        production_update.take_back(checkout, run=machine.run)
+        machine.bring_up(checkout)
+
+        assert machine.head(checkout) == shipped
+        assert not (checkout / "fix.txt").exists()
+
+    def test_a_hotfix_taken_back_before_the_checkout_took_it_is_never_taken(self, machine):
+        checkout = machine.checkout()
+        shipped = machine.head(checkout)
+        machine.hotfix(checkout, {"fix.txt": "fixed\n"})
+        machine.bring_up(checkout, in_use=lambda venvs: [a_process("Example-Example.exe")])
+
+        production_update.take_back(checkout, run=machine.run)
+        machine.bring_up(checkout)
+
+        assert machine.head(checkout) == shipped
+        assert machine.hotfix_asked_for(checkout) is None
+
+    def test_a_hotfix_that_failed_to_ship_in_a_day_goes_at_once_when_taken_back(self, machine):
+        checkout = machine.checkout()
+        shipped = machine.head(checkout)
+        hotfix = machine.hotfix(checkout, {"fix.txt": "fixed\n"})
+        machine.bring_up(checkout)
+        a_day_on = int(git("log", "-1", "--format=%ct", hotfix, cwd=checkout)) + production_update.HOTFIX_SHIPS_WITHIN_S + 1
+        failed = machine.bring_up(checkout, now=lambda: a_day_on)
+
+        production_update.take_back(checkout, run=machine.run)
+        machine.bring_up(checkout, previous=failed, now=lambda: a_day_on + 60)
+
+        assert machine.head(checkout) == shipped
+
+    def test_a_hotfix_made_after_a_take_back_is_taken(self, machine):
+        checkout = machine.checkout()
+        shipped = machine.head(checkout)
+        machine.hotfix(checkout, {"one.txt": "fixed\n"})
+        machine.bring_up(checkout)
+        production_update.take_back(checkout, run=machine.run)
+        second = machine.hotfix(checkout, {"two.txt": "fixed\n"}, on=shipped)
+
+        machine.bring_up(checkout)
+
+        assert machine.head(checkout) == second
+        assert not (checkout / "one.txt").exists()
+
+    def test_a_taken_back_hotfix_of_the_shared_code_puts_back_the_version_production_follows(self, machine):
+        _, checkout, _ = TestAHotfixOfTheSharedCode.a_library_and_an_app(machine)
+        machine.install(checkout, "funestra", "0.1.1.1")
+        machine.ran.clear()
+
+        production_update.take_back(checkout, run=machine.run)
+        machine.bring_up(checkout)
+
+        assert ("pip", "install", spec("funestra", "0.1.1")) in machine.ran
+
+
 class TestAHotfixOfTheSharedCode:
     FIX = ("someone@example.com", 1_700_000_200, "funestra")
 
