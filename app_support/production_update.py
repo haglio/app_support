@@ -55,6 +55,7 @@ PROGRESS = "production-update.progress"
 # folder holding the checkouts: this repo's own launcher runs out of it too.
 UPDATER = r"app_support\.venv\Scripts\pythonw.exe"
 HOTFIX_REF = "refs/haglio/hotfix"
+TAKEN_BACK_REF = "refs/haglio/taken-back"
 HOTFIX_OF = "Hotfix-of"
 ONE_PASS = "production_update.pass"
 LOG_NAME = "production_update.log"
@@ -458,10 +459,12 @@ def _plan(checkout: Path, branch: str, target: str, *, workspace: Path, run: Run
     moves = head != target and bool(is_ancestor(checkout, head, target, run=run))
     if head != target and not moves:
         if hotfixes := _hotfixes_on(checkout, branch, head, run=run):
-            if unshipped := [hotfix for hotfix in hotfixes
-                             if not _has_shipped(hotfix, checkout, workspace, head, target, run=run)]:
+            taken_back = _taken_back(checkout, head, run=run)
+            if not taken_back and (unshipped := [hotfix for hotfix in hotfixes
+                                                 if not _has_shipped(hotfix, checkout, workspace, head, target,
+                                                                     run=run)]):
                 return _kept_at_its_hotfix(head, target, unshipped, now=now)
-            moves = not is_ancestor(checkout, target, head, run=run)
+            moves = taken_back or not is_ancestor(checkout, target, head, run=run)
         elif not is_ancestor(checkout, target, head, run=run):
             return _Plan(head, target, False, [],
                          f"has commits {_describe(checkout, branch, target, run=run)} does not; left where it is")
@@ -494,6 +497,23 @@ class _Hotfix:
 def _commits(checkout: Path, span: str, *fields: str, run: Run) -> list[list[str]]:
     listed = git(checkout, "log", "--format=" + _FIELD.join(fields) + _RECORD, span, run=run)
     return [record.strip().split(_FIELD, len(fields) - 1) for record in listed.split(_RECORD) if record.strip()]
+
+
+def runs_a_hotfix(checkout: Path, *, run: Run = run) -> bool:
+    branch = default_branch(checkout, run=run)
+    return bool(branch and _hotfixes_on(checkout, branch, git(checkout, "rev-parse", "HEAD", run=run), run=run))
+
+
+def take_back(checkout: Path, *, run: Run = run) -> bool:
+    if asked := git_or_none(checkout, "rev-parse", "--verify", "--quiet", HOTFIX_REF, run=run):
+        git(checkout, "update-ref", "-d", HOTFIX_REF, asked, run=run)
+    if running := runs_a_hotfix(checkout, run=run):
+        git(checkout, "update-ref", TAKEN_BACK_REF, git(checkout, "rev-parse", "HEAD", run=run), run=run)
+    return bool(asked) or running
+
+
+def _taken_back(checkout: Path, head: str, *, run: Run) -> bool:
+    return git_or_none(checkout, "rev-parse", "--verify", "--quiet", TAKEN_BACK_REF, run=run) == head
 
 
 def _hotfixes_on(checkout: Path, branch: str, head: str, *, run: Run) -> list[_Hotfix]:
@@ -658,7 +678,8 @@ def bring_up(checkout: Path, *, workspace: Path, run: Run = run, wait_s: float =
     try:
         branch, target = _branch_and_target(checkout, run=run)
         if (previous is not None and previous.failed and previous.target == target
-                and now() - previous.at < RETRY_FAILED_AFTER_S and not _libraries_off(checkout, "HEAD", run=run)):
+                and now() - previous.at < RETRY_FAILED_AFTER_S and not _libraries_off(checkout, "HEAD", run=run)
+                and not _taken_back(checkout, git(checkout, "rev-parse", "HEAD", run=run), run=run)):
             return previous
         said = _bring_up_to(checkout, branch, target, workspace=workspace, run=run, wait_s=wait_s, in_use=in_use,
                             now=now)
