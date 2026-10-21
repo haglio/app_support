@@ -39,6 +39,7 @@ import tomllib
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from ctypes import wintypes
 from pathlib import Path, PureWindowsPath
+from typing import NamedTuple
 
 from app_support import json_store, processes, win32
 from app_support.dependencies import SiblingPin, sibling_pins_in
@@ -81,7 +82,7 @@ MOVE_S = 2.0
 REINSTALL_S = 10.0
 
 _KEYS = frozenset({"commit-file", "also-runs"})
-_STANDS_FOR = re.compile(rf"^{HOTFIX_OF}: (\S+) (\d+)$", re.MULTILINE)
+_STANDS_FOR = re.compile(rf"^{HOTFIX_OF}: (\S+) (\d+)(?: in (\S+))?$", re.MULTILINE)
 _REVERTS = re.compile(r"This reverts commit ([0-9a-f]{40})")
 _FIELD, _RECORD = "\x1f", "\x1e"
 _ON_GITHUB = re.compile(r"github\.com[:/](?P<owner>[^/]+)/(?P<name>[^/]+?)(?:\.git)?/?$", re.IGNORECASE)
@@ -449,7 +450,7 @@ def _the_hotfix_or(checkout: Path, target: str, *, run: Run) -> str:
     return target
 
 
-def _plan(checkout: Path, branch: str, target: str, *, run: Run, now: Callable[[], float]) -> _Plan:
+def _plan(checkout: Path, branch: str, target: str, *, workspace: Path, run: Run, now: Callable[[], float]) -> _Plan:
     head = _git(checkout, "rev-parse", "HEAD", run=run)
     on = _git_or_none(checkout, "symbolic-ref", "--quiet", "--short", "HEAD", run=run)
     if on != branch:
@@ -457,8 +458,8 @@ def _plan(checkout: Path, branch: str, target: str, *, run: Run, now: Callable[[
     moves = head != target and bool(_ancestor(checkout, head, target, run=run))
     if head != target and not moves:
         if hotfixes := _hotfixes_on(checkout, branch, head, run=run):
-            shipped = _authors_shipped(checkout, head, target, run=run)
-            if unshipped := [(subject, made) for subject, made, stands_for in hotfixes if not stands_for & shipped]:
+            if unshipped := [hotfix for hotfix in hotfixes
+                             if not _has_shipped(hotfix, checkout, workspace, head, target, run=run)]:
                 return _kept_at_its_hotfix(head, target, unshipped, now=now)
             moves = not _ancestor(checkout, target, head, run=run)
         elif not _ancestor(checkout, target, head, run=run):
@@ -470,8 +471,24 @@ def _plan(checkout: Path, branch: str, target: str, *, run: Run, now: Callable[[
     return _Plan(head, target, moves, libraries)
 
 
-def hotfix_message(subject: str, stands_for: Iterable[tuple[str, int]]) -> str:
-    return subject + "\n\n" + "".join(f"{HOTFIX_OF}: {email} {seconds}\n" for email, seconds in stands_for)
+class Original(NamedTuple):
+    email: str
+    seconds: int
+    repo: str = ""
+
+
+def hotfix_message(subject: str, originals: Iterable[tuple]) -> str:
+    lines = [f"{HOTFIX_OF}: {original.email} {original.seconds}" + (f" in {original.repo}" if original.repo else "")
+             for original in (Original(*each) for each in originals)]
+    return subject + "\n\n" + "".join(line + "\n" for line in lines)
+
+
+@dataclasses.dataclass(frozen=True)
+class _Hotfix:
+    commit: str
+    subject: str
+    made: int
+    originals: frozenset[tuple[str, str, str]]
 
 
 def _commits(checkout: Path, span: str, *fields: str, run: Run) -> list[list[str]]:
@@ -479,28 +496,52 @@ def _commits(checkout: Path, span: str, *fields: str, run: Run) -> list[list[str
     return [record.strip().split(_FIELD, len(fields) - 1) for record in listed.split(_RECORD) if record.strip()]
 
 
-def _hotfixes_on(checkout: Path, branch: str, head: str, *, run: Run) -> list[tuple[str, int, set[tuple[str, str]]]]:
+def _hotfixes_on(checkout: Path, branch: str, head: str, *, run: Run) -> list[_Hotfix]:
     hotfixes = []
-    for subject, made, message in _commits(checkout, f"refs/remotes/origin/{branch}..{head}", "%s", "%ct", "%B",
-                                           run=run):
-        if not (stands_for := set(_STANDS_FOR.findall(message))):
+    for commit, subject, made, message in _commits(checkout, f"refs/remotes/origin/{branch}..{head}",
+                                                   "%H", "%s", "%ct", "%B", run=run):
+        if not (originals := frozenset(_STANDS_FOR.findall(message))):
             return []
-        hotfixes.append((subject, int(made), stands_for))
+        hotfixes.append(_Hotfix(commit, subject, int(made), originals))
     return hotfixes
 
 
-def _kept_at_its_hotfix(head: str, target: str, unshipped: list[tuple[str, int]], *,
-                        now: Callable[[], float]) -> _Plan:
-    newest, oldest = unshipped[0][0], min(made for _, made in unshipped)
+def _has_shipped(hotfix: _Hotfix, checkout: Path, workspace: Path, head: str, target: str, *, run: Run) -> bool:
+    by_repo: dict[str, set[tuple[str, str]]] = {}
+    for email, seconds, repo in hotfix.originals:
+        by_repo.setdefault(repo, set()).add((email, seconds))
+    return all(originals & _shipped_in(repo, hotfix, checkout=checkout, workspace=workspace, head=head,
+                                        target=target, run=run)
+               for repo, originals in by_repo.items())
+
+
+def _shipped_in(repo: str, hotfix: _Hotfix, *, checkout: Path, workspace: Path, head: str, target: str,
+                run: Run) -> set[tuple[str, str]]:
+    if not repo:
+        return _authors_in_effect(checkout, head, target, run=run)
+    released = _pin_of(repo, checkout, target, run=run)
+    if released is None:
+        return set()
+    return _authors_in_effect(Path(workspace) / repo, _pin_of(repo, checkout, hotfix.commit, run=run) or released,
+                              released, run=run)
+
+
+def _pin_of(repo: str, checkout: Path, commit: str, *, run: Run) -> str | None:
+    return next((pin.tag for pin in sibling_pins_in(_pyproject_at(checkout, commit, run=run)) if pin.repo == repo),
+                None)
+
+
+def _kept_at_its_hotfix(head: str, target: str, unshipped: list[_Hotfix], *, now: Callable[[], float]) -> _Plan:
+    newest, oldest = unshipped[0].subject, min(hotfix.made for hotfix in unshipped)
     if now() - oldest >= HOTFIX_SHIPS_WITHIN_S:
         return _Plan(head, target, False, [], f'failed: kept at its hotfix "{newest}" for a day, and that fix has '
                                               f'not shipped the usual way', failed=True)
     return _Plan(head, target, False, [], f'kept at its hotfix "{newest}" until that fix ships the usual way')
 
 
-def _authors_shipped(checkout: Path, head: str, target: str, *, run: Run) -> set[tuple[str, str]]:
-    since = _git(checkout, "merge-base", head, target, run=run)
-    commits = _commits(checkout, f"{since}..{target}", "%H", "%ae", "%at", "%B", run=run)
+def _authors_in_effect(repository: Path, base: str, tip: str, *, run: Run) -> set[tuple[str, str]]:
+    since = _git_or_none(repository, "merge-base", base, tip, run=run)
+    commits = _commits(repository, f"{since}..{tip}" if since else tip, "%H", "%ae", "%at", "%B", run=run)
     undone_by = {undone: commit for commit, _email, _seconds, message in commits
                  for undone in _REVERTS.findall(message)}
 
@@ -631,17 +672,18 @@ def bring_up(checkout: Path, *, workspace: Path, run: Run = run, wait_s: float =
 
 
 def heading_for(checkout: Path, *, run: Run = run) -> str:
-    plan = _plan(checkout, *_branch_and_target(checkout, run=run), run=run, now=time.time)
+    plan = _plan(checkout, *_branch_and_target(checkout, run=run), workspace=Path(checkout).parent, run=run,
+                 now=time.time)
     return plan.target if plan.moves else plan.head
 
 
 def _bring_up_to(checkout: Path, branch: str, target: str, *, workspace: Path, run: Run, wait_s: float,
                  in_use: InUse, now: Callable[[], float]) -> str:
-    plan = _plan(checkout, branch, target, run=run, now=now)
+    plan = _plan(checkout, branch, target, workspace=workspace, run=run, now=now)
     if plan.settled:
         return _settle(checkout, plan)
     with the_turn(checkout, wait_s=wait_s):
-        plan = _plan(checkout, branch, target, run=run, now=now)
+        plan = _plan(checkout, branch, target, workspace=workspace, run=run, now=now)
         if plan.settled:
             return _settle(checkout, plan)
         if running := in_use(_venvs_watched(checkout, workspace)):

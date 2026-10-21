@@ -102,6 +102,11 @@ class Machine:
         return git("rev-parse", "HEAD", cwd=clone)
 
     @staticmethod
+    def release(checkout: Path, tag: str, commit: str = "origin/main") -> str:
+        git("tag", tag, commit, cwd=checkout)
+        return git("rev-parse", f"{tag}^{{commit}}", cwd=checkout)
+
+    @staticmethod
     def hotfix_asked_for(checkout: Path) -> str | None:
         asked = subprocess.run(["git", "rev-parse", "--verify", "--quiet", production_update.HOTFIX_REF],
                                cwd=str(checkout), capture_output=True, text=True)
