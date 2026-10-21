@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -128,6 +129,17 @@ def test_the_checkout_swept_is_imported_ahead_of_any_other_copy_on_the_interpret
     checkout = a_checkout(tmp_path / "toy_app_checkout", {"toy_app/__init__.py": ""})
 
     swept = import_sweep.sweep(checkout, python=sys.executable)
+
+    assert (swept.imported, swept.failures) == (["toy_app"], {})
+
+
+def test_the_checkout_is_imported_with_the_environment_it_is_handed(tmp_path):
+    (tmp_path / "shared").mkdir()
+    (tmp_path / "shared" / "shared_thing.py").write_text("FIXED = True\n", encoding="utf-8")
+    checkout = a_checkout(tmp_path / "toy_app_checkout", {"toy_app/__init__.py": "from shared_thing import FIXED\n"})
+
+    swept = import_sweep.sweep(checkout, python=sys.executable,
+                               env={**os.environ, "PYTHONPATH": str(tmp_path / "shared")})
 
     assert (swept.imported, swept.failures) == (["toy_app"], {})
 

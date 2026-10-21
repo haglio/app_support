@@ -9,7 +9,7 @@ import sys
 import tempfile
 import time
 import tomllib
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -46,14 +46,15 @@ class Sweep:
     failures: dict[str, str]
 
 
-def sweep(checkout: Path, *, python: str, each_within_s: float = EACH_WITHIN_S) -> Sweep:
+def sweep(checkout: Path, *, python: str, each_within_s: float = EACH_WITHIN_S,
+          env: Mapping[str, str] | None = None) -> Sweep:
     checkout = Path(checkout)
     left = _modules_of(checkout)
     outcomes: dict[str, str | None] = {}
     with tempfile.TemporaryDirectory() as scratch:
         record = Path(scratch) / "imports.jsonl"
         while left:
-            why_it_stopped = _import_in_one_interpreter(python, checkout, left, record, each_within_s)
+            why_it_stopped = _import_in_one_interpreter(python, checkout, left, record, each_within_s, env=env)
             outcomes.update((outcome["module"], outcome["failure"]) for outcome in _recorded(record))
             left = [module for module in left if module not in outcomes]
             if left:
@@ -63,11 +64,11 @@ def sweep(checkout: Path, *, python: str, each_within_s: float = EACH_WITHIN_S) 
 
 
 def _import_in_one_interpreter(python: str, checkout: Path, modules: list[str], record: Path,
-                               each_within_s: float) -> str:
+                               each_within_s: float, *, env: Mapping[str, str] | None) -> str:
     said = record.with_name("stderr.txt")
     with said.open("w", encoding="utf-8") as stderr:
         child = subprocess.Popen([python, "-c", _IMPORT_EACH, str(checkout), str(record)], stdin=subprocess.PIPE,
-                                 stdout=subprocess.DEVNULL, stderr=stderr, text=True, cwd=checkout,
+                                 stdout=subprocess.DEVNULL, stderr=stderr, text=True, cwd=checkout, env=env,
                                  **hidden_subprocess_kwargs())
         child.stdin.write(json.dumps(modules))
         child.stdin.close()
