@@ -403,6 +403,54 @@ class TestTheImportSweep:
         hotfix.run_sweep(Path(sys.executable), place, [tmp_path / "shared"])
 
 
+class TestTakingAHotfixBack:
+    def test_production_goes_back_to_what_shipped(self, machine, production):
+        shipped = machine.head(production)
+        worktree = a_branch(machine, production, {"fix.txt": "fixed\n"})
+        route(machine, worktree)
+
+        said = hotfix.take_back(worktree, run=machine.run, bring_up=machine.bring_up)
+
+        assert machine.head(production) == shipped
+        assert said == f"production example runs what has shipped ({shipped[:8]})"
+
+    def test_production_running_its_app_goes_back_once_the_app_closes(self, machine, production):
+        worktree = a_branch(machine, production, {"fix.txt": "fixed\n"})
+        route(machine, worktree)
+
+        said = hotfix.take_back(worktree, run=machine.run, bring_up=lambda checkout: machine.bring_up(
+            checkout, in_use=lambda venvs: [a_process("Example-Example.exe")]))
+
+        assert "goes back to what has shipped once its app closes" in said
+        assert "Example-Example.exe" in said
+
+    def test_production_that_runs_no_hotfix_says_so(self, machine, production):
+        worktree = a_branch(machine, production, {"fix.txt": "fixed\n"})
+
+        said = hotfix.take_back(worktree, run=machine.run, bring_up=machine.bring_up)
+
+        assert said == "production example runs no hotfix"
+
+    def test_production_that_could_not_go_back_says_why(self, machine, production):
+        worktree = a_branch(machine, production, {"fix.txt": "fixed\n"})
+        route(machine, worktree)
+
+        with pytest.raises(hotfix.Refused, match="pip said no"):
+            hotfix.take_back(worktree, run=machine.run,
+                             bring_up=lambda checkout: Outcome("failed: pip said no", 0.0, True))
+
+    def test_a_hotfix_of_the_shared_code_is_taken_back_from_every_app_it_went_to(self, machine):
+        library = the_shared_code(machine)
+        app = machine.checkout(files={"pyproject.toml": pins(funestra="0.1.1") + CHECKS})
+        shipped = machine.head(app)
+        worktree = a_branch(machine, library, {"engine.txt": "fixed\n"})
+        route(machine, worktree)
+
+        hotfix.take_back(worktree, run=machine.run, bring_up=machine.bring_up)
+
+        assert machine.head(app) == shipped
+
+
 class TestTheCommandLine:
     def test_a_refusal_is_said_and_ends_the_command_in_failure(self, machine, production, monkeypatch, capsys,
                                                                tmp_path):
@@ -421,6 +469,13 @@ class TestTheCommandLine:
 
         assert hotfix.main(["--with", "one", "--with", "two"], state=tmp_path) == 0
         assert handed["libraries"] == [Path("one"), Path("two")]
+
+    def test_take_back_takes_the_hotfix_back_out(self, monkeypatch, tmp_path):
+        taken_back_from = []
+        monkeypatch.setattr(hotfix, "take_back", lambda worktree, **options: taken_back_from.append(worktree) or "")
+
+        assert hotfix.main(["--take-back"], state=tmp_path) == 0
+        assert taken_back_from == [Path.cwd()]
 
     def test_production_is_brought_up_at_once_and_the_update_written_down(self, machine, production, tmp_path):
         hotfix_asked_for = machine.hotfix(production, {"fix.txt": "fixed\n"})
