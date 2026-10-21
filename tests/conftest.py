@@ -278,3 +278,15 @@ def _the_process_is_given_back():
         faulthandler.enable(sys.__stderr__, all_threads=True)
     else:
         faulthandler.disable()
+
+
+@pytest.fixture(autouse=True)
+def _the_updaters_log_is_given_back():
+    """main() points the updater's logger at a file of the test's and stops it
+    reaching the root logger, where caplog listens."""
+    logger = logging.getLogger("production_update")
+    yield
+    for handler in list(logger.handlers):
+        logger.removeHandler(handler)
+        handler.close()
+    logger.propagate = True
