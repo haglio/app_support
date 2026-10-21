@@ -527,6 +527,12 @@ class TestWhereACheckoutIsHeaded:
 
         assert production_update.heading_for(checkout, run=machine.run) == hotfix
 
+    def test_a_checkout_left_where_it_is_says_why(self, machine):
+        checkout = machine.checkout(files={"pyproject.toml": TestACheckoutThatMovesOnlyToWhatPassed.DECLARED})
+
+        with pytest.raises(production_update.StepFailed, match="nothing has passed yet"):
+            production_update.heading_for(checkout, run=machine.run)
+
 
 class TestTheDeclaration:
     def test_a_checkout_that_declares_nothing_says_nothing(self, tmp_path):
