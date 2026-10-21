@@ -672,8 +672,11 @@ def bring_up(checkout: Path, *, workspace: Path, run: Run = run, wait_s: float =
 
 
 def heading_for(checkout: Path, *, run: Run = run) -> str:
-    plan = _plan(checkout, *_branch_and_target(checkout, run=run), workspace=Path(checkout).parent, run=run,
-                 now=time.time)
+    try:
+        branch, target = _branch_and_target(checkout, run=run)
+    except _LeftAlone as left:
+        raise StepFailed(f"{Path(checkout).name} {left}") from None
+    plan = _plan(checkout, branch, target, workspace=Path(checkout).parent, run=run, now=time.time)
     return plan.target if plan.moves else plan.head
 
 
