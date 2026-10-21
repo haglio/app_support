@@ -443,7 +443,7 @@ def _the_hotfix_or(checkout: Path, target: str, *, run: Run) -> str:
         return target
     head = _git(checkout, "rev-parse", "HEAD", run=run)
     if hotfix != head:
-        if _ancestor(checkout, head, hotfix, run=run):
+        if any(_ancestor(checkout, made_on, hotfix, run=run) for made_on in (head, target)):
             return hotfix
         _log.warning("%s: left out the hotfix %s, made on a commit it has moved past", checkout.name, hotfix[:8])
     _git(checkout, "update-ref", "-d", HOTFIX_REF, run=run)
