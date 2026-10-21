@@ -459,6 +459,39 @@ class TestAHotfix:
         assert machine.head(checkout) == untested
 
 
+class TestAHotfixOfTheSharedCode:
+    FIX = ("someone@example.com", 1_700_000_200, "funestra")
+
+    @staticmethod
+    def a_library_and_an_app(machine):
+        library = machine.checkout("funestra", venv=False)
+        machine.release(library, "v0.1.1")
+        machine.release(library, "v0.1.1.1", machine.ship(library, {"engine.txt": "hotfixed\n"}, authored=1_700_000_300))
+        checkout = machine.checkout(files={"pyproject.toml": pins(funestra="0.1.1")})
+        hotfix = machine.hotfix(checkout, {"pyproject.toml": pins(funestra="0.1.1.1")},
+                                stands_for=(TestAHotfixOfTheSharedCode.FIX,))
+        machine.bring_up(checkout)
+        return library, checkout, hotfix
+
+    def test_a_checkout_leaves_it_once_what_it_follows_pins_a_release_with_the_fix(self, machine):
+        library, checkout, _ = self.a_library_and_an_app(machine)
+        machine.release(library, "v0.1.2", machine.ship(library, {"engine.txt": "fixed\n"}, authored=1_700_000_200))
+        shipped = machine.ship(checkout, {"pyproject.toml": pins(funestra="0.1.2")})
+
+        machine.bring_up(checkout)
+
+        assert machine.head(checkout) == shipped
+
+    def test_a_checkout_keeps_it_while_what_it_follows_pins_a_release_without_the_fix(self, machine):
+        library, checkout, hotfix = self.a_library_and_an_app(machine)
+        machine.release(library, "v0.1.2", machine.ship(library, {"other.txt": "new\n"}))
+        machine.ship(checkout, {"pyproject.toml": pins(funestra="0.1.2")})
+
+        machine.bring_up(checkout)
+
+        assert machine.head(checkout) == hotfix
+
+
 class TestWhereACheckoutIsHeaded:
     def test_a_checkout_behind_what_shipped_is_headed_for_it(self, machine):
         checkout = machine.checkout()
