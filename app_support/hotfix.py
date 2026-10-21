@@ -1,16 +1,18 @@
-"""``python -m app_support.hotfix``, run from an agent's worktree: its branch's fix into the app's production checkout now.
+"""``python -m app_support.hotfix``, run from an agent's worktree: its branch's fix into production now.
 
-The fix goes onto the commit production runs or is about to, passes the checks the repo
-names in ``[tool.haglio.hotfix]`` and the tests the branch changed, and is handed to the
-production updater, which keeps it until the same fix ships the usual way.
-
-Standard library only.
+From an app's worktree the fix goes to that app's production, with the shared code's fixes ``--with``
+names; from a worktree of the shared code it goes to every app whose production runs that code, as a
+version tagged here and never pushed. Production's updater keeps a hotfix until the same fix ships the
+usual way. Standard library only.
 """
 from __future__ import annotations
 
 import argparse
 import contextlib
+import dataclasses
 import fnmatch
+import os
+import re
 import shutil
 import subprocess
 import sys
@@ -19,22 +21,28 @@ import tomllib
 from collections.abc import Callable, Sequence
 from pathlib import Path, PurePosixPath
 
-from app_support import production_update
+from app_support import import_sweep, production_update
 from app_support.dependencies import SiblingPin, sibling_pins_in
 from app_support.logging_utils import configure_logging
 from app_support.production_update import (
     HOTFIX_REF,
     InUse,
+    Original,
     Outcome,
     Run,
     StepFailed,
+    git,
+    git_or_none,
     hotfix_message,
+    is_ancestor,
 )
 from app_support.subprocess_utils import hidden_subprocess_kwargs
 
 CHECKS_TIMEOUT_S = 10 * 60.0
 NOTHING_ASKED_FOR = "0" * 40
-Check = Callable[[Path, list[str], Path], None]
+_RELEASE = re.compile(r"v\d+\.\d+\.\d+")
+Check = Callable[[Path, list[str], Path, list[Path]], None]
+Sweep = Callable[[Path, Path, list[Path]], None]
 BringUp = Callable[[Path], Outcome]
 
 
@@ -42,102 +50,291 @@ class Refused(Exception):
     pass
 
 
-def _git(place: Path, *arguments: str, run: Run) -> str:
-    return run(["git", *arguments], cwd=place).strip()
+@dataclasses.dataclass(frozen=True)
+class _Fix:
+    worktree: Path
+    production: Path
+    shipped: str
+    tip: str
+    originals: tuple[tuple[str, int], ...]
+    subject: str
+    changed: tuple[str, ...]
+
+    @property
+    def repo(self) -> str:
+        return self.production.name
 
 
-def hotfix(worktree: Path, *, run: Run = production_update.run, check: Check, bring_up: BringUp) -> str:
-    worktree, production, shipped = _a_fix_ready_to_go(Path(worktree), run=run)
-    fix = f"{shipped}..{_git(worktree, 'rev-parse', 'HEAD', run=run)}"
-    base = production_update.heading_for(production, run=run)
-    asked_before = _asked_for(production, run=run)
-    with _a_checkout_of(production, base, run=run) as place:
-        patch = place.parent / "fix.patch"
-        _git(worktree, "diff", "--binary", f"--output={patch}", f"{shipped}...HEAD", run=run)
-        try:
-            _git(place, "apply", "--3way", "--index", str(patch), run=run)
-        except StepFailed as failed:
-            clashing = ", ".join(_git(place, "diff", "--name-only", "--diff-filter=U", run=run).split())
-            raise Refused(f"the fix needs changes production does not run yet ({clashing or failed}); "
-                          f"ship it the usual way") from None
-        _git(place, "commit", "-q", "--no-verify", "-m", _message(worktree, fix, run=run), run=run)
-        made = _git(place, "rev-parse", "HEAD", run=run)
-        changed = _git(worktree, "diff", "--name-only", f"{shipped}...HEAD", run=run).splitlines()
-        check(production / ".venv" / "Scripts" / "python.exe", _checks(place, changed), place)
-        try:
-            _git(place, "update-ref", HOTFIX_REF, made, asked_before, run=run)
-        except StepFailed:
+@dataclasses.dataclass
+class _SharedHotfix:
+    fix: _Fix
+    place: Path
+    commit: str
+    tag: str
+    brought_along: int
+    tagged: bool = False
+
+
+def hotfix(worktree: Path, *, libraries: Sequence[Path] = (), run: Run = production_update.run, check: Check,
+           sweep: Sweep, bring_up: BringUp) -> str:
+    fix = _a_fix(Path(worktree), run=run)
+    shared = [_a_fix(Path(library), run=run) for library in libraries]
+    if _names_checks(fix.worktree):
+        app_fix, apps = fix, [fix.production]
+    else:
+        app_fix, shared = None, [fix, *shared]
+        apps = [checkout for checkout in production_update.checkouts_in(fix.production.parent)
+                if _names_checks(checkout) and _pins_any_of(checkout, shared)]
+        if not apps:
+            raise Refused(f"{fix.repo} names no checks in [tool.haglio.hotfix], and no app that does runs it, "
+                          f"so this fix ships the usual way")
+    built: dict[tuple[str, str], _SharedHotfix] = {}
+    said, refused = [], False
+    with contextlib.ExitStack() as shared_places:
+        for app in apps:
+            try:
+                said.append(_hotfix_of(app, app_fix, shared, built, shared_places, run=run, check=check,
+                                       sweep=sweep, bring_up=bring_up))
+            except (Refused, StepFailed) as refusal:
+                if len(apps) == 1:
+                    raise
+                said.append(f"production {app.name} refused it: {refusal}")
+                refused = True
+    if refused:
+        raise Refused("not every app took the hotfix:\n" + "\n".join(said))
+    return "\n".join(said)
+
+
+def _a_fix(worktree: Path, *, run: Run) -> _Fix:
+    worktree = Path(git(worktree, "rev-parse", "--show-toplevel", run=run))
+    if git(worktree, "status", "--porcelain", "--untracked-files=no", run=run):
+        raise Refused(f"{worktree} has uncommitted changes; commit the fix first")
+    production = Path(git(worktree, "rev-parse", "--path-format=absolute", "--git-common-dir", run=run)).parent
+    shipped = f"refs/remotes/origin/{production_update.default_branch(production, run=run)}"
+    tip = git(worktree, "rev-parse", "HEAD", run=run)
+    commits = [line.split("\x1f") for line in git(
+        worktree, "log", "--reverse", "--format=%ae%x1f%at%x1f%s", f"{shipped}..{tip}", run=run).splitlines()]
+    if not commits:
+        raise Refused(f"{worktree} has nothing {shipped.removeprefix('refs/remotes/')} lacks")
+    changed = git(worktree, "diff", "--name-only", f"{shipped}...{tip}", run=run).splitlines()
+    return _Fix(worktree, production, shipped, tip, tuple((email, int(seconds)) for email, seconds, _ in commits),
+                commits[0][2], tuple(changed))
+
+
+def _hotfix_checks(pyproject_text: str) -> list[str]:
+    return list(tomllib.loads(pyproject_text).get("tool", {}).get("haglio", {}).get("hotfix", {}).get("checks", []))
+
+
+def _names_checks(checkout: Path) -> bool:
+    try:
+        return bool(_hotfix_checks((checkout / "pyproject.toml").read_text(encoding="utf-8")))
+    except (OSError, tomllib.TOMLDecodeError):
+        return False
+
+
+def _pins_any_of(checkout: Path, shared: list[_Fix]) -> bool:
+    pinned = {pin.repo for pin in sibling_pins_in((checkout / "pyproject.toml").read_text(encoding="utf-8"))}
+    return any(fix.repo in pinned for fix in shared)
+
+
+def _hotfix_of(app: Path, app_fix: _Fix | None, shared: list[_Fix], built: dict[tuple[str, str], _SharedHotfix],
+               shared_places: contextlib.ExitStack, *, run: Run, check: Check, sweep: Sweep, bring_up: BringUp) -> str:
+    base = production_update.heading_for(app, run=run)
+    asked_before = _asked_for(app, run=run)
+    with contextlib.ExitStack() as this_app:
+        place, brought_along = _the_app_hotfix(app, base, app_fix, this_app, run=run)
+        pyproject = place / "pyproject.toml"
+        pins = {pin.repo: pin for pin in sibling_pins_in(pyproject.read_text(encoding="utf-8"))}
+        if app_fix and (unpinned := [fix.repo for fix in shared if fix.repo not in pins]):
+            raise Refused(f"production {app.name} does not run {', '.join(unpinned)}")
+        hotfixes = [_the_shared_hotfix(fix, pins[fix.repo].tag, built, shared_places, run=run)
+                    for fix in shared if fix.repo in pins]
+        for each in hotfixes:
+            _repin(pyproject, pins[each.fix.repo], each.tag)
+        made = _commit(place, app_fix, hotfixes, run=run)
+        python = app / ".venv" / "Scripts" / "python.exe"
+        pythonpath = [each.place for each in hotfixes] + _versions_the_venv_lacks(app, pyproject, hotfixes, this_app,
+                                                                                  run=run)
+        check(python, _checks(place, app_fix.changed if app_fix else ()), place, pythonpath)
+        for each in hotfixes:
+            if tests := _tests_the_suite_runs(each.place, each.fix.changed):
+                check(python, tests, each.place, pythonpath)
+        sweep(python, place, pythonpath)
+        for each in hotfixes:
+            _tag(each, run=run)
+        _ask_for(app, made, asked_before, run=run)
+    return _what_production_did(app, made, bring_up(app), run=run) + _what_else_it_brings(brought_along, hotfixes)
+
+
+def _ask_for(production: Path, made: str, asked_before: str, *, run: Run) -> None:
+    try:
+        git(production, "update-ref", HOTFIX_REF, made, asked_before, run=run)
+    except StepFailed:
+        if git(production, "rev-parse", "HEAD", run=run) != asked_before:
             raise Refused("another hotfix was asked for while this one was being made; run the route again, "
                           "and it builds on that one") from None
-    return _what_production_did(production, made, bring_up(production), run=run)
+        _ask_for(production, made, NOTHING_ASKED_FOR, run=run)
 
 
-def _a_fix_ready_to_go(worktree: Path, *, run: Run) -> tuple[Path, Path, str]:
-    worktree = Path(_git(worktree, "rev-parse", "--show-toplevel", run=run))
-    if _git(worktree, "status", "--porcelain", "--untracked-files=no", run=run):
-        raise Refused("this worktree has uncommitted changes; commit the fix first")
-    production = Path(_git(worktree, "rev-parse", "--path-format=absolute", "--git-common-dir", run=run)).parent
-    shipped = f"refs/remotes/origin/{production_update.default_branch(production, run=run)}"
-    if not _git(worktree, "rev-list", f"{shipped}..HEAD", run=run):
-        raise Refused(f"this branch has nothing {shipped.removeprefix('refs/remotes/')} lacks")
-    if _pins_at(worktree, shipped, run=run) != _pins_at(worktree, "HEAD", run=run):
-        raise Refused("the fix moves a pin of the shared code, which production does not have yet; "
-                      "ship it the usual way")
-    return worktree, production, shipped
+def _the_app_hotfix(app: Path, base: str, app_fix: _Fix | None, stack: contextlib.ExitStack, *,
+                    run: Run) -> tuple[Path, int]:
+    if app_fix is None:
+        return _checked_out(app, base, stack, run=run), 0
+    return _with_the_fix(app, app_fix, base, stack, run=run)
+
+
+def _the_shared_hotfix(fix: _Fix, pinned: str, built: dict[tuple[str, str], _SharedHotfix],
+                       shared_places: contextlib.ExitStack, *, run: Run) -> _SharedHotfix:
+    library = fix.production
+    if (fix.repo, pinned) not in built:
+        with contextlib.ExitStack() as attempt:
+            place, brought_along = _with_the_fix(library, fix, pinned, attempt, run=run)
+            on = git(place, "rev-parse", "HEAD", run=run)
+            if (fix.repo, on) not in built:
+                git(place, "commit", "-q", "--no-verify", "-m", hotfix_message(fix.subject, fix.originals), run=run)
+                built[fix.repo, on] = _SharedHotfix(fix, place, git(place, "rev-parse", "HEAD", run=run),
+                                                    _next_tag(library, on, run=run), brought_along)
+                shared_places.enter_context(attempt.pop_all())
+        built[fix.repo, pinned] = built[fix.repo, on]
+    return built[fix.repo, pinned]
+
+
+def _with_the_fix(repository: Path, fix: _Fix, made_on: str, stack: contextlib.ExitStack, *,
+                  run: Run) -> tuple[Path, int]:
+    base, main = _the_commit(repository, made_on, run=run), git(repository, "rev-parse", fix.shipped, run=run)
+    bases = [base, main] if base != main and is_ancestor(repository, base, main, run=run) else [base]
+    clashing: set[str] = set()
+    for each in bases:
+        with contextlib.ExitStack() as attempt:
+            place = _checked_out(repository, each, attempt, run=run)
+            patch = place.parent / "fix.patch"
+            git(fix.worktree, "diff", "--binary", f"--output={patch}", f"{fix.shipped}...{fix.tip}", run=run)
+            try:
+                git(place, "apply", "--3way", "--index", str(patch), run=run)
+            except StepFailed as failed:
+                clashing.update(git(place, "diff", "--name-only", "--diff-filter=U", run=run).split() or [str(failed)])
+                continue
+            stack.enter_context(attempt.pop_all())
+            return place, _commits_between(repository, base, each, run=run)
+    raise Refused(f"the fix in {fix.repo} clashes with what production runs" + (" and with main" if len(bases) > 1 else "")
+                  + f" ({', '.join(sorted(clashing))}); rebase it onto main and run the route again")
+
+
+def _checked_out(repository: Path, revision: str, stack: contextlib.ExitStack, *, run: Run) -> Path:
+    commit = _the_commit(repository, revision, run=run)
+    room = Path(tempfile.mkdtemp(prefix="hotfix-"))
+    stack.callback(shutil.rmtree, room, ignore_errors=True)
+    place = room / repository.name
+    git(repository, "worktree", "add", "--detach", str(place), commit, run=run)
+    stack.callback(_removed, repository, place, run)
+    return place
+
+
+def _removed(repository: Path, place: Path, run: Run) -> None:
+    with contextlib.suppress(StepFailed):
+        git(repository, "worktree", "remove", "--force", str(place), run=run)
+
+
+def _the_commit(repository: Path, revision: str, *, run: Run) -> str:
+    if found := _resolved(repository, revision, run=run):
+        return found
+    with contextlib.suppress(StepFailed):
+        git(repository, "fetch", "--quiet", "origin", f"refs/tags/{revision}:refs/tags/{revision}", run=run)
+    if found := _resolved(repository, revision, run=run):
+        return found
+    raise Refused(f"{repository.name} has no {revision}, here or on GitHub")
+
+
+def _resolved(repository: Path, revision: str, *, run: Run) -> str | None:
+    return git_or_none(repository, "rev-parse", "--verify", "--quiet", f"{revision}^{{commit}}", run=run)
+
+
+def _commits_between(repository: Path, older: str, newer: str, *, run: Run) -> int:
+    return int(git(repository, "rev-list", "--count", f"{older}..{newer}", run=run))
+
+
+def _next_tag(library: Path, on: str, *, run: Run) -> str:
+    release = _RELEASE.match(git(library, "describe", "--tags", "--abbrev=0", on, run=run)).group()
+    numbers = [tag.removeprefix(f"{release}.") for tag in git(library, "tag", "--list", f"{release}.*",
+                                                               run=run).split()]
+    return f"{release}.{max((int(number) for number in numbers if number.isdigit()), default=0) + 1}"
+
+
+def _tag(shared_hotfix: _SharedHotfix, *, run: Run) -> None:
+    if not shared_hotfix.tagged:
+        try:
+            git(shared_hotfix.fix.production, "tag", shared_hotfix.tag, shared_hotfix.commit, run=run)
+        except StepFailed:
+            raise Refused(f"another hotfix took {shared_hotfix.fix.repo} {shared_hotfix.tag} meanwhile; run the "
+                          f"route again") from None
+        shared_hotfix.tagged = True
+
+
+def _repin(pyproject: Path, pin: SiblingPin, tag: str) -> None:
+    text = pyproject.read_bytes().decode("utf-8")
+    pyproject.write_bytes(re.sub(re.escape(pin.spec) + r"(?![\w.])", lambda _: pin.spec[: -len(pin.tag)] + tag,
+                                 text).encode("utf-8"))
+
+
+def _commit(place: Path, app_fix: _Fix | None, hotfixes: list[_SharedHotfix], *, run: Run) -> str:
+    originals = [Original(email, seconds) for email, seconds in (app_fix.originals if app_fix else ())]
+    originals += [Original(email, seconds, each.fix.repo) for each in hotfixes for email, seconds in each.fix.originals]
+    subject = app_fix.subject if app_fix else f"{hotfixes[0].fix.subject} ({hotfixes[0].fix.repo} {hotfixes[0].tag})"
+    git(place, "add", "pyproject.toml", run=run)
+    git(place, "commit", "-q", "--no-verify", "-m", hotfix_message(subject, originals), run=run)
+    return git(place, "rev-parse", "HEAD", run=run)
+
+
+def _versions_the_venv_lacks(app: Path, pyproject: Path, hotfixes: list[_SharedHotfix], stack: contextlib.ExitStack,
+                             *, run: Run) -> list[Path]:
+    hotfixed = {each.fix.repo for each in hotfixes}
+    lacking = production_update.libraries_off_their_pins(pyproject.read_text(encoding="utf-8"),
+                                                         production_update.installed_versions(app / ".venv"))
+    return [_checked_out(app.parent / pin.repo, pin.tag, stack, run=run) for pin in lacking
+            if pin.repo not in hotfixed]
 
 
 def _what_production_did(production: Path, made: str, outcome: Outcome, *, run: Run) -> str:
-    if _git(production, "rev-parse", "HEAD", run=run) == made:
-        return f"production {production.name} runs the hotfix {made[:8]} now"
+    if git(production, "rev-parse", "HEAD", run=run) == made:
+        return f"production {production.name} runs the hotfix {made[:8]} now" + (
+            f", but {outcome.said}" if outcome.failed else "")
     if production_update.waits_for_programs_to_close(production):
         return f"production {production.name} takes the hotfix {made[:8]} once its app closes ({outcome.said})"
-    raise Refused(f"production {production.name} has the hotfix {made[:8]} asked for but did not take it: "
-                  f"{outcome.said}")
+    with contextlib.suppress(StepFailed):
+        git(production, "update-ref", "-d", HOTFIX_REF, made, run=run)
+    raise Refused(f"production {production.name} did not take the hotfix {made[:8]}: {outcome.said}")
+
+
+def _what_else_it_brings(app_changes: int, hotfixes: list[_SharedHotfix]) -> str:
+    brought = [(f"{_changes(app_changes)} that shipped but {'has' if app_changes == 1 else 'have'} not passed the "
+                f"main verifier yet")] if app_changes else []
+    brought += [f"{_changes(each.brought_along)} to {each.fix.repo} since the version production runs"
+                for each in hotfixes if each.brought_along]
+    return f"; it also brings along {' and '.join(brought)}" if brought else ""
+
+
+def _changes(count: int) -> str:
+    return f"{count} change" + ("" if count == 1 else "s")
 
 
 def _asked_for(production: Path, *, run: Run) -> str:
     try:
-        return _git(production, "rev-parse", "--verify", "--quiet", HOTFIX_REF, run=run)
+        return git(production, "rev-parse", "--verify", "--quiet", HOTFIX_REF, run=run)
     except StepFailed:
         return NOTHING_ASKED_FOR
 
 
-def run_checks(python: Path, tests: list[str], place: Path) -> None:
-    command = [str(python), "-m", "pytest", "-x", "-q", "-p", "no:cacheprovider", *tests]
-    try:
-        finished = subprocess.run(command, cwd=place, capture_output=True, text=True, encoding="utf-8",
-                                  errors="replace", timeout=CHECKS_TIMEOUT_S, stdin=subprocess.DEVNULL,
-                                  **hidden_subprocess_kwargs())
-    except subprocess.TimeoutExpired:
-        raise Refused(f"the checks did not finish in {CHECKS_TIMEOUT_S / 60:g} minutes") from None
-    if finished.returncode != 0:
-        said = (finished.stdout + finished.stderr).strip().splitlines()[-12:]
-        raise Refused("a check failed:\n" + "\n".join(said))
+def _checks(place: Path, changed: Sequence[str]) -> list[str]:
+    named = _hotfix_checks((place / "pyproject.toml").read_text(encoding="utf-8"))
+    return named + [test for test in _tests_the_suite_runs(place, changed) if test not in named]
 
 
-def _pins_at(worktree: Path, commit: str, *, run: Run) -> list[SiblingPin]:
-    try:
-        return sibling_pins_in(_git(worktree, "show", f"{commit}:pyproject.toml", run=run))
-    except StepFailed:
-        return []
-
-
-def _message(worktree: Path, fix: str, *, run: Run) -> str:
-    commits = [line.split("\x1f") for line in _git(worktree, "log", "--reverse", "--format=%ae\x1f%at\x1f%s", fix,
-                                                    run=run).splitlines()]
-    return hotfix_message(commits[0][2], [(email, int(seconds)) for email, seconds, _ in commits])
-
-
-def _checks(place: Path, changed: list[str]) -> list[str]:
-    tool = tomllib.loads((place / "pyproject.toml").read_text(encoding="utf-8")).get("tool", {})
-    named = list(tool.get("haglio", {}).get("hotfix", {}).get("checks", []))
-    if not named:
-        raise Refused("this repo names no checks in [tool.haglio.hotfix], so its fixes ship the usual way")
-    collected = tool.get("pytest", {}).get("ini_options", {})
-    tests = [path for path in changed if (place / path).is_file() and path not in named
-             and _a_test_the_suite_runs(PurePosixPath(path), collected.get("testpaths"),
-                                        collected.get("norecursedirs", []))]
-    return named + tests
+def _tests_the_suite_runs(place: Path, changed: Sequence[str]) -> list[str]:
+    collected = tomllib.loads((place / "pyproject.toml").read_text(encoding="utf-8")).get("tool", {}).get(
+        "pytest", {}).get("ini_options", {})
+    return [path for path in changed if (place / path).is_file()
+            and _a_test_the_suite_runs(PurePosixPath(path), collected.get("testpaths"),
+                                       collected.get("norecursedirs", []))]
 
 
 def _a_test_the_suite_runs(path: PurePosixPath, roots: list[str] | None, passed_over: list[str]) -> bool:
@@ -146,16 +343,32 @@ def _a_test_the_suite_runs(path: PurePosixPath, roots: list[str] | None, passed_
             and not any(fnmatch.fnmatch(folder, pattern) for folder in path.parent.parts for pattern in passed_over))
 
 
-@contextlib.contextmanager
-def _a_checkout_of(production: Path, commit: str, *, run: Run):
-    room = Path(tempfile.mkdtemp(prefix="hotfix-"))
-    place = room / "hotfix"
-    _git(production, "worktree", "add", "--detach", str(place), commit, run=run)
+def _environment_with(pythonpath: Sequence[Path]) -> dict[str, str]:
+    environment = {name: value for name, value in os.environ.items() if name != "PYTHONPATH"}
+    if pythonpath:
+        environment["PYTHONPATH"] = os.pathsep.join(str(entry) for entry in pythonpath)
+    return environment
+
+
+def run_checks(python: Path, tests: list[str], place: Path, pythonpath: Sequence[Path]) -> None:
+    command = [str(python), "-m", "pytest", "-x", "-q", "-p", "no:cacheprovider", *tests]
     try:
-        yield place
-    finally:
-        _git(production, "worktree", "remove", "--force", str(place), run=run)
-        shutil.rmtree(room, ignore_errors=True)
+        finished = subprocess.run(command, cwd=place, capture_output=True, text=True, encoding="utf-8",
+                                  errors="replace", timeout=CHECKS_TIMEOUT_S, stdin=subprocess.DEVNULL,
+                                  env=_environment_with(pythonpath), **hidden_subprocess_kwargs())
+    except subprocess.TimeoutExpired:
+        raise Refused(f"the checks did not finish in {CHECKS_TIMEOUT_S / 60:g} minutes") from None
+    if finished.returncode != 0:
+        said = (finished.stdout + finished.stderr).strip().splitlines()[-12:]
+        raise Refused("a check failed:\n" + "\n".join(said))
+
+
+def run_sweep(python: Path, place: Path, pythonpath: Sequence[Path]) -> None:
+    failures = import_sweep.sweep(place, python=str(python), env=_environment_with(pythonpath)).failures
+    if failures:
+        module, failure = next(iter(failures.items()))
+        others = f", nor did {len(failures) - 1} more" if len(failures) > 1 else ""
+        raise Refused(f"{module} did not import{others}:\n{failure.strip()}")
 
 
 def bring_up_now(checkout: Path, *, state: Path, in_use: InUse = production_update.running_from) -> Outcome:
@@ -163,10 +376,14 @@ def bring_up_now(checkout: Path, *, state: Path, in_use: InUse = production_upda
 
 
 def main(argv: Sequence[str] | None = None, *, state: Path | None = None) -> int:
-    argparse.ArgumentParser(prog="python -m app_support.hotfix", description=__doc__.splitlines()[0]).parse_args(argv)
+    parser = argparse.ArgumentParser(prog="python -m app_support.hotfix", description=__doc__.splitlines()[0])
+    parser.add_argument("--with", dest="libraries", action="append", type=Path, default=[], metavar="WORKTREE",
+                        help="a worktree of the shared code this fix needs, to go out with it")
+    options = parser.parse_args(argv)
     state = state or Path(production_update.__file__).resolve().parents[1] / "state"
     try:
-        print(hotfix(Path.cwd(), check=run_checks, bring_up=lambda checkout: _logged_bring_up(checkout, state)))
+        print(hotfix(Path.cwd(), libraries=options.libraries, check=run_checks, sweep=run_sweep,
+                     bring_up=lambda checkout: _logged_bring_up(checkout, state)))
     except (Refused, StepFailed) as refused:
         print(f"refused: {refused}")
         return 1
