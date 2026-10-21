@@ -3,7 +3,7 @@
 From an app's worktree the fix goes to that app's production, with the shared code's fixes ``--with``
 names; from a worktree of the shared code it goes to every app whose production runs that code, as a
 version tagged here and never pushed. Production's updater keeps a hotfix until the same fix ships the
-usual way. Standard library only.
+usual way, or until ``--take-back`` sends it back to what has shipped. Standard library only.
 """
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ import argparse
 import contextlib
 import dataclasses
 import fnmatch
+import functools
 import os
 import re
 import shutil
@@ -79,37 +80,73 @@ def hotfix(worktree: Path, *, libraries: Sequence[Path] = (), run: Run = product
            sweep: Sweep, bring_up: BringUp) -> str:
     fix = _a_fix(Path(worktree), run=run)
     shared = [_a_fix(Path(library), run=run) for library in libraries]
-    if _names_checks(fix.worktree):
-        app_fix, apps = fix, [fix.production]
-    else:
-        app_fix, shared = None, [fix, *shared]
-        apps = [checkout for checkout in production_update.checkouts_in(fix.production.parent)
-                if _names_checks(checkout) and _pins_any_of(checkout, shared)]
-        if not apps:
-            raise Refused(f"{fix.repo} names no checks in [tool.haglio.hotfix], and no app that does runs it, "
-                          f"so this fix ships the usual way")
+    app_fix = fix if _names_checks(fix.worktree) else None
+    if app_fix is None:
+        shared = [fix, *shared]
+    apps = _apps_reached_from(fix.worktree, fix.production, {each.repo for each in shared})
     built: dict[tuple[str, str], _SharedHotfix] = {}
-    said, refused = [], False
     with contextlib.ExitStack() as shared_places:
-        for app in apps:
-            try:
-                said.append(_hotfix_of(app, app_fix, shared, built, shared_places, run=run, check=check,
-                                       sweep=sweep, bring_up=bring_up))
-            except (Refused, StepFailed) as refusal:
-                if len(apps) == 1:
-                    raise
-                said.append(f"production {app.name} refused it: {refusal}")
-                refused = True
+        return _in_each(apps, "took the hotfix", lambda app: _hotfix_of(
+            app, app_fix, shared, built, shared_places, run=run, check=check, sweep=sweep, bring_up=bring_up))
+
+
+def take_back(worktree: Path, *, run: Run = production_update.run, bring_up: BringUp) -> str:
+    worktree = _top_of(Path(worktree), run=run)
+    production = _production_of(worktree, run=run)
+    apps = _apps_reached_from(worktree, production, {production.name})
+    return _in_each(apps, "went back", lambda app: _taken_back_from(app, run=run, bring_up=bring_up))
+
+
+def _apps_reached_from(worktree: Path, production: Path, shared_repos: set[str]) -> list[Path]:
+    if _names_checks(worktree):
+        return [production]
+    apps = [checkout for checkout in production_update.checkouts_in(production.parent)
+            if _names_checks(checkout) and _pins_any_of(checkout, shared_repos)]
+    if not apps:
+        raise Refused(f"{production.name} names no checks in [tool.haglio.hotfix], and no app that does runs it, "
+                      f"so its fixes ship the usual way")
+    return apps
+
+
+def _in_each(apps: list[Path], what_every_app_did: str, do: Callable[[Path], str]) -> str:
+    said, refused = [], False
+    for app in apps:
+        try:
+            said.append(do(app))
+        except (Refused, StepFailed) as refusal:
+            if len(apps) == 1:
+                raise
+            said.append(f"production {app.name} refused it: {refusal}")
+            refused = True
     if refused:
-        raise Refused("not every app took the hotfix:\n" + "\n".join(said))
+        raise Refused(f"not every app {what_every_app_did}:\n" + "\n".join(said))
     return "\n".join(said)
 
 
+def _taken_back_from(app: Path, *, run: Run, bring_up: BringUp) -> str:
+    if not production_update.take_back(app, run=run):
+        return f"production {app.name} runs no hotfix"
+    outcome = bring_up(app)
+    if not production_update.runs_a_hotfix(app, run=run):
+        return f"production {app.name} runs what has shipped ({git(app, 'rev-parse', 'HEAD', run=run)[:8]})"
+    if production_update.waits_for_programs_to_close(app):
+        return f"production {app.name} goes back to what has shipped once its app closes ({outcome.said})"
+    raise Refused(f"production {app.name} did not go back to what has shipped: {outcome.said}")
+
+
+def _top_of(worktree: Path, *, run: Run) -> Path:
+    return Path(git(worktree, "rev-parse", "--show-toplevel", run=run))
+
+
+def _production_of(worktree: Path, *, run: Run) -> Path:
+    return Path(git(worktree, "rev-parse", "--path-format=absolute", "--git-common-dir", run=run)).parent
+
+
 def _a_fix(worktree: Path, *, run: Run) -> _Fix:
-    worktree = Path(git(worktree, "rev-parse", "--show-toplevel", run=run))
+    worktree = _top_of(worktree, run=run)
     if git(worktree, "status", "--porcelain", "--untracked-files=no", run=run):
         raise Refused(f"{worktree} has uncommitted changes; commit the fix first")
-    production = Path(git(worktree, "rev-parse", "--path-format=absolute", "--git-common-dir", run=run)).parent
+    production = _production_of(worktree, run=run)
     shipped = f"refs/remotes/origin/{production_update.default_branch(production, run=run)}"
     tip = git(worktree, "rev-parse", "HEAD", run=run)
     commits = [line.split("\x1f") for line in git(
@@ -132,9 +169,8 @@ def _names_checks(checkout: Path) -> bool:
         return False
 
 
-def _pins_any_of(checkout: Path, shared: list[_Fix]) -> bool:
-    pinned = {pin.repo for pin in sibling_pins_in((checkout / "pyproject.toml").read_text(encoding="utf-8"))}
-    return any(fix.repo in pinned for fix in shared)
+def _pins_any_of(checkout: Path, repos: set[str]) -> bool:
+    return bool(repos & {pin.repo for pin in sibling_pins_in((checkout / "pyproject.toml").read_text(encoding="utf-8"))})
 
 
 def _hotfix_of(app: Path, app_fix: _Fix | None, shared: list[_Fix], built: dict[tuple[str, str], _SharedHotfix],
@@ -379,11 +415,17 @@ def main(argv: Sequence[str] | None = None, *, state: Path | None = None) -> int
     parser = argparse.ArgumentParser(prog="python -m app_support.hotfix", description=__doc__.splitlines()[0])
     parser.add_argument("--with", dest="libraries", action="append", type=Path, default=[], metavar="WORKTREE",
                         help="a worktree of the shared code this fix needs, to go out with it")
+    parser.add_argument("--take-back", action="store_true",
+                        help="take every hotfix back out of production, which then runs what has shipped")
     options = parser.parse_args(argv)
-    state = state or Path(production_update.__file__).resolve().parents[1] / "state"
+    bring_up = functools.partial(_logged_bring_up, state=state or Path(production_update.__file__).resolve().parents[1]
+                                 / "state")
     try:
-        print(hotfix(Path.cwd(), libraries=options.libraries, check=run_checks, sweep=run_sweep,
-                     bring_up=lambda checkout: _logged_bring_up(checkout, state)))
+        if options.take_back:
+            print(take_back(Path.cwd(), bring_up=bring_up))
+        else:
+            print(hotfix(Path.cwd(), libraries=options.libraries, check=run_checks, sweep=run_sweep,
+                         bring_up=bring_up))
     except (Refused, StepFailed) as refused:
         print(f"refused: {refused}")
         return 1
