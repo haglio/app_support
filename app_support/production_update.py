@@ -10,7 +10,8 @@ competing with it for GitHub; a checkout the answer leaves out is fetched once
 its last fetch is half an hour old.
 
 A checkout follows origin's default branch, or, when the pyproject on that branch
-says so, only the commit a file of its own names.  Its libraries go in at exactly the versions
+says so, only the commit a file of its own names.  A hotfix asked for at ``refs/haglio/hotfix``
+goes ahead of either, and the checkout keeps it until the same fix ships the usual way.  Its libraries go in at exactly the versions
 that commit pins, before its code, and neither moves while one of his programs
 runs out of its venv, or out of the venv of a checkout that declares it starts
 programs from this one.  An update holds ``.git/production-update.turn`` alone
@@ -52,6 +53,8 @@ PROGRESS = "production-update.progress"
 # Where every launcher finds the interpreter that runs this module, from the
 # folder holding the checkouts: this repo's own launcher runs out of it too.
 UPDATER = r"app_support\.venv\Scripts\pythonw.exe"
+HOTFIX_REF = "refs/haglio/hotfix"
+HOTFIX_OF = "Hotfix-of"
 ONE_PASS = "production_update.pass"
 LOG_NAME = "production_update.log"
 STATUS_NAME = "production_update.json"
@@ -62,6 +65,7 @@ UPKEEP_MARK = "HAGLIO_UPKEEP"
 SCHEDULED_WAIT_S = 30.0
 LAUNCH_WAIT_S = 15 * 60.0
 RETRY_FAILED_AFTER_S = 30 * 60.0
+HOTFIX_SHIPS_WITHIN_S = 24 * 60 * 60.0
 FETCH_UNASKED_AFTER_S = 30 * 60.0
 GITHUB_ANSWERS = "answers what has shipped again, so only a checkout whose main moved is fetched"
 # The Claude app fast-forwards the checked-out main of a project it starts a session in, and its
@@ -77,6 +81,9 @@ MOVE_S = 2.0
 REINSTALL_S = 10.0
 
 _KEYS = frozenset({"commit-file", "also-runs"})
+_STANDS_FOR = re.compile(rf"^{HOTFIX_OF}: (\S+) (\d+)$", re.MULTILINE)
+_REVERTS = re.compile(r"This reverts commit ([0-9a-f]{40})")
+_FIELD, _RECORD = "\x1f", "\x1e"
 _ON_GITHUB = re.compile(r"github\.com[:/](?P<owner>[^/]+)/(?P<name>[^/]+?)(?:\.git)?/?$", re.IGNORECASE)
 _HEADS_QUERY = ("query($owner: String!) { repositoryOwner(login: $owner) { repositories(first: 100, "
                 "orderBy: {field: PUSHED_AT, direction: DESC}) { nodes { name defaultBranchRef "
@@ -390,14 +397,15 @@ class _LeftAlone(Exception):
 class _Plan:
     head: str
     target: str
-    behind: bool
+    moves: bool
     libraries: list[SiblingPin]
     refusal: str | None = None
+    failed: bool = False
 
     @property
     def settled(self) -> str | None:
         """What to say when there is nothing to carry out."""
-        if self.refusal or self.behind or self.libraries:
+        if self.refusal or self.moves or self.libraries:
             return self.refusal
         return f"up to date at {self.head[:8]}"
 
@@ -425,22 +433,82 @@ def _branch_and_target(checkout: Path, *, run: Run) -> tuple[str, str]:
         missing = f"{commit_file} names {named[:8]}, which this checkout does not have"
     if target is None:
         raise _LeftAlone(missing)
-    return branch, target
+    return branch, _the_hotfix_or(checkout, target, run=run)
 
 
-def _plan(checkout: Path, branch: str, target: str, *, run: Run) -> _Plan:
+def _the_hotfix_or(checkout: Path, target: str, *, run: Run) -> str:
+    hotfix = _git_or_none(checkout, "rev-parse", "--verify", "--quiet", f"{HOTFIX_REF}^{{commit}}", run=run)
+    if hotfix is None:
+        return target
+    head = _git(checkout, "rev-parse", "HEAD", run=run)
+    if hotfix != head:
+        if _ancestor(checkout, head, hotfix, run=run):
+            return hotfix
+        _log.warning("%s: left out the hotfix %s, made on a commit it has moved past", checkout.name, hotfix[:8])
+    _git(checkout, "update-ref", "-d", HOTFIX_REF, run=run)
+    return target
+
+
+def _plan(checkout: Path, branch: str, target: str, *, run: Run, now: Callable[[], float]) -> _Plan:
     head = _git(checkout, "rev-parse", "HEAD", run=run)
     on = _git_or_none(checkout, "symbolic-ref", "--quiet", "--short", "HEAD", run=run)
     if on != branch:
         return _Plan(head, target, False, [], f"is on {on or 'no branch'}, not {branch}; left where it is")
-    behind = head != target and bool(_ancestor(checkout, head, target, run=run))
-    if head != target and not behind and not _ancestor(checkout, target, head, run=run):
-        return _Plan(head, target, False, [],
-                     f"has commits {_describe(checkout, branch, target, run=run)} does not; left where it is")
-    libraries = _libraries_off(checkout, target if behind else head, run=run)
-    if (behind or libraries) and _git(checkout, "status", "--porcelain", "--untracked-files=no", run=run):
-        return _Plan(head, target, behind, libraries, "has uncommitted changes; left where it is")
-    return _Plan(head, target, behind, libraries)
+    moves = head != target and bool(_ancestor(checkout, head, target, run=run))
+    if head != target and not moves:
+        if hotfixes := _hotfixes_on(checkout, branch, head, run=run):
+            shipped = _authors_shipped(checkout, head, target, run=run)
+            if unshipped := [(subject, made) for subject, made, stands_for in hotfixes if not stands_for & shipped]:
+                return _kept_at_its_hotfix(head, target, unshipped, now=now)
+            moves = not _ancestor(checkout, target, head, run=run)
+        elif not _ancestor(checkout, target, head, run=run):
+            return _Plan(head, target, False, [],
+                         f"has commits {_describe(checkout, branch, target, run=run)} does not; left where it is")
+    libraries = _libraries_off(checkout, target if moves else head, run=run)
+    if (moves or libraries) and _git(checkout, "status", "--porcelain", "--untracked-files=no", run=run):
+        return _Plan(head, target, moves, libraries, "has uncommitted changes; left where it is")
+    return _Plan(head, target, moves, libraries)
+
+
+def hotfix_message(subject: str, stands_for: Iterable[tuple[str, int]]) -> str:
+    return subject + "\n\n" + "".join(f"{HOTFIX_OF}: {email} {seconds}\n" for email, seconds in stands_for)
+
+
+def _commits(checkout: Path, span: str, *fields: str, run: Run) -> list[list[str]]:
+    listed = _git(checkout, "log", "--format=" + _FIELD.join(fields) + _RECORD, span, run=run)
+    return [record.strip().split(_FIELD, len(fields) - 1) for record in listed.split(_RECORD) if record.strip()]
+
+
+def _hotfixes_on(checkout: Path, branch: str, head: str, *, run: Run) -> list[tuple[str, int, set[tuple[str, str]]]]:
+    hotfixes = []
+    for subject, made, message in _commits(checkout, f"refs/remotes/origin/{branch}..{head}", "%s", "%ct", "%B",
+                                           run=run):
+        if not (stands_for := set(_STANDS_FOR.findall(message))):
+            return []
+        hotfixes.append((subject, int(made), stands_for))
+    return hotfixes
+
+
+def _kept_at_its_hotfix(head: str, target: str, unshipped: list[tuple[str, int]], *,
+                        now: Callable[[], float]) -> _Plan:
+    newest, oldest = unshipped[0][0], min(made for _, made in unshipped)
+    if now() - oldest >= HOTFIX_SHIPS_WITHIN_S:
+        return _Plan(head, target, False, [], f'failed: kept at its hotfix "{newest}" for a day, and that fix has '
+                                              f'not shipped the usual way', failed=True)
+    return _Plan(head, target, False, [], f'kept at its hotfix "{newest}" until that fix ships the usual way')
+
+
+def _authors_shipped(checkout: Path, head: str, target: str, *, run: Run) -> set[tuple[str, str]]:
+    since = _git(checkout, "merge-base", head, target, run=run)
+    commits = _commits(checkout, f"{since}..{target}", "%H", "%ae", "%at", "%B", run=run)
+    undone_by = {undone: commit for commit, _email, _seconds, message in commits
+                 for undone in _REVERTS.findall(message)}
+
+    def in_effect(commit: str) -> bool:
+        undoing = undone_by.get(commit)
+        return undoing is None or not in_effect(undoing)
+
+    return {(email, seconds) for commit, email, seconds, _message in commits if in_effect(commit)}
 
 
 def _libraries_off(checkout: Path, commit: str, *, run: Run) -> list[SiblingPin]:
@@ -479,17 +547,16 @@ def _describe(checkout: Path, branch: str, target: str, *, run: Run) -> str:
 
 def _carry_out(checkout: Path, plan: _Plan, *, workspace: Path, run: Run) -> str:
     python = str(checkout / ".venv" / "Scripts" / "python.exe")
-    changed = _git(checkout, "diff", "--name-only", plan.head, plan.target, run=run).splitlines() if plan.behind else []
-    pinned = sibling_pins_in(_pyproject_at(checkout, plan.target if plan.behind else plan.head, run=run))
+    changed = _git(checkout, "diff", "--name-only", plan.head, plan.target, run=run).splitlines() if plan.moves else []
+    pinned = sibling_pins_in(_pyproject_at(checkout, plan.target if plan.moves else plan.head, run=run))
     local = _cloning_from_here(workspace, pinned, run=run)
     steps = []
     if plan.libraries:
         steps.append(("installing its libraries", LIBRARY_S * len(plan.libraries), lambda: run(
             [python, "-m", "pip", "install", *(pin.spec for pin in plan.libraries)], cwd=checkout,
             timeout=PIP_TIMEOUT_S, env=local)))
-    if plan.behind:
-        steps.append(("moving its code", MOVE_S,
-                      lambda: _git(checkout, "merge", "--ff-only", "--quiet", plan.target, run=run)))
+    if plan.moves:
+        steps.append(("moving its code", MOVE_S, lambda: _move(checkout, plan, run=run)))
     if (checkout / ".venv").is_dir() and (plan.libraries or "pyproject.toml" in changed):
         steps.append(("installing it", REINSTALL_S, lambda: run(
             [python, "-m", "pip", "install", "-e", str(checkout), "--config-settings", "editable_mode=compat"],
@@ -498,10 +565,17 @@ def _carry_out(checkout: Path, plan: _Plan, *, workspace: Path, run: Run) -> str
         for index, (_name, _seconds, take) in enumerate(steps):
             entering(index)
             take()
-    done = [f"moved from {plan.head[:8]} to {plan.target[:8]}"] if plan.behind else []
+    done = [f"moved from {plan.head[:8]} to {plan.target[:8]}"] if plan.moves else []
     if plan.libraries:
         done.append("installed " + ", ".join(f"{pin.package} {pin.tag}" for pin in plan.libraries))
     return "; ".join(done)
+
+
+def _move(checkout: Path, plan: _Plan, *, run: Run) -> None:
+    if _ancestor(checkout, plan.head, plan.target, run=run):
+        _git(checkout, "merge", "--ff-only", "--quiet", plan.target, run=run)
+    else:
+        _git(checkout, "reset", "--keep", "--quiet", plan.target, run=run)
 
 
 @contextlib.contextmanager
@@ -545,7 +619,8 @@ def bring_up(checkout: Path, *, workspace: Path, run: Run = run, wait_s: float =
         if (previous is not None and previous.failed and previous.target == target
                 and now() - previous.at < RETRY_FAILED_AFTER_S and not _libraries_off(checkout, "HEAD", run=run)):
             return previous
-        said = _bring_up_to(checkout, branch, target, workspace=workspace, run=run, wait_s=wait_s, in_use=in_use)
+        said = _bring_up_to(checkout, branch, target, workspace=workspace, run=run, wait_s=wait_s, in_use=in_use,
+                            now=now)
         return Outcome(said, now(), False, target)
     except _LeftAlone as left:
         return Outcome(_not_waiting(checkout, str(left)), now(), left.failed, target)
@@ -555,18 +630,29 @@ def bring_up(checkout: Path, *, workspace: Path, run: Run = run, wait_s: float =
         return Outcome(f"failed: {failed}", now(), True, target)
 
 
+def heading_for(checkout: Path, *, run: Run = run) -> str:
+    plan = _plan(checkout, *_branch_and_target(checkout, run=run), run=run, now=time.time)
+    return plan.target if plan.moves else plan.head
+
+
 def _bring_up_to(checkout: Path, branch: str, target: str, *, workspace: Path, run: Run, wait_s: float,
-                 in_use: InUse) -> str:
-    settled = _plan(checkout, branch, target, run=run).settled
-    if settled:
-        return _not_waiting(checkout, settled)
+                 in_use: InUse, now: Callable[[], float]) -> str:
+    plan = _plan(checkout, branch, target, run=run, now=now)
+    if plan.settled:
+        return _settle(checkout, plan)
     with the_turn(checkout, wait_s=wait_s):
-        plan = _plan(checkout, branch, target, run=run)
+        plan = _plan(checkout, branch, target, run=run, now=now)
         if plan.settled:
-            return _not_waiting(checkout, plan.settled)
+            return _settle(checkout, plan)
         if running := in_use(_venvs_watched(checkout, workspace)):
             return _waiting_for(checkout, running)
         return _not_waiting(checkout, _carry_out(checkout, plan, workspace=workspace, run=run))
+
+
+def _settle(checkout: Path, plan: _Plan) -> str:
+    if plan.failed:
+        raise _LeftAlone(plan.settled, failed=True)
+    return _not_waiting(checkout, plan.settled)
 
 
 def _waiting_for(checkout: Path, running: list[processes.Process]) -> str:
