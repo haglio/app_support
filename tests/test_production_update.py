@@ -458,6 +458,20 @@ class TestAHotfix:
         assert stayed == hotfix
         assert machine.head(checkout) == untested
 
+    def test_a_hotfix_made_on_what_the_checkout_leaves_its_shipped_hotfix_for_is_taken(self, machine):
+        checkout = machine.checkout(files={"pyproject.toml": TestACheckoutThatMovesOnlyToWhatPassed.DECLARED})
+        (checkout / "state").mkdir()
+        (checkout / "state" / "passed.txt").write_text(machine.head(checkout), encoding="utf-8")
+        machine.hotfix(checkout, {"fix.txt": "fixed\n"}, stands_for=(("someone@example.com", 1_700_000_100),))
+        machine.bring_up(checkout)
+        shipped = machine.ship(checkout, {"fix.txt": "fixed\n"}, authored=1_700_000_100)
+        (checkout / "state" / "passed.txt").write_text(shipped, encoding="utf-8")
+        second = machine.hotfix(checkout, {"two.txt": "fixed\n"}, on=shipped)
+
+        machine.bring_up(checkout)
+
+        assert machine.head(checkout) == second
+
 
 class TestAHotfixOfTheSharedCode:
     FIX = ("someone@example.com", 1_700_000_200, "funestra")

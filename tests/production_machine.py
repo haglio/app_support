@@ -78,10 +78,11 @@ class Machine:
         return git("rev-parse", "HEAD", cwd=clone)
 
     def hotfix(self, checkout: Path, files: dict[str, str], *,
-               stands_for: tuple[tuple[str, int], ...] = (("someone@example.com", 1_700_000_000),)) -> str:
+               stands_for: tuple[tuple[str, int], ...] = (("someone@example.com", 1_700_000_000),),
+               on: str = "HEAD") -> str:
         self.clones += 1
         place = self.base / f"hotfix-{self.clones}"
-        git("worktree", "add", "-q", "--detach", str(place), "HEAD", cwd=checkout)
+        git("worktree", "add", "-q", "--detach", str(place), on, cwd=checkout)
         for name, text in files.items():
             (place / name).write_text(text, encoding="utf-8")
         git("add", "-A", cwd=place)
