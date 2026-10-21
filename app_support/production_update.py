@@ -207,23 +207,23 @@ def _step(arguments: Sequence[str]) -> str:
     return " ".join(arguments[:2])
 
 
-def _git(checkout: Path, *arguments: str, run: Run) -> str:
+def git(checkout: Path, *arguments: str, run: Run) -> str:
     return run(["git", *arguments], cwd=checkout, timeout=GIT_TIMEOUT_S).strip()
 
 
-def _git_or_none(checkout: Path, *arguments: str, run: Run) -> str | None:
+def git_or_none(checkout: Path, *arguments: str, run: Run) -> str | None:
     try:
-        return _git(checkout, *arguments, run=run) or None
+        return git(checkout, *arguments, run=run) or None
     except StepFailed:
         return None
 
 
 def default_branch(checkout: Path, *, run: Run) -> str | None:
-    head = _git_or_none(checkout, "symbolic-ref", "--short", "refs/remotes/origin/HEAD", run=run)
+    head = git_or_none(checkout, "symbolic-ref", "--short", "refs/remotes/origin/HEAD", run=run)
     if head and head.startswith("origin/"):
         return head[len("origin/"):]
     return next((name for name in ("main", "master")
-                 if _git_or_none(checkout, "rev-parse", "--verify", "--quiet", f"refs/heads/{name}", run=run)),
+                 if git_or_none(checkout, "rev-parse", "--verify", "--quiet", f"refs/heads/{name}", run=run)),
                 None)
 
 
@@ -415,13 +415,13 @@ def _branch_and_target(checkout: Path, *, run: Run) -> tuple[str, str]:
     branch = default_branch(checkout, run=run)
     if branch is None:
         raise _LeftAlone("follows no branch; left where it is")
-    shipped = _git_or_none(checkout, "show", f"refs/remotes/origin/{branch}:pyproject.toml", run=run) or ""
+    shipped = git_or_none(checkout, "show", f"refs/remotes/origin/{branch}:pyproject.toml", run=run) or ""
     try:
         commit_file = (_declared_in(shipped) or Declaration()).commit_file
     except (ProductionSpecError, tomllib.TOMLDecodeError) as wrong:
         raise _LeftAlone(f"failed: the pyproject on origin/{branch}: {wrong}", failed=True) from None
     if commit_file is None:
-        target = _git_or_none(checkout, "rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{branch}", run=run)
+        target = git_or_none(checkout, "rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{branch}", run=run)
         missing = f"has no origin/{branch} to follow"
     else:
         try:
@@ -430,7 +430,7 @@ def _branch_and_target(checkout: Path, *, run: Run) -> tuple[str, str]:
             named = ""
         if not named:
             raise _LeftAlone(f"nothing has passed yet: {commit_file} names no commit")
-        target = _git_or_none(checkout, "rev-parse", "--verify", "--quiet", f"{named}^{{commit}}", run=run)
+        target = git_or_none(checkout, "rev-parse", "--verify", "--quiet", f"{named}^{{commit}}", run=run)
         missing = f"{commit_file} names {named[:8]}, which this checkout does not have"
     if target is None:
         raise _LeftAlone(missing)
@@ -438,35 +438,35 @@ def _branch_and_target(checkout: Path, *, run: Run) -> tuple[str, str]:
 
 
 def _the_hotfix_or(checkout: Path, target: str, *, run: Run) -> str:
-    hotfix = _git_or_none(checkout, "rev-parse", "--verify", "--quiet", f"{HOTFIX_REF}^{{commit}}", run=run)
+    hotfix = git_or_none(checkout, "rev-parse", "--verify", "--quiet", f"{HOTFIX_REF}^{{commit}}", run=run)
     if hotfix is None:
         return target
-    head = _git(checkout, "rev-parse", "HEAD", run=run)
+    head = git(checkout, "rev-parse", "HEAD", run=run)
     if hotfix != head:
-        if any(_ancestor(checkout, made_on, hotfix, run=run) for made_on in (head, target)):
+        if any(is_ancestor(checkout, made_on, hotfix, run=run) for made_on in (head, target)):
             return hotfix
         _log.warning("%s: left out the hotfix %s, made on a commit it has moved past", checkout.name, hotfix[:8])
-    _git(checkout, "update-ref", "-d", HOTFIX_REF, run=run)
+    git(checkout, "update-ref", "-d", HOTFIX_REF, run=run)
     return target
 
 
 def _plan(checkout: Path, branch: str, target: str, *, workspace: Path, run: Run, now: Callable[[], float]) -> _Plan:
-    head = _git(checkout, "rev-parse", "HEAD", run=run)
-    on = _git_or_none(checkout, "symbolic-ref", "--quiet", "--short", "HEAD", run=run)
+    head = git(checkout, "rev-parse", "HEAD", run=run)
+    on = git_or_none(checkout, "symbolic-ref", "--quiet", "--short", "HEAD", run=run)
     if on != branch:
         return _Plan(head, target, False, [], f"is on {on or 'no branch'}, not {branch}; left where it is")
-    moves = head != target and bool(_ancestor(checkout, head, target, run=run))
+    moves = head != target and bool(is_ancestor(checkout, head, target, run=run))
     if head != target and not moves:
         if hotfixes := _hotfixes_on(checkout, branch, head, run=run):
             if unshipped := [hotfix for hotfix in hotfixes
                              if not _has_shipped(hotfix, checkout, workspace, head, target, run=run)]:
                 return _kept_at_its_hotfix(head, target, unshipped, now=now)
-            moves = not _ancestor(checkout, target, head, run=run)
-        elif not _ancestor(checkout, target, head, run=run):
+            moves = not is_ancestor(checkout, target, head, run=run)
+        elif not is_ancestor(checkout, target, head, run=run):
             return _Plan(head, target, False, [],
                          f"has commits {_describe(checkout, branch, target, run=run)} does not; left where it is")
     libraries = _libraries_off(checkout, target if moves else head, run=run)
-    if (moves or libraries) and _git(checkout, "status", "--porcelain", "--untracked-files=no", run=run):
+    if (moves or libraries) and git(checkout, "status", "--porcelain", "--untracked-files=no", run=run):
         return _Plan(head, target, moves, libraries, "has uncommitted changes; left where it is")
     return _Plan(head, target, moves, libraries)
 
@@ -492,7 +492,7 @@ class _Hotfix:
 
 
 def _commits(checkout: Path, span: str, *fields: str, run: Run) -> list[list[str]]:
-    listed = _git(checkout, "log", "--format=" + _FIELD.join(fields) + _RECORD, span, run=run)
+    listed = git(checkout, "log", "--format=" + _FIELD.join(fields) + _RECORD, span, run=run)
     return [record.strip().split(_FIELD, len(fields) - 1) for record in listed.split(_RECORD) if record.strip()]
 
 
@@ -540,7 +540,7 @@ def _kept_at_its_hotfix(head: str, target: str, unshipped: list[_Hotfix], *, now
 
 
 def _authors_in_effect(repository: Path, base: str, tip: str, *, run: Run) -> set[tuple[str, str]]:
-    since = _git_or_none(repository, "merge-base", base, tip, run=run)
+    since = git_or_none(repository, "merge-base", base, tip, run=run)
     commits = _commits(repository, f"{since}..{tip}" if since else tip, "%H", "%ae", "%at", "%B", run=run)
     undone_by = {undone: commit for commit, _email, _seconds, message in commits
                  for undone in _REVERTS.findall(message)}
@@ -560,11 +560,11 @@ def _libraries_off(checkout: Path, commit: str, *, run: Run) -> list[SiblingPin]
 
 
 def _pyproject_at(checkout: Path, commit: str, *, run: Run) -> str:
-    return _git_or_none(checkout, "show", f"{commit}:pyproject.toml", run=run) or ""
+    return git_or_none(checkout, "show", f"{commit}:pyproject.toml", run=run) or ""
 
 
 def _cloning_from_here(workspace: Path, pins: Iterable[SiblingPin], *, run: Run) -> dict[str, str]:
-    held = [pin for pin in pins if _git_or_none(
+    held = [pin for pin in pins if git_or_none(
         Path(workspace) / pin.repo, "rev-parse", "--verify", "--quiet", f"{pin.tag}^{{commit}}", run=run)]
     settings = {"GIT_CONFIG_COUNT": str(len(held))}
     for index, pin in enumerate(held):
@@ -573,22 +573,22 @@ def _cloning_from_here(workspace: Path, pins: Iterable[SiblingPin], *, run: Run)
     return settings
 
 
-def _ancestor(checkout: Path, older: str, newer: str, *, run: Run) -> bool:
+def is_ancestor(checkout: Path, older: str, newer: str, *, run: Run) -> bool:
     try:
-        _git(checkout, "merge-base", "--is-ancestor", older, newer, run=run)
+        git(checkout, "merge-base", "--is-ancestor", older, newer, run=run)
     except StepFailed:
         return False
     return True
 
 
 def _describe(checkout: Path, branch: str, target: str, *, run: Run) -> str:
-    tracking = _git_or_none(checkout, "rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{branch}", run=run)
+    tracking = git_or_none(checkout, "rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{branch}", run=run)
     return f"origin/{branch}" if tracking == target else target[:8]
 
 
 def _carry_out(checkout: Path, plan: _Plan, *, workspace: Path, run: Run) -> str:
     python = str(checkout / ".venv" / "Scripts" / "python.exe")
-    changed = _git(checkout, "diff", "--name-only", plan.head, plan.target, run=run).splitlines() if plan.moves else []
+    changed = git(checkout, "diff", "--name-only", plan.head, plan.target, run=run).splitlines() if plan.moves else []
     pinned = sibling_pins_in(_pyproject_at(checkout, plan.target if plan.moves else plan.head, run=run))
     local = _cloning_from_here(workspace, pinned, run=run)
     steps = []
@@ -613,10 +613,10 @@ def _carry_out(checkout: Path, plan: _Plan, *, workspace: Path, run: Run) -> str
 
 
 def _move(checkout: Path, plan: _Plan, *, run: Run) -> None:
-    if _ancestor(checkout, plan.head, plan.target, run=run):
-        _git(checkout, "merge", "--ff-only", "--quiet", plan.target, run=run)
+    if is_ancestor(checkout, plan.head, plan.target, run=run):
+        git(checkout, "merge", "--ff-only", "--quiet", plan.target, run=run)
     else:
-        _git(checkout, "reset", "--keep", "--quiet", plan.target, run=run)
+        git(checkout, "reset", "--keep", "--quiet", plan.target, run=run)
 
 
 @contextlib.contextmanager
@@ -747,7 +747,7 @@ def _record(state: Path, outcomes: Mapping[str, Outcome], previous: Mapping[str,
 
 
 def _on_github(checkout: Path, *, run: Run) -> tuple[str, str] | None:
-    match = _ON_GITHUB.search(_git_or_none(checkout, "config", "--get", "remote.origin.url", run=run) or "")
+    match = _ON_GITHUB.search(git_or_none(checkout, "config", "--get", "remote.origin.url", run=run) or "")
     return (match["owner"].casefold(), match["name"].casefold()) if match else None
 
 
@@ -766,7 +766,7 @@ def _heads_on_github(checkouts: Iterable[Path], *, run: Run) -> dict[Path, tuple
 def _worth_fetching(checkout: Path, branch: str, head: tuple[str, str] | None, *, run: Run,
                     now: Callable[[], float]) -> bool:
     if head is not None and head[0] == branch:
-        tracking = _git_or_none(checkout, "rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{branch}", run=run)
+        tracking = git_or_none(checkout, "rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{branch}", run=run)
         return tracking != head[1]
     try:
         fetched = (checkout / ".git" / "FETCH_HEAD").stat().st_mtime
@@ -812,7 +812,7 @@ def keep_up(workspace: Path, state: Path, *, fetch: bool = True, run: Run = run,
         branch = default_branch(checkout, run=run)
         if fetch and branch and _worth_fetching(checkout, branch, heads.get(checkout), run=run, now=now):
             try:
-                _git(checkout, "fetch", "--quiet", "origin", branch, run=run)
+                git(checkout, "fetch", "--quiet", "origin", branch, run=run)
             except StepFailed as unreachable:
                 _log.warning("%s: could not fetch: %s", checkout.name, unreachable)
         outcomes[checkout.name] = bring_up(checkout, workspace=workspace, run=run, wait_s=wait_s,
