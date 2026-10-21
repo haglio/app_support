@@ -75,7 +75,7 @@ class Machine:
         git("config", "user.email", "someone@example.com", cwd=repo)
         git("config", "user.name", "Someone", cwd=repo)
 
-    def ship(self, checkout: Path, files: dict[str, str], *, fetched: bool = True) -> str:
+    def ship(self, checkout: Path, files: dict[str, str], *, fetched: bool = True, authored: int | None = None) -> str:
         self.clones += 1
         clone = self.base / f"clone-{self.clones}"
         git("clone", "-q", str(self.base / "origins" / f"{checkout.name}.git"), str(clone), cwd=self.base)
@@ -83,11 +83,41 @@ class Machine:
         for name, text in files.items():
             (clone / name).write_text(text, encoding="utf-8")
         git("add", "-A", cwd=clone)
-        git("commit", "-q", "-m", "shipped", cwd=clone)
+        git("commit", "-q", "-m", "shipped", *([f"--date=@{authored}"] if authored else []), cwd=clone)
         git("push", "-q", "origin", "main", cwd=clone)
         if fetched:
             git("fetch", "-q", "origin", cwd=checkout)
         return git("rev-parse", "HEAD", cwd=clone)
+
+    def hotfix(self, checkout: Path, files: dict[str, str], *,
+               stands_for: tuple[tuple[str, int], ...] = (("someone@example.com", 1_700_000_000),)) -> str:
+        self.clones += 1
+        place = self.base / f"hotfix-{self.clones}"
+        git("worktree", "add", "-q", "--detach", str(place), "HEAD", cwd=checkout)
+        for name, text in files.items():
+            (place / name).write_text(text, encoding="utf-8")
+        git("add", "-A", cwd=place)
+        git("commit", "-q", "-m", production_update.hotfix_message("the hotfix", stands_for), cwd=place)
+        made = git("rev-parse", "HEAD", cwd=place)
+        git("worktree", "remove", "--force", str(place), cwd=checkout)
+        git("update-ref", production_update.HOTFIX_REF, made, cwd=checkout)
+        return made
+
+    def take_back(self, checkout: Path, commit: str) -> str:
+        self.clones += 1
+        clone = self.base / f"clone-{self.clones}"
+        git("clone", "-q", str(self.base / "origins" / f"{checkout.name}.git"), str(clone), cwd=self.base)
+        self._identify(clone)
+        git("revert", "--no-edit", commit, cwd=clone)
+        git("push", "-q", "origin", "main", cwd=clone)
+        git("fetch", "-q", "origin", cwd=checkout)
+        return git("rev-parse", "HEAD", cwd=clone)
+
+    @staticmethod
+    def hotfix_asked_for(checkout: Path) -> str | None:
+        asked = subprocess.run(["git", "rev-parse", "--verify", "--quiet", production_update.HOTFIX_REF],
+                               cwd=str(checkout), capture_output=True, text=True)
+        return asked.stdout.strip() or None
 
     @staticmethod
     def install(checkout: Path, name: str, version: str) -> None:
@@ -470,6 +500,135 @@ class TestACheckoutThatMovesOnlyToWhatPassed:
 
         assert machine.head(checkout) == machine.origin_head(checkout)
         assert outcome.said.startswith("up to date")
+
+
+class TestAHotfix:
+    def test_a_checkout_moves_to_the_hotfix_asked_for(self, machine):
+        checkout = machine.checkout()
+        hotfix = machine.hotfix(checkout, {"fix.txt": "fixed\n"})
+
+        machine.bring_up(checkout)
+
+        assert machine.head(checkout) == hotfix
+
+    def test_a_hotfix_the_checkout_runs_is_asked_for_no_longer(self, machine):
+        checkout = machine.checkout()
+        machine.hotfix(checkout, {"fix.txt": "fixed\n"})
+        machine.bring_up(checkout)
+
+        machine.bring_up(checkout)
+
+        assert machine.hotfix_asked_for(checkout) is None
+
+    def test_a_hotfix_made_on_a_commit_the_checkout_has_moved_past_is_left_out(self, machine):
+        checkout = machine.checkout()
+        machine.hotfix(checkout, {"fix.txt": "fixed\n"})
+        shipped = machine.ship(checkout, {"feature.txt": "new\n"})
+        git("merge", "-q", "--ff-only", shipped, cwd=checkout)
+
+        outcome = machine.bring_up(checkout)
+
+        assert machine.head(checkout) == shipped
+        assert machine.hotfix_asked_for(checkout) is None
+        assert outcome.said.startswith("up to date")
+
+    def test_a_checkout_runs_its_hotfix_until_the_same_fix_ships_the_usual_way(self, machine):
+        checkout = machine.checkout()
+        hotfix = machine.hotfix(checkout, {"fix.txt": "fixed\n"})
+        machine.bring_up(checkout)
+        machine.ship(checkout, {"feature.txt": "new\n"})
+
+        outcome = machine.bring_up(checkout)
+
+        assert machine.head(checkout) == hotfix
+        assert outcome.said == 'kept at its hotfix "the hotfix" until that fix ships the usual way'
+        assert not outcome.failed
+
+    def test_a_checkout_leaves_its_hotfix_for_what_shipped_once_that_fix_has_shipped(self, machine):
+        checkout = machine.checkout()
+        hotfix = machine.hotfix(checkout, {"fix.txt": "fixed\n"},
+                                stands_for=(("someone@example.com", 1_700_000_100),))
+        machine.bring_up(checkout)
+        shipped = machine.ship(checkout, {"fix.txt": "fixed\n"}, authored=1_700_000_100)
+
+        outcome = machine.bring_up(checkout)
+
+        assert machine.head(checkout) == shipped
+        assert outcome.said == f"moved from {hotfix[:8]} to {shipped[:8]}"
+
+    def test_a_fix_taken_back_out_after_it_shipped_leaves_the_checkout_on_its_hotfix(self, machine):
+        checkout = machine.checkout()
+        hotfix = machine.hotfix(checkout, {"fix.txt": "fixed\n"},
+                                stands_for=(("someone@example.com", 1_700_000_100),))
+        machine.bring_up(checkout)
+        shipped = machine.ship(checkout, {"fix.txt": "fixed\n"}, authored=1_700_000_100)
+        machine.take_back(checkout, shipped)
+
+        machine.bring_up(checkout)
+
+        assert machine.head(checkout) == hotfix
+
+    def test_a_fix_taken_back_out_and_shipped_again_lets_the_checkout_leave_its_hotfix(self, machine):
+        checkout = machine.checkout()
+        machine.hotfix(checkout, {"fix.txt": "fixed\n"}, stands_for=(("someone@example.com", 1_700_000_100),))
+        machine.bring_up(checkout)
+        shipped = machine.ship(checkout, {"fix.txt": "fixed\n"}, authored=1_700_000_100)
+        again = machine.take_back(checkout, machine.take_back(checkout, shipped))
+
+        machine.bring_up(checkout)
+
+        assert machine.head(checkout) == again
+
+    def test_a_hotfix_still_unshipped_a_day_after_it_was_made_is_a_failure(self, machine):
+        checkout = machine.checkout()
+        hotfix = machine.hotfix(checkout, {"fix.txt": "fixed\n"})
+        machine.bring_up(checkout)
+        made = int(git("log", "-1", "--format=%ct", hotfix, cwd=checkout))
+
+        outcome = machine.bring_up(checkout, now=lambda: made + production_update.HOTFIX_SHIPS_WITHIN_S + 1)
+
+        assert machine.head(checkout) == hotfix
+        assert outcome.failed
+        assert outcome.said == 'failed: kept at its hotfix "the hotfix" for a day, and that fix has not shipped the usual way'
+
+    def test_a_checkout_that_moves_only_to_what_passed_leaves_its_hotfix_once_what_passed_has_the_fix(self, machine):
+        checkout = machine.checkout(files={"pyproject.toml": TestACheckoutThatMovesOnlyToWhatPassed.DECLARED})
+        (checkout / "state").mkdir()
+        (checkout / "state" / "passed.txt").write_text(machine.head(checkout), encoding="utf-8")
+        hotfix = machine.hotfix(checkout, {"fix.txt": "fixed\n"}, stands_for=(("someone@example.com", 1_700_000_100),))
+        machine.bring_up(checkout)
+        machine.ship(checkout, {"fix.txt": "fixed\n"}, authored=1_700_000_100)
+        untested = machine.ship(checkout, {"feature.txt": "new\n"})
+
+        machine.bring_up(checkout)
+        stayed = machine.head(checkout)
+        (checkout / "state" / "passed.txt").write_text(untested, encoding="utf-8")
+        machine.bring_up(checkout)
+
+        assert stayed == hotfix
+        assert machine.head(checkout) == untested
+
+
+class TestWhereACheckoutIsHeaded:
+    def test_a_checkout_behind_what_shipped_is_headed_for_it(self, machine):
+        checkout = machine.checkout()
+        shipped = machine.ship(checkout, {"feature.txt": "new\n"})
+
+        assert production_update.heading_for(checkout, run=machine.run) == shipped
+
+    def test_a_checkout_kept_at_its_hotfix_is_headed_nowhere_else(self, machine):
+        checkout = machine.checkout()
+        hotfix = machine.hotfix(checkout, {"fix.txt": "fixed\n"})
+        machine.bring_up(checkout)
+        machine.ship(checkout, {"feature.txt": "new\n"})
+
+        assert production_update.heading_for(checkout, run=machine.run) == hotfix
+
+    def test_a_checkout_asked_for_a_hotfix_is_headed_for_it(self, machine):
+        checkout = machine.checkout()
+        hotfix = machine.hotfix(checkout, {"fix.txt": "fixed\n"})
+
+        assert production_update.heading_for(checkout, run=machine.run) == hotfix
 
 
 class TestTheDeclaration:
