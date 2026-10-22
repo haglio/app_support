@@ -67,6 +67,25 @@ def test_one_reader_changing_what_it_was_handed_changes_nobody_else_s(monkeypatc
     assert haglio_settings.value("genau_flick_words", "one") == "flick"
 
 
+FOLDERS_THE_APPS_READ = (
+    "genau_dir",
+    "genau_audio_dir",
+    "origenerator_pictures_dir",
+    "origenerator_videos_dir",
+    "origenerator_scripts_dir",
+    "origenerator_audio_dir",
+    "warm_gun_journal_dir",
+    "funscript_corpus_dir",
+)
+
+
+@pytest.mark.parametrize("setting", FOLDERS_THE_APPS_READ)
+def test_the_example_has_each_folder_an_app_reads_inside_its_library_root(setting, monkeypatch):
+    monkeypatch.setenv(haglio_settings.SETTINGS_ENV, haglio_settings.THE_EXAMPLE)
+
+    assert haglio_settings.value(setting).startswith(haglio_settings.value("library_root") + "/")
+
+
 def test_the_checkouts_are_found_in_the_folders_the_settings_name_in_order(tmp_path, monkeypatch):
     monkeypatch.setenv(haglio_settings.SETTINGS_ENV, str(_settings(
         tmp_path / "settings.json",
