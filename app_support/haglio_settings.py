@@ -25,6 +25,14 @@ EXAMPLE: dict[str, Any] = {
     "genau_flick_words": {"one": "flick", "many": "flicks"},
     "genau_source": "example-loop-clips",
     "ambient_audio_dir": "videos/example-folder/ambient-clips",
+    "genau_dir": "C:/path/to/library-root/videos/videos/genau",
+    "genau_audio_dir": "C:/path/to/library-root/videos/audio/genau",
+    "origenerator_pictures_dir": "C:/path/to/library-root/images/origenerator",
+    "origenerator_videos_dir": "C:/path/to/library-root/videos/videos/origenerator",
+    "origenerator_scripts_dir": "C:/path/to/library-root/videos/scripts/origenerator",
+    "origenerator_audio_dir": "C:/path/to/library-root/videos/audio/origenerator",
+    "warm_gun_journal_dir": "C:/path/to/library-root/app_data/warm_gun",
+    "funscript_corpus_dir": "C:/path/to/library-root/app_data/funestra/funscript_corpus",
 }
 
 
