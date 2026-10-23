@@ -148,6 +148,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--python", default=sys.executable)
     parser.add_argument("--dedicated-machine", action="store_true")
     parser.add_argument("--budget-minutes", type=float, default=None, metavar="MINUTES")
+    parser.add_argument("--part", type=int, default=1, metavar="K")
+    parser.add_argument("--parts", type=int, default=1, metavar="N")
     args = parser.parse_args(argv)
     root = Path.cwd()
     changed = changed_test_ids(root, args.base)
@@ -159,10 +161,14 @@ def main(argv: list[str] | None = None) -> int:
     if not ids:
         print(f"no test was added or changed since {args.base}", file=sys.stderr)
         return 0
-    print("\n".join(ids))
+    share = ids[args.part - 1::args.parts]
+    if args.parts > 1:
+        print(f"part {args.part} of {args.parts} repeats {len(share)} of the {len(ids)} tests "
+              f"added or changed since {args.base}", file=sys.stderr)
+    print("\n".join(share))
     try:
         held = assert_they_hold_up(
-            root, ids, runs=args.runs, python=args.python,
+            root, share, runs=args.runs, python=args.python,
             load=_every_core_busy if args.dedicated_machine else nullcontext,
             budget=None if args.budget_minutes is None else args.budget_minutes * 60)
     except AssertionError as refusal:

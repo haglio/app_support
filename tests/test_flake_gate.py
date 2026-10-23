@@ -361,6 +361,33 @@ def test_a_tree_the_command_is_limited_to_is_all_it_runs(branch_from, monkeypatc
     assert capsys.readouterr().out.split() == ["tests/integration/test_slow.py::test_slow"]
 
 
+FIVE_NEW = "".join(f"def test_{word}():\n    assert True\n\n\n"
+                   for word in ("one", "two", "three", "four", "five"))
+
+
+def test_the_parts_deal_the_changed_tests_out_between_them(branch_from, monkeypatch, capsys):
+    branch = branch_from({"tests/test_things.py": OLD})
+    branch.commit({"tests/test_new.py": FIVE_NEW})
+    monkeypatch.chdir(branch.path)
+    shares = []
+    for part in ("1", "2", "3"):
+        assert flake_gate.main(["--base", "main", "--runs", "1", "--part", part, "--parts", "3"]) == 0
+        shares.append(capsys.readouterr().out.split())
+
+    assert shares == [["tests/test_new.py::test_one", "tests/test_new.py::test_four"],
+                      ["tests/test_new.py::test_two", "tests/test_new.py::test_five"],
+                      ["tests/test_new.py::test_three"]]
+
+
+def test_a_part_says_how_much_of_the_whole_its_share_is(branch_from, monkeypatch, capsys):
+    branch = branch_from({"tests/test_things.py": OLD})
+    branch.commit({"tests/test_new.py": FIVE_NEW})
+    monkeypatch.chdir(branch.path)
+
+    assert flake_gate.main(["--base", "main", "--runs", "1", "--part", "3", "--parts", "3"]) == 0
+    assert "part 3 of 3 repeats 1 of the 5 tests added or changed since main" in capsys.readouterr().err
+
+
 def test_the_runs_use_the_interpreter_they_are_given(tmp_path: Path, monkeypatch):
     started = []
 
