@@ -78,7 +78,7 @@ def test_a_run_that_wrote_down_its_end_is_over_while_its_process_lingers():
 
 
 def test_a_run_whose_process_has_ended_is_no_longer_going():
-    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    child = subprocess.Popen([sys._base_executable, "-c", "import time; time.sleep(60)"])
     try:
         run = a_run(pid=child.pid, process_started=process_started(child.pid))
     finally:
