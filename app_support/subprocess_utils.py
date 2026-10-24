@@ -1,4 +1,4 @@
-"""Spawning child processes without flashing a console window.
+"""Spawning child processes: hidden, and ended whole when their time runs out.
 
 Every app here shells out to something console-based — ffprobe, PowerShell, a
 launcher script — from a process that is itself windowed. On Windows a child
@@ -10,9 +10,13 @@ child that asks for a window anyway.
 """
 from __future__ import annotations
 
+import contextlib
 import subprocess
 import sys
+from collections.abc import Callable, Iterator, Sequence
 from typing import Any
+
+from app_support import win32
 
 
 def hidden_subprocess_kwargs(*, creationflags: int = 0) -> dict[str, Any]:
@@ -36,3 +40,29 @@ def hidden_subprocess_kwargs(*, creationflags: int = 0) -> dict[str, Any]:
     startupinfo.wShowWindow = subprocess.SW_HIDE
     return {"creationflags": subprocess.CREATE_NO_WINDOW | creationflags,
             "startupinfo": startupinfo}
+
+
+def run_process_tree(arguments: Sequence[str], *, timeout: float | None,
+                     **popen_kwargs) -> subprocess.CompletedProcess:
+    child = subprocess.Popen(arguments, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **popen_kwargs)
+    with ending_together(child) as end_all:
+        try:
+            stdout, stderr = child.communicate(timeout=timeout)
+        except BaseException:
+            end_all()
+            child.wait()
+            raise
+    return subprocess.CompletedProcess(arguments, child.returncode, stdout, stderr)
+
+
+@contextlib.contextmanager
+def ending_together(child: subprocess.Popen) -> Iterator[Callable[[], None]]:
+    try:
+        job = win32.JobObject(int(child._handle)) if sys.platform == "win32" else None
+    except OSError:
+        job = None
+    if job is None:
+        yield child.kill
+    else:
+        with job:
+            yield job.end_all

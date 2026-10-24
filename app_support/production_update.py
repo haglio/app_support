@@ -50,7 +50,7 @@ from app_support.dependencies import SiblingPin, sibling_pins_in
 from app_support.file_channel import publish_whole
 from app_support.logging_utils import configure_logging
 from app_support.siblings import workspace_of
-from app_support.subprocess_utils import hidden_subprocess_kwargs
+from app_support.subprocess_utils import hidden_subprocess_kwargs, run_process_tree
 
 TURN = "production-update.turn"
 WAITING = "production-update.waiting"
@@ -208,10 +208,9 @@ def _a_folder_name(name: object) -> bool:
 def run(arguments: Sequence[str], *, cwd: Path | None = None, timeout: float = GIT_TIMEOUT_S,
         env: Mapping[str, str] | None = None) -> str:
     try:
-        finished = subprocess.run(list(arguments), cwd=cwd, capture_output=True, text=True,
-                                  encoding="utf-8", errors="replace", timeout=timeout,
-                                  env={**os.environ, **env} if env else None,
-                                  stdin=subprocess.DEVNULL, **hidden_subprocess_kwargs())
+        finished = run_process_tree(list(arguments), cwd=cwd, text=True, encoding="utf-8", errors="replace",
+                                    timeout=timeout, env={**os.environ, **env} if env else None,
+                                    stdin=subprocess.DEVNULL, **hidden_subprocess_kwargs())
     except subprocess.TimeoutExpired:
         raise StepFailed(f"{_step(arguments)} did not finish in {timeout:g} s") from None
     except OSError as cannot:

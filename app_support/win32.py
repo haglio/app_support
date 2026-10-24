@@ -30,6 +30,8 @@ family ends up doing and had all grown its own spelling of:
   * **naming a process for good**: Windows gives a finished process's number to
     the next one it starts, so a pid names one process only together with the
     moment that process started.
+  * **ending a child together with every process it started**, which ending the
+    child alone leaves running.
   * **asking whether the user is at the computer**: how long ago the mouse or
     the keyboard was last touched, anywhere in the session.
 
@@ -657,6 +659,33 @@ def process_started(pid: int, *, kernel32=_kernel32) -> int | None:
         return created.dwHighDateTime << 32 | created.dwLowDateTime
     finally:
         close(handle)
+
+
+# --- Ending a process together with every process it started ----------------
+
+
+class JobObject:
+    def __init__(self, process: int, *, kernel32=_kernel32) -> None:
+        dll = kernel32()
+        create = _declare(dll, "CreateJobObjectW", ctypes.c_void_p, ctypes.c_void_p, wintypes.LPCWSTR)
+        assign = _declare(dll, "AssignProcessToJobObject", wintypes.BOOL, ctypes.c_void_p, ctypes.c_void_p)
+        self._terminate = _declare(dll, "TerminateJobObject", wintypes.BOOL, ctypes.c_void_p, wintypes.UINT)
+        self._close = _declare(dll, "CloseHandle", wintypes.BOOL, ctypes.c_void_p)
+        self._handle = create(None, None)
+        if not self._handle:
+            raise OSError("CreateJobObjectW failed")
+        if not assign(self._handle, process):
+            self._close(self._handle)
+            raise OSError("AssignProcessToJobObject failed")
+
+    def end_all(self) -> None:
+        self._terminate(self._handle, 1)
+
+    def __enter__(self) -> JobObject:
+        return self
+
+    def __exit__(self, *raised: object) -> None:
+        self._close(self._handle)
 
 
 # --- Putting an error where the user will actually see it -------------------
