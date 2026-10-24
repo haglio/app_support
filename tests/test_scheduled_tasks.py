@@ -257,7 +257,7 @@ class TestTheCommandLineTool:
         def never_answers(*arguments, **options):
             raise subprocess.TimeoutExpired(arguments[0], options["timeout"])
 
-        monkeypatch.setattr(scheduled_tasks.subprocess, "run", never_answers)
+        monkeypatch.setattr(scheduled_tasks, "run_process_tree", never_answers)
 
         with pytest.raises(OSError, match="no answer"):
             scheduled_tasks.schtasks("/query", "/tn", "\\Example\\", "/fo", "csv", "/nh")
@@ -269,7 +269,7 @@ class TestTheCommandLineTool:
             asked.update(options)
             return subprocess.CompletedProcess(arguments, 0, b"", b"")
 
-        monkeypatch.setattr(scheduled_tasks.subprocess, "run", answered)
+        monkeypatch.setattr(scheduled_tasks, "run_process_tree", answered)
 
         scheduled_tasks.schtasks("/query", "/tn", "\\Example\\", "/fo", "csv", "/nh")
 

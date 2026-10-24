@@ -14,7 +14,7 @@ from time import monotonic
 from typing import Any, NamedTuple
 
 from app_support.changed_tests import changed_test_ids
-from app_support.subprocess_utils import hidden_subprocess_kwargs
+from app_support.subprocess_utils import hidden_subprocess_kwargs, run_process_tree
 
 __all__ = ["Repeats", "assert_they_hold_up", "busy_machine", "main"]
 
@@ -78,8 +78,8 @@ def assert_they_hold_up(root: Path, ids: list[str], *, runs: int, python: str = 
 def _one_run(command: list[str], chunk: list[str], root: Path, *, run: int, runs: int,
              within: float | None) -> bool:
     try:
-        done = subprocess.run([*command, *chunk], cwd=root, capture_output=True, text=True,
-                              errors="replace", timeout=within, **hidden_subprocess_kwargs())
+        done = run_process_tree([*command, *chunk], cwd=root, text=True, errors="replace", timeout=within,
+                                **hidden_subprocess_kwargs())
     except subprocess.TimeoutExpired:
         return False
     if done.returncode != 0:

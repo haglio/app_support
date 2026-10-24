@@ -40,7 +40,7 @@ from datetime import UTC, datetime
 from functools import cache
 from pathlib import Path
 
-from app_support.subprocess_utils import hidden_subprocess_kwargs
+from app_support.subprocess_utils import hidden_subprocess_kwargs, run_process_tree
 
 # The shape below. Bumped when a key is added, removed or re-meant, so a reader
 # of an old artifact knows what it is holding.
@@ -65,13 +65,11 @@ def _status(directory: Path) -> str | None:
     halves of a stamp cannot come from different moments.
     """
     try:
-        done = subprocess.run(
-            ["git", "-C", str(directory), "status", "--porcelain=v2", "--branch"],
-            capture_output=True, text=True, check=True,
-            timeout=_GIT_TIMEOUT_SECONDS, **hidden_subprocess_kwargs())
+        done = run_process_tree(["git", "-C", str(directory), "status", "--porcelain=v2", "--branch"],
+                                text=True, timeout=_GIT_TIMEOUT_SECONDS, **hidden_subprocess_kwargs())
     except (OSError, subprocess.SubprocessError):
         return None
-    return done.stdout
+    return done.stdout if done.returncode == 0 else None
 
 
 @cache
