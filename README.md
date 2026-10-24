@@ -12,7 +12,10 @@ Windows, and each one had grown its own byte-identical copy of the same things:
 - **`cli`** — `preparse_config_path`, the throwaway parser that reads `--config`
   before the real parser exists.
 - **`subprocess_utils`** — `hidden_subprocess_kwargs`, so shelling out to ffprobe
-  or PowerShell never flashes a console window over the video.
+  or PowerShell never flashes a console window over the video, and
+  `run_process_tree`, which ends a child that runs out of time together with
+  everything it started: `subprocess.run` ends the child alone, then waits with
+  no limit for output that what the child started still holds open.
 
 More that every repo in the family needs, and used to keep its own copy of:
 
@@ -138,7 +141,8 @@ More that every repo in the family needs, and used to keep its own copy of:
   taskbar identity, the same identity stamped onto a shortcut through COM or
   onto every taskbar pin under the app's name, a shortcut written whole (one
   already there is changed in place) and read back whole, the named mutex that
-  answers whether it may run, and
+  answers whether it may run, a job object that ends a child together with
+  every process it started, and
   the error popup for a process with nowhere else to say it. Every call raises
   on refusal and none decides what that means; the caller keeps its try/except.
 - **`peer_watch`** — two apps that must both be up all the time watching each

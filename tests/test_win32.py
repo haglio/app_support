@@ -21,6 +21,7 @@ from app_support.win32 import (
     _PROPVARIANT,
     _VT_LPWSTR,
     _VTBL_IPS_GET_VALUE,
+    JobObject,
     TaskbarApp,
     _IID_IPropertyStore,
     _PKEY_AppUserModel_ID,
@@ -784,6 +785,58 @@ class TestANamedMutexOnWindows:
         handle = try_acquire_mutex(name)
         assert handle is not None
         self._close(handle)
+
+
+class _FakeJobKernel32:
+    def __init__(self, *, job: int = WIDE_HANDLE, assigned: int = 1) -> None:
+        self.CreateJobObjectW = _FakeFunction(job)
+        self.AssignProcessToJobObject = _FakeFunction(assigned)
+        self.TerminateJobObject = _FakeFunction(1)
+        self.CloseHandle = _FakeFunction(1)
+
+
+A_PROCESS = 0x1F4
+
+
+class TestAJobObject:
+    def test_the_process_goes_into_the_job_made_for_it(self):
+        kernel32 = _FakeJobKernel32()
+
+        JobObject(A_PROCESS, kernel32=lambda: kernel32)
+
+        assert kernel32.AssignProcessToJobObject.calls == [(WIDE_HANDLE, A_PROCESS)]
+
+    def test_the_job_is_declared_wide_enough_to_come_back_whole(self):
+        kernel32 = _FakeJobKernel32()
+
+        JobObject(A_PROCESS, kernel32=lambda: kernel32)
+
+        assert kernel32.CreateJobObjectW.restype is ctypes.c_void_p
+
+    def test_ending_all_ends_every_process_in_it_and_leaving_lets_it_go(self):
+        kernel32 = _FakeJobKernel32()
+
+        with JobObject(A_PROCESS, kernel32=lambda: kernel32) as job:
+            job.end_all()
+
+        assert kernel32.TerminateJobObject.calls == [(WIDE_HANDLE, 1)]
+        assert kernel32.CloseHandle.calls == [(WIDE_HANDLE,)]
+
+    def test_a_job_windows_will_not_make_is_a_refusal(self):
+        kernel32 = _FakeJobKernel32(job=0)
+
+        with pytest.raises(OSError, match="CreateJobObjectW"):
+            JobObject(A_PROCESS, kernel32=lambda: kernel32)
+
+        assert kernel32.AssignProcessToJobObject.calls == []
+
+    def test_a_job_the_process_will_not_go_into_is_let_go_rather_than_leaked(self):
+        kernel32 = _FakeJobKernel32(assigned=0)
+
+        with pytest.raises(OSError, match="AssignProcessToJobObject"):
+            JobObject(A_PROCESS, kernel32=lambda: kernel32)
+
+        assert kernel32.CloseHandle.calls == [(WIDE_HANDLE,)]
 
 
 class TestShowErrorPopup:
