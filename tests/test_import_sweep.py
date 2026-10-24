@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import os
 import sys
+import uuid
 from pathlib import Path
 
 import pytest
 
-from app_support import import_sweep
+from app_support import import_sweep, processes
+from app_support.threading_utils import wait_until
 
 PYPROJECT = """\
 [project]
@@ -118,6 +120,23 @@ def test_a_module_that_never_finishes_importing_is_named_and_the_modules_after_i
 
     assert swept.imported == ["toy_app", "toy_app.zulu"]
     assert "did not finish importing within 5 s" in swept.failures["toy_app.stuck"]
+
+
+def test_a_module_that_never_finishes_importing_is_ended_with_what_it_started(tmp_path):
+    marker = "app-support-test-" + uuid.uuid4().hex
+    checkout = a_checkout(tmp_path / "toy_app_checkout", {
+        "toy_app/__init__.py": "",
+        "toy_app/stuck.py": (f"import subprocess, sys, time\n"
+                             f"subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)', '{marker}'])\n"
+                             f"time.sleep(60)\n"),
+    })
+
+    def nothing_it_started_is_left_running() -> bool:
+        return not [process for process in processes.running() if marker in process.cmdline]
+
+    import_sweep.sweep(checkout, python=sys._base_executable, each_within_s=5)
+
+    wait_until(nothing_it_started_is_left_running, timeout=5)
 
 
 def test_the_checkout_swept_is_imported_ahead_of_any_other_copy_on_the_interpreter_s_path(tmp_path, monkeypatch):

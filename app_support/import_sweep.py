@@ -13,7 +13,7 @@ from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from app_support.subprocess_utils import hidden_subprocess_kwargs
+from app_support.subprocess_utils import ending_together, hidden_subprocess_kwargs
 
 __all__ = ["EACH_WITHIN_S", "NothingToSweep", "Sweep", "main", "sweep"]
 
@@ -70,17 +70,18 @@ def _import_in_one_interpreter(python: str, checkout: Path, modules: list[str], 
         child = subprocess.Popen([python, "-c", _IMPORT_EACH, str(checkout), str(record)], stdin=subprocess.PIPE,
                                  stdout=subprocess.DEVNULL, stderr=stderr, text=True, cwd=checkout, env=env,
                                  **hidden_subprocess_kwargs())
-        child.stdin.write(json.dumps(modules))
-        child.stdin.close()
-        done, since = _lines_in(record), time.monotonic()
-        while child.poll() is None:
-            if (now_done := _lines_in(record)) != done:
-                done, since = now_done, time.monotonic()
-            elif time.monotonic() - since > each_within_s:
-                child.kill()
-                child.wait()
-                return f"it did not finish importing within {each_within_s:g} s"
-            time.sleep(_POLL_S)
+        with ending_together(child) as end_all:
+            child.stdin.write(json.dumps(modules))
+            child.stdin.close()
+            done, since = _lines_in(record), time.monotonic()
+            while child.poll() is None:
+                if (now_done := _lines_in(record)) != done:
+                    done, since = now_done, time.monotonic()
+                elif time.monotonic() - since > each_within_s:
+                    end_all()
+                    child.wait()
+                    return f"it did not finish importing within {each_within_s:g} s"
+                time.sleep(_POLL_S)
     return (f"the interpreter ended with exit code {child.returncode} while importing it:\n"
             f"{said.read_text(encoding='utf-8', errors='replace')}")
 
