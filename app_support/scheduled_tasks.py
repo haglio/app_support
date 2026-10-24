@@ -15,7 +15,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 
-from app_support.subprocess_utils import hidden_subprocess_kwargs
+from app_support.subprocess_utils import hidden_subprocess_kwargs, run_process_tree
 
 _NAMESPACE = "http://schemas.microsoft.com/windows/2004/02/mit/task"
 _REPEATS_COUNTED_FROM = "2026-01-01T00:00:00"
@@ -106,9 +106,8 @@ def this_user() -> str:
 def schtasks(*arguments: str) -> str:
     tool = Path(os.environ.get("SYSTEMROOT", r"C:\Windows")) / "System32" / "schtasks.exe"
     try:
-        finished = subprocess.run([str(tool), *arguments], capture_output=True, check=False,
-                                  stdin=subprocess.DEVNULL, timeout=_PATIENCE_SECONDS,
-                                  **hidden_subprocess_kwargs())
+        finished = run_process_tree([str(tool), *arguments], stdin=subprocess.DEVNULL,
+                                    timeout=_PATIENCE_SECONDS, **hidden_subprocess_kwargs())
     except subprocess.TimeoutExpired as unanswered:
         raise OSError(f"schtasks {' '.join(arguments)}: no answer in {_PATIENCE_SECONDS} "
                       "seconds") from unanswered

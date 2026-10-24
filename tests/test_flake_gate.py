@@ -126,7 +126,7 @@ class _Paced:
         return subprocess.CompletedProcess(argv, 0, "", "")
 
     def install(self, monkeypatch):
-        monkeypatch.setattr(flake_gate.subprocess, "run", self.run)
+        monkeypatch.setattr(flake_gate, "run_process_tree", self.run)
         monkeypatch.setattr(flake_gate, "monotonic", lambda: self.now)
 
     def times_run(self, test: str) -> int:
@@ -395,7 +395,7 @@ def test_the_runs_use_the_interpreter_they_are_given(tmp_path: Path, monkeypatch
         started.append(argv[0])
         return subprocess.CompletedProcess(argv, 0, "", "")
 
-    monkeypatch.setattr(flake_gate.subprocess, "run", run)
+    monkeypatch.setattr(flake_gate, "run_process_tree", run)
 
     assert_they_hold_up(tmp_path, ["test_x.py::test_x"], runs=2, python=r"C:\elsewhere\python.exe")
 

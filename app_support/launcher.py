@@ -24,7 +24,6 @@ import argparse
 import json
 import os
 import re
-import subprocess
 import sys
 import tomllib
 from collections.abc import Mapping
@@ -32,6 +31,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path, PureWindowsPath
 
 from app_support import loading_screen, production_update
+from app_support.subprocess_utils import run_process_tree
 
 DRY_RUN = "HAGLIO_LAUNCHER_DRY_RUN"
 INTERPRETERS = ("python.exe", "pythonw.exe")
@@ -827,9 +827,8 @@ def run_under_script_host(launcher: Path, *arguments: str, dry_run: bool = True)
     env = {name: value for name, value in os.environ.items() if name.upper() != DRY_RUN}
     if dry_run:
         env[DRY_RUN] = "1"
-    finished = subprocess.run(
-        [str(host), "//Nologo", str(launcher), *arguments],
-        capture_output=True, text=True, env=env, timeout=60, check=False)
+    finished = run_process_tree([str(host), "//Nologo", str(launcher), *arguments], text=True, env=env,
+                                timeout=60)
     return ScriptHostRun(finished.returncode, finished.stdout + finished.stderr)
 
 

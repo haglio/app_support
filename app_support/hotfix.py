@@ -37,7 +37,7 @@ from app_support.production_update import (
     hotfix_message,
     is_ancestor,
 )
-from app_support.subprocess_utils import hidden_subprocess_kwargs
+from app_support.subprocess_utils import hidden_subprocess_kwargs, run_process_tree
 
 CHECKS_TIMEOUT_S = 10 * 60.0
 NOTHING_ASKED_FOR = "0" * 40
@@ -389,9 +389,9 @@ def _environment_with(pythonpath: Sequence[Path]) -> dict[str, str]:
 def run_checks(python: Path, tests: list[str], place: Path, pythonpath: Sequence[Path]) -> None:
     command = [str(python), "-m", "pytest", "-x", "-q", "-p", "no:cacheprovider", *tests]
     try:
-        finished = subprocess.run(command, cwd=place, capture_output=True, text=True, encoding="utf-8",
-                                  errors="replace", timeout=CHECKS_TIMEOUT_S, stdin=subprocess.DEVNULL,
-                                  env=_environment_with(pythonpath), **hidden_subprocess_kwargs())
+        finished = run_process_tree(command, cwd=place, text=True, encoding="utf-8", errors="replace",
+                                    timeout=CHECKS_TIMEOUT_S, stdin=subprocess.DEVNULL,
+                                    env=_environment_with(pythonpath), **hidden_subprocess_kwargs())
     except subprocess.TimeoutExpired:
         raise Refused(f"the checks did not finish in {CHECKS_TIMEOUT_S / 60:g} minutes") from None
     if finished.returncode != 0:

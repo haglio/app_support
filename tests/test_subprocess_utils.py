@@ -6,10 +6,12 @@ refactor of the import does not.
 """
 from __future__ import annotations
 
+import ast
 import os
 import subprocess
 import sys
 import uuid
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -161,3 +163,17 @@ def test_off_windows_a_child_is_run_without_asking_for_a_job(monkeypatch):
 
     assert finished.stdout == "said\n"
 
+
+_PACKAGE = Path(__file__).resolve().parent.parent / "app_support"
+
+
+def _timed_children_in(package: Path) -> list[str]:
+    return [f"{module.name}:{node.lineno}" for module in sorted(package.rglob("*.py"))
+            for node in ast.walk(ast.parse(module.read_text(encoding="utf-8")))
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name) and node.func.value.id == "subprocess"
+            and any(keyword.arg == "timeout" for keyword in node.keywords)]
+
+
+def test_every_child_the_package_gives_a_time_limit_is_run_as_a_whole_tree():
+    assert _timed_children_in(_PACKAGE) == []
