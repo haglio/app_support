@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from app_support.production_update import UpdateProgress
 
 FOLDER = "HAGLIO_LOADING_SCREEN"
+PICTURES_FOLDER = "HAGLIO_LOADING_SCREEN_PICTURES"
 LINES = "HAGLIO_LOADING_SCREEN_LINES"
 OPENING = "opening.png"
 FULL = "full.png"
@@ -88,28 +89,35 @@ class AppWindow:
 class MeetingPlace:
     folder: Path
     lines: tuple[str, ...]
+    pictures_folder: Path | None = None
 
     def leave_pictures(self, *, opening: bytes, full: bytes, updating: Sequence[bytes], bar: Box,
                        covers_every_monitor: bool) -> None:
-        self.folder.mkdir(parents=True, exist_ok=True)
-        _replace_whole(self.folder / OPENING, opening)
-        _replace_whole(self.folder / FULL, full)
+        kept = self._pictures_kept_in
+        kept.mkdir(parents=True, exist_ok=True)
+        _replace_whole(kept / OPENING, opening)
+        _replace_whole(kept / FULL, full)
         for index, picture in enumerate(updating):
-            _replace_whole(self.folder / _updating(index), picture)
-        _replace_whole(self.folder / PICTURES, json.dumps(
+            _replace_whole(kept / _updating(index), picture)
+        _replace_whole(kept / PICTURES, json.dumps(
             {"bar": list(bar), "covers_every_monitor": covers_every_monitor,
              "lines": list(self.lines[:len(updating)])}).encode("utf-8"))
 
     def pictures(self) -> Pictures | None:
+        kept = self._pictures_kept_in
         try:
-            document = json.loads((self.folder / PICTURES).read_text(encoding="utf-8"))
+            document = json.loads((kept / PICTURES).read_text(encoding="utf-8"))
             bar = tuple(int(edge) for edge in document["bar"])
             lines = [str(line) for line in document["lines"]]
             covers_every_monitor = bool(document["covers_every_monitor"])
         except (OSError, ValueError, KeyError, TypeError):
             return None
-        return Pictures(self.folder / OPENING, self.folder / FULL, bar, covers_every_monitor,
-                        {line: self.folder / _updating(index) for index, line in enumerate(lines)})
+        return Pictures(kept / OPENING, kept / FULL, bar, covers_every_monitor,
+                        {line: kept / _updating(index) for index, line in enumerate(lines)})
+
+    @property
+    def _pictures_kept_in(self) -> Path:
+        return self.pictures_folder or self.folder
 
     def say_where_the_app_comes_up(self, window: AppWindow) -> None:
         if window != self.where_the_app_comes_up():
@@ -152,11 +160,13 @@ class MeetingPlace:
 def meeting_place(environment: Mapping[str, str]) -> MeetingPlace | None:
     if not environment.get(FOLDER):
         return None
-    return MeetingPlace(Path(environment[FOLDER]), tuple(json.loads(environment.get(LINES) or "[]")))
+    pictures = environment.get(PICTURES_FOLDER)
+    return MeetingPlace(Path(environment[FOLDER]), tuple(json.loads(environment.get(LINES) or "[]")),
+                        Path(pictures) if pictures else None)
 
 
 def handed_over(environment: MutableMapping[str, str]) -> dict[str, str]:
-    return {name: environment.pop(name) for name in (FOLDER, LINES) if name in environment}
+    return {name: environment.pop(name) for name in (FOLDER, PICTURES_FOLDER, LINES) if name in environment}
 
 
 def _numbers(written: Sequence[int] | None, count: int) -> tuple[int, ...] | None:

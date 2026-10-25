@@ -30,11 +30,13 @@ class TestWhereTheLauncherAndTheAppMeet:
         assert loading_screen.meeting_place({}) is None
 
     def test_the_app_hands_the_place_to_its_loading_screen_alone(self, tmp_path):
-        environment = {loading_screen.FOLDER: str(tmp_path / "screen"), loading_screen.LINES: "[]", "PATH": "x"}
+        place = {loading_screen.FOLDER: str(tmp_path / "screen"), loading_screen.LINES: "[]",
+                 loading_screen.PICTURES_FOLDER: str(tmp_path / "primary" / "screen" / "preview")}
+        environment = {**place, "PATH": "x"}
 
         handed = loading_screen.handed_over(environment)
 
-        assert handed == {loading_screen.FOLDER: str(tmp_path / "screen"), loading_screen.LINES: "[]"}
+        assert handed == place
         assert environment == {"PATH": "x"}
 
 
@@ -42,7 +44,25 @@ def a_place(tmp_path: Path, *lines: str) -> loading_screen.MeetingPlace:
     return loading_screen.MeetingPlace(tmp_path / "screen", lines or ("Updating Example...",))
 
 
+def a_preview(checkout: Path, pictures: Path) -> loading_screen.MeetingPlace:
+    return loading_screen.meeting_place({loading_screen.FOLDER: str(checkout / "screen"),
+                                         loading_screen.PICTURES_FOLDER: str(pictures),
+                                         loading_screen.LINES: '["Updating Example..."]'})
+
+
 class TestThePicturesTheAppLeaves:
+    def test_a_preview_finds_the_pictures_an_earlier_preview_of_the_app_left(self, tmp_path):
+        kept = tmp_path / "primary" / "screen" / "preview"
+        a_preview(tmp_path / "one", kept).leave_pictures(
+            opening=b"opening", full=b"full", updating=[b"updating"], bar=(24, 220, 360, 18),
+            covers_every_monitor=False)
+
+        pictures = a_preview(tmp_path / "two", kept).pictures()
+
+        assert pictures.opening.read_bytes() == b"opening"
+        assert pictures.updating("Updating Example...").read_bytes() == b"updating"
+        assert not (tmp_path / "one").exists()
+
     def test_the_next_click_finds_the_pictures_the_app_left(self, tmp_path):
         place = a_place(tmp_path)
 
@@ -477,8 +497,22 @@ class TestTheLoadingScreenItself:
         environment = {**os.environ, loading_screen.FOLDER: str(place.folder),
                        loading_screen.LINES: json.dumps(place.lines),
                        "PYTHONPATH": str(Path(loading_screen.__file__).parents[1])}
+        if place.pictures_folder:
+            environment[loading_screen.PICTURES_FOLDER] = str(place.pictures_folder)
         return desktop.start([sys.executable, "-m", "app_support.loading_screen", str(checkout)],
                              environment=environment)
+
+    def test_a_previews_first_click_comes_up_on_the_pictures_an_earlier_preview_left(
+            self, tmp_path, desktop_of_its_own):
+        kept = self.a_place_with_pictures(tmp_path / "primary").folder
+        place = loading_screen.MeetingPlace(tmp_path / "branch" / "screen", ("Updating Example...",), kept)
+
+        pid = self.start(place, tmp_path / "example", desktop_of_its_own)
+        came_up = eventually(lambda: place.standing() is not None)
+        place.say_taken()
+
+        assert came_up
+        assert desktop_of_its_own.ended_within(pid, 10)
 
     def test_it_comes_up_moves_its_bar_for_an_update_and_goes_once_the_app_takes_over(
             self, tmp_path, desktop_of_its_own):
