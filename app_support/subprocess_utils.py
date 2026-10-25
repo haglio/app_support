@@ -1,4 +1,4 @@
-"""Spawning child processes: hidden, and ended whole when their time runs out.
+"""Spawning child processes: hidden, and ended whole when their time runs out or their parent ends.
 
 Every app here shells out to something console-based — ffprobe, PowerShell, a
 launcher script — from a process that is itself windowed. On Windows a child
@@ -11,12 +11,15 @@ child that asks for a window anyway.
 from __future__ import annotations
 
 import contextlib
+import logging
 import subprocess
 import sys
 from collections.abc import Callable, Iterator, Sequence
 from typing import Any
 
 from app_support import win32
+
+logger = logging.getLogger(__name__)
 
 
 def hidden_subprocess_kwargs(*, creationflags: int = 0) -> dict[str, Any]:
@@ -53,6 +56,13 @@ def run_process_tree(arguments: Sequence[str], *, timeout: float | None,
             child.wait()
             raise
     return subprocess.CompletedProcess(arguments, child.returncode, stdout, stderr)
+
+
+def tie_to_this_process(child: subprocess.Popen) -> None:
+    try:
+        win32.a_job_ending_with_this_process(int(child._handle))
+    except OSError as refused:
+        logger.warning("pid %s is not tied to this process, so it can outlive it: %s", child.pid, refused)
 
 
 @contextlib.contextmanager
