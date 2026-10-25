@@ -16,7 +16,6 @@ from production_machine import Machine, a_process, git, pins, spec
 
 from app_support import launcher, processes, production_update, windows_settings
 from app_support.production_update import Outcome
-from app_support.threading_utils import wait_until
 
 windows_only = pytest.mark.skipif(sys.platform != "win32", reason="Win32's file sharing and processes")
 GENERIC_READ = 0x80000000
@@ -1109,12 +1108,9 @@ class TestAFailedStep:
 
         failed = within(6, lambda: production_update.run(launcher.command, timeout=1, env=launcher.env))
 
-        def nothing_it_started_is_left_running() -> bool:
-            return not launcher.left_running()
-
         assert isinstance(failed, production_update.StepFailed)
         assert str(failed).endswith("did not finish in 1 s")
-        wait_until(nothing_it_started_is_left_running, timeout=5)
+        assert not launcher.left_running()
 
 
 class TestTheCommandLine:

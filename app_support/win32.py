@@ -663,6 +663,14 @@ def process_started(pid: int, *, kernel32=_kernel32) -> int | None:
 
 # --- Ending a process together with every process it started ----------------
 
+_PROCESS_ID_LIST = 3
+_MAXIMUM_WAIT_OBJECTS = 64
+_ENDED_WITHIN_MS = 10_000
+
+
+class _ProcessIdList(ctypes.Structure):
+    _fields_ = [("assigned", wintypes.DWORD), ("listed", wintypes.DWORD), ("ids", ctypes.c_size_t * 256)]
+
 
 class JobObject:
     def __init__(self, process: int, *, kernel32=_kernel32) -> None:
@@ -670,6 +678,13 @@ class JobObject:
         create = _declare(dll, "CreateJobObjectW", ctypes.c_void_p, ctypes.c_void_p, wintypes.LPCWSTR)
         assign = _declare(dll, "AssignProcessToJobObject", wintypes.BOOL, ctypes.c_void_p, ctypes.c_void_p)
         self._terminate = _declare(dll, "TerminateJobObject", wintypes.BOOL, ctypes.c_void_p, wintypes.UINT)
+        self._query = _declare(dll, "QueryInformationJobObject", wintypes.BOOL, ctypes.c_void_p, ctypes.c_int,
+                               ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD))
+        self._open = _declare(dll, "OpenProcess", ctypes.c_void_p, wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+        self._in_job = _declare(dll, "IsProcessInJob", wintypes.BOOL, ctypes.c_void_p, ctypes.c_void_p,
+                                ctypes.POINTER(wintypes.BOOL))
+        self._wait = _declare(dll, "WaitForMultipleObjects", wintypes.DWORD, wintypes.DWORD,
+                              ctypes.POINTER(ctypes.c_void_p), wintypes.BOOL, wintypes.DWORD)
         self._close = _declare(dll, "CloseHandle", wintypes.BOOL, ctypes.c_void_p)
         self._handle = create(None, None)
         if not self._handle:
@@ -679,7 +694,30 @@ class JobObject:
             raise OSError("AssignProcessToJobObject failed")
 
     def end_all(self) -> None:
-        self._terminate(self._handle, 1)
+        ending = self._each_process_in_it()
+        try:
+            self._terminate(self._handle, 1)
+            for start in range(0, len(ending), _MAXIMUM_WAIT_OBJECTS):
+                some = ending[start:start + _MAXIMUM_WAIT_OBJECTS]
+                self._wait(len(some), (ctypes.c_void_p * len(some))(*some), True, _ENDED_WITHIN_MS)
+        finally:
+            for process in ending:
+                self._close(process)
+
+    def _each_process_in_it(self) -> list[int]:
+        listed = _ProcessIdList()
+        self._query(self._handle, _PROCESS_ID_LIST, ctypes.byref(listed), ctypes.sizeof(listed), None)
+        held = []
+        for pid in listed.ids[:listed.listed]:
+            process = self._open(_SYNCHRONIZE | _PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+            if not process:
+                continue
+            still_in_it = wintypes.BOOL()
+            if self._in_job(process, self._handle, ctypes.byref(still_in_it)) and still_in_it.value:
+                held.append(process)
+            else:
+                self._close(process)
+        return held
 
     def __enter__(self) -> JobObject:
         return self
