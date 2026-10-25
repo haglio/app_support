@@ -132,6 +132,8 @@ def _launcher(file: str, spec: dict) -> Launcher:
         loading_screen=tuple(spec.get("loading-screen", ())),
     )
     _refuse_contradictions(refuse, launcher)
+    _refuse_logs_outside_the_checkout(refuse, launcher)
+    _refuse_placeholders_nothing_fills(refuse, launcher)
     return launcher
 
 
@@ -185,10 +187,16 @@ def _refuse_contradictions(refuse, launcher: Launcher) -> None:
         raise refuse("copy-from-primary needs venv = \"primary\"")
     if launcher.loading_screen and not launcher.log:
         raise refuse("loading-screen needs a log: the app's own loading screen meets it beside the log")
+
+
+def _refuse_logs_outside_the_checkout(refuse, launcher: Launcher) -> None:
     logs = [launcher.log, *(flag.log for flag in _flags(launcher))]
     for log in filter(None, logs):
         if PureWindowsPath(log).is_absolute() or ".." in PureWindowsPath(log).parts:
             raise refuse(f"log {log!r} must be a path inside the checkout")
+
+
+def _refuse_placeholders_nothing_fills(refuse, launcher: Launcher) -> None:
     fillable = set(_variables(launcher))
     checks = [("run", launcher.run, fillable)]
     if launcher.checkout_argument:
