@@ -1072,6 +1072,7 @@ class TestTheLoadingScreenAtTheClick:
         launch = desktop_of_its_own.start([str(host), "//Nologo", str(_rendered(checkout))])
 
         assert desktop_of_its_own.ended_within(launch, 30)
+        assert eventually((_screen_of(checkout) / loading_screen.ENDED).exists, within_s=30)
         said = {path.name for path in _screen_of(checkout).iterdir()}
         assert {loading_screen.UPDATED, loading_screen.STARTED} <= said
 
