@@ -107,6 +107,14 @@ class TestTheSpec:
         with pytest.raises(LauncherSpecError, match="copy-from-primary"):
             launchers(_checkout(tmp_path, spec))
 
+    def test_a_preview_shares_only_the_pictures_of_a_loading_screen_it_shows(self, tmp_path: Path):
+        with pytest.raises(LauncherSpecError, match="preview needs a loading-screen"):
+            launchers(_checkout(tmp_path, WORKTREE + "preview = true\n"))
+
+    def test_a_preview_runs_a_branchs_code_on_the_primary_checkouts_venv(self, tmp_path: Path):
+        with pytest.raises(LauncherSpecError, match="preview needs venv"):
+            launchers(_checkout(tmp_path, LOGGED + PREVIEWS + KEPT))
+
     def test_a_venv_is_either_this_checkouts_or_the_primarys(self, tmp_path: Path):
         with pytest.raises(LauncherSpecError, match="venv"):
             launchers(_checkout(tmp_path, MINIMAL + 'venv = "shared"\n'))
@@ -249,6 +257,8 @@ EVERY_SHAPE = [
             (launcher.Flag("--two", "Example Two", "state\\two.log"),))),
     launcher.Launcher("screened.vbs", "Example", "-m example", log="state\\example.log", watch=True,
                       loading_screen=("Updating Example...",), waits_for_updates=True),
+    launcher.Launcher("preview.vbs", "Example", "-m example", venv="primary", log="state\\example.log",
+                      loading_screen=("Updating Example...",), preview=True, waits_for_updates=True),
 ]
 
 
@@ -293,6 +303,7 @@ log = 'state\\example.log'
 environment = { EXAMPLE_BRANCH = "1" }
 copy-from-primary = ["content.local.json"]
 """
+PREVIEWS = 'loading-screen = ["Updating Example..."]\npreview = true\n'
 BRANCH = '''
 [tool.haglio.launchers."launch_example.vbs"]
 app = "Example"
@@ -497,6 +508,18 @@ class TestACheckoutArgument:
         assert report.value("ready") == str(checkout / "state" / "two_launcher.ready")
         assert report.value("exited") == str(checkout / "state" / "two_launcher.exited")
         assert report.value("arguments") == f'-m example.branch "{checkout}" --two'
+
+    def test_a_preview_handed_its_checkout_shares_its_pictures_beside_the_launcher(self, tmp_path: Path):
+        primary = _checkout(tmp_path, BRANCH.replace("watch = true\n", "watch = true\n" + PREVIEWS) + KEPT,
+                            name="primary")
+        checkout = _checkout(tmp_path, "", name="worktree")
+        script = _rendered(primary)
+
+        report = dry_run(script, str(checkout))
+        two = dry_run(script, str(checkout), "--two")
+
+        assert report.value("pictures") == str(primary / "state" / "launcher.screen" / "preview")
+        assert two.value("pictures") == str(primary / "state" / "two_launcher.screen" / "preview")
 
     def test_a_flag_where_the_label_would_be_leaves_the_checkout_as_the_label(
         self, tmp_path: Path,
@@ -979,6 +1002,13 @@ def _screen_of(checkout: Path) -> Path:
     return checkout / "state" / "example.screen"
 
 
+PREVIEW = WORKTREE + PREVIEWS + KEPT
+
+
+def _pictures_of_every_preview(primary: Path) -> Path:
+    return _screen_of(primary) / "preview"
+
+
 def _loading_screen_of(checkout: Path) -> str:
     return (f'"{checkout.parent / UPDATER}" -m app_support.loading_screen '
             f'"{checkout}" "{checkout.parent / "hosted"}"')
@@ -1007,6 +1037,29 @@ class TestTheLoadingScreenAtTheClick:
                                   f'"{_screen_of(checkout) / loading_screen.UPDATED}"" (style 0, wait False)')
         app = _line_index(run, f'rehearsal: run cmd /c cd /d "{checkout}"')
         assert max(told, lines) < screen < update < app
+
+    def test_a_dry_run_of_a_preview_names_the_pictures_every_preview_of_the_app_shares(self, tmp_path: Path):
+        primary, worktree = _worktree(tmp_path, PREVIEW)
+
+        report = dry_run(_rendered(worktree))
+
+        assert report.value("screen") == str(_screen_of(worktree))
+        assert report.value("pictures") == str(_pictures_of_every_preview(primary))
+
+    def test_a_new_previews_first_click_shows_the_pictures_an_earlier_preview_left(self, tmp_path: Path):
+        primary, worktree = _worktree(tmp_path, PREVIEW)
+        _venv(primary, "python.exe")
+        _updater_beside(primary)
+        kept = _pictures_of_every_preview(primary)
+        loading_screen.MeetingPlace(kept, ()).leave_pictures(
+            opening=b"", full=b"", updating=[], bar=(0, 0, 1, 1), covers_every_monitor=False)
+
+        run = _rehearsed_to_the_end(_rehearse(_rendered(worktree)))
+
+        told = _line_index(run, f"rehearsal: environment {loading_screen.PICTURES_FOLDER}={kept}")
+        screen = _line_index(run, f'rehearsal: run "{tmp_path / UPDATER}" -m app_support.loading_screen '
+                                  f'"{primary}" (style 1, wait False)')
+        assert told < screen
 
     def test_before_the_app_has_left_its_pictures_no_loading_screen_is_started(self, tmp_path: Path):
         checkout = _screened(tmp_path, pictures=False)

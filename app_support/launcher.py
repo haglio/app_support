@@ -39,7 +39,7 @@ VENVS = ("own", "primary")
 
 _KEYS = frozenset({
     "app", "run", "interpreter", "named-interpreter", "venv", "log", "watch",
-    "note", "environment", "copy-from-primary", "checkout-argument", "loading-screen",
+    "note", "environment", "copy-from-primary", "checkout-argument", "loading-screen", "preview",
 })
 _CHECKOUT_KEYS = frozenset({"missing", "gone", "flags"})
 _FLAG_KEYS = frozenset({"app", "log"})
@@ -80,6 +80,7 @@ class Launcher:
     copy_from_primary: tuple[str, ...] = ()
     checkout_argument: CheckoutArgument | None = None
     loading_screen: tuple[str, ...] = ()
+    preview: bool = False
     waits_for_updates: bool = False
     also_runs: tuple[str, ...] = ()
 
@@ -130,6 +131,7 @@ def _launcher(file: str, spec: dict) -> Launcher:
         copy_from_primary=tuple(spec.get("copy-from-primary", ())),
         checkout_argument=_checkout_argument(refuse, spec.get("checkout-argument")),
         loading_screen=tuple(spec.get("loading-screen", ())),
+        preview=spec.get("preview", False),
     )
     _refuse_contradictions(refuse, launcher)
     _refuse_logs_outside_the_checkout(refuse, launcher)
@@ -187,6 +189,11 @@ def _refuse_contradictions(refuse, launcher: Launcher) -> None:
         raise refuse("copy-from-primary needs venv = \"primary\"")
     if launcher.loading_screen and not launcher.log:
         raise refuse("loading-screen needs a log: the app's own loading screen meets it beside the log")
+    if launcher.preview and not launcher.loading_screen:
+        raise refuse("preview needs a loading-screen: what every preview shares is the pictures it shows")
+    if launcher.preview and launcher.venv != "primary" and not launcher.checkout_argument:
+        raise refuse('preview needs venv = "primary" or a checkout-argument: a preview runs a branch\'s code '
+                     "on the primary checkout's venv")
 
 
 def _refuse_logs_outside_the_checkout(refuse, launcher: Launcher) -> None:
@@ -281,6 +288,8 @@ def _declarations(launcher: Launcher) -> str:
         names += ["notePath", "noteText"]
     if launcher.loading_screen:
         names += ["screenFolder", "screenUp"]
+    if launcher.preview:
+        names.append("picturesFolder")
     return "Dim " + ", ".join(names)
 
 
@@ -329,7 +338,10 @@ def _log_paths(base: str, launcher: Launcher, log: str, indent: str) -> list[str
         lines.append(
             f"{indent}notePath = {_path(base, str(PureWindowsPath(log).with_name(launcher.note)))}")
     if launcher.loading_screen:
-        lines.append(f"{indent}screenFolder = {_path(base, str(PureWindowsPath(log).with_suffix('.screen')))}")
+        screen = PureWindowsPath(log).with_suffix(".screen")
+        lines.append(f"{indent}screenFolder = {_path(base, str(screen))}")
+        if launcher.preview:
+            lines.append(f"{indent}picturesFolder = {_path(_venv_checkout(launcher), str(screen / 'preview'))}")
     return lines
 
 
@@ -437,6 +449,8 @@ def _report(launcher: Launcher) -> list[str]:
     if launcher.loading_screen:
         lines += ['  WScript.Echo "loading screen: " & LoadingScreen()',
                   '  WScript.Echo "screen: " & screenFolder']
+    if launcher.preview:
+        lines.append('  WScript.Echo "pictures: " & picturesFolder')
     lines.append("End Sub")
     return lines
 
@@ -611,6 +625,9 @@ End Sub
 def _loading_screen(launcher: Launcher) -> str:
     flag = f"fso.BuildPath(screenFolder, {_text(loading_screen.CANCELED)})"
     said = ", ".join(_text(name) for name in loading_screen.SAID_AT_EACH_LAUNCH)
+    pictures = "picturesFolder" if launcher.preview else "screenFolder"
+    kept_apart = (f'\n  shell.Environment("Process").Item({_text(loading_screen.PICTURES_FOLDER)}) = picturesFolder'
+                  if launcher.preview else "")
     return f"""\
 Function LoadingScreen()
   Dim gate
@@ -622,14 +639,14 @@ End Function
 
 Sub ShowLoadingScreen()
   Dim name
-  shell.Environment("Process").Item({_text(loading_screen.FOLDER)}) = screenFolder
+  shell.Environment("Process").Item({_text(loading_screen.FOLDER)}) = screenFolder{kept_apart}
   shell.Environment("Process").Item({_text(loading_screen.LINES)}) = {_text(json.dumps(list(launcher.loading_screen)))}
   If Not fso.FolderExists(fso.GetParentFolderName(screenFolder)) Then fso.CreateFolder fso.GetParentFolderName(screenFolder)
   If Not fso.FolderExists(screenFolder) Then fso.CreateFolder screenFolder
   For Each name In Array({said})
     If fso.FileExists(fso.BuildPath(screenFolder, name)) Then fso.DeleteFile fso.BuildPath(screenFolder, name)
   Next
-  If fso.FileExists(updater) And fso.FileExists(fso.BuildPath(screenFolder, {_text(loading_screen.PICTURES)})) Then
+  If fso.FileExists(updater) And fso.FileExists(fso.BuildPath({pictures}, {_text(loading_screen.PICTURES)})) Then
     shell.Run LoadingScreen(), 1, False
     screenUp = True
   End If
