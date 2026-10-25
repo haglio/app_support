@@ -352,6 +352,150 @@ class TestACheckoutThatMovesOnlyToWhatPassed:
         assert outcome.said.startswith("up to date")
 
 
+class TestAVersionThatOpensOnlyWithEveryKeyOfItsExample:
+    OPENS_ONLY_WITH = '\n[tool.haglio.opens-only-with]\nevery-key-of = "content.example.json"\nin = "content.local.json"\n'
+
+    def declaring(self, machine, *, overlay: dict) -> Path:
+        checkout = machine.checkout(files={"pyproject.toml": pins() + self.OPENS_ONLY_WITH,
+                                           "content.example.json": json.dumps({"_comment": "its shape", "alpha": []})})
+        (checkout / "content.local.json").write_text(json.dumps(overlay), encoding="utf-8")
+        return checkout
+
+    def test_a_checkout_whose_overlay_lacks_a_key_the_shipped_version_needs_is_left_where_it_is(self, machine):
+        checkout = self.declaring(machine, overlay={"alpha": ["mine"]})
+        before = machine.head(checkout)
+        machine.ship(checkout, {"content.example.json": json.dumps({"alpha": [], "beta": {}})})
+
+        outcome = machine.bring_up(checkout)
+
+        assert machine.head(checkout) == before
+        assert outcome == Outcome("content.local.json lacks beta, which origin/main needs; left where it is",
+                                  outcome.at, False, machine.origin_head(checkout))
+        assert machine.ran == []
+
+    def test_it_moves_on_the_first_pass_once_the_overlay_has_that_key(self, machine):
+        checkout = self.declaring(machine, overlay={"alpha": ["mine"]})
+        target = machine.ship(checkout, {"content.example.json": json.dumps({"alpha": [], "beta": {}})})
+        machine.bring_up(checkout)
+        (checkout / "content.local.json").write_text(json.dumps({"alpha": ["mine"], "beta": {}}), encoding="utf-8")
+
+        machine.bring_up(checkout)
+
+        assert machine.head(checkout) == target
+
+    def test_it_is_the_version_it_would_move_to_that_says_what_it_opens_only_with(self, machine):
+        checkout = machine.checkout(files={"pyproject.toml": pins(),
+                                           "content.example.json": json.dumps({"alpha": []})})
+        (checkout / "content.local.json").write_text(json.dumps({"alpha": ["mine"]}), encoding="utf-8")
+        before = machine.head(checkout)
+        machine.ship(checkout, {"pyproject.toml": pins() + self.OPENS_ONLY_WITH,
+                                "content.example.json": json.dumps({"alpha": [], "beta": {}})})
+
+        outcome = machine.bring_up(checkout)
+
+        assert machine.head(checkout) == before
+        assert outcome.said.startswith("content.local.json lacks beta")
+
+    def test_a_version_that_says_nothing_of_what_it_opens_with_is_moved_to_whatever_the_overlay_lacks(self, machine):
+        checkout = machine.checkout(files={"pyproject.toml": pins(),
+                                           "content.example.json": json.dumps({"alpha": []})})
+        (checkout / "content.local.json").write_text("{}", encoding="utf-8")
+        target = machine.ship(checkout, {"content.example.json": json.dumps({"alpha": [], "beta": {}})})
+
+        machine.bring_up(checkout)
+
+        assert machine.head(checkout) == target
+
+    def test_a_checkout_with_no_overlay_of_its_own_runs_on_the_example_so_it_is_moved(self, machine):
+        checkout = self.declaring(machine, overlay={})
+        (checkout / "content.local.json").unlink()
+        target = machine.ship(checkout, {"content.example.json": json.dumps({"alpha": [], "beta": {}})})
+
+        machine.bring_up(checkout)
+
+        assert machine.head(checkout) == target
+
+    def test_a_checkout_held_off_what_shipped_is_headed_nowhere_else(self, machine):
+        checkout = self.declaring(machine, overlay={"alpha": ["mine"]})
+        machine.ship(checkout, {"content.example.json": json.dumps({"alpha": [], "beta": {}})})
+
+        assert production_update.heading_for(checkout, run=machine.run) == machine.head(checkout)
+
+    def test_before_a_launch_the_app_it_runs_is_held_and_the_launch_goes_on(self, machine):
+        hosted = self.declaring(machine, overlay={"alpha": ["mine"]})
+        host = machine.checkout("host", files={
+            "pyproject.toml": pins() + '\n[tool.haglio.production]\nalso-runs = ["example"]\n'})
+        before = machine.head(hosted)
+        for checkout in (host, hosted):
+            machine.ship(checkout, {"feature.txt": "new\n"})
+        machine.ship(hosted, {"content.example.json": json.dumps({"alpha": [], "beta": {}})})
+
+        outcomes = production_update.before_launch(host, machine.workspace, machine.base / "state", run=machine.run,
+                                                   in_use=lambda venvs: [])
+
+        assert machine.head(host) == machine.origin_head(host)
+        assert machine.head(hosted) == before
+        assert outcomes["example"].said.startswith("content.local.json lacks beta")
+
+    @pytest.mark.parametrize("table", [
+        'every-key-of = "content.example.json"',
+        'every-key-of = "../content.example.json"\nin = "content.local.json"',
+        'every-key-of = "content.example.json"\nin = "C:/elsewhere/content.local.json"',
+        'every-key-of = "content.example.json"\nin = "content.local.json"\nfrom = "origin"',
+    ], ids=["one file", "a file above the checkout", "a file elsewhere", "a key it does not know"])
+    def test_what_it_opens_only_with_has_to_be_two_files_inside_the_checkout(self, table):
+        with pytest.raises(production_update.ProductionSpecError, match="opens-only-with"):
+            production_update.opens_only_with(pins() + f"\n[tool.haglio.opens-only-with]\n{table}\n")
+
+    def test_a_version_that_names_what_it_opens_with_wrongly_fails_and_is_not_moved_to(self, machine):
+        checkout = self.declaring(machine, overlay={"alpha": ["mine"]})
+        before = machine.head(checkout)
+        machine.ship(checkout, {"pyproject.toml": pins() + self.OPENS_ONLY_WITH.replace(
+            '"content.example.json"', '"../content.example.json"')})
+
+        outcome = machine.bring_up(checkout)
+
+        assert machine.head(checkout) == before
+        assert outcome.failed
+        assert "opens-only-with" in outcome.said
+
+    @pytest.mark.parametrize("unreadable", ['{"alpha": [', "3", None],
+                             ids=["half written", "not an object", "a folder where the file should be"])
+    def test_an_overlay_that_cannot_be_read_holds_the_checkout_rather_than_ending_the_pass(self, machine, unreadable):
+        checkout = self.declaring(machine, overlay={"alpha": ["mine"]})
+        before = machine.head(checkout)
+        machine.ship(checkout, {"content.example.json": json.dumps({"alpha": [], "beta": {}})})
+        local = checkout / "content.local.json"
+        if unreadable is None:
+            local.unlink()
+            local.mkdir()
+        else:
+            local.write_text(unreadable, encoding="utf-8")
+
+        outcome = machine.bring_up(checkout)
+
+        assert machine.head(checkout) == before
+        assert outcome.said.startswith("content.local.json could not be read")
+        assert outcome.said.endswith("; left where it is")
+        assert not outcome.failed
+
+    @pytest.mark.parametrize(("example", "shipped"), [
+        ("content.example.json", {"content.example.json": '{"alpha": ['}),
+        ("elsewhere.json", {"pyproject.toml": pins() + OPENS_ONLY_WITH.replace("content.example.json",
+                                                                               "elsewhere.json")}),
+    ], ids=["half written", "a file the version does not carry"])
+    def test_a_version_whose_example_cannot_be_read_fails_and_is_not_moved_to(self, machine, example, shipped):
+        checkout = self.declaring(machine, overlay={"alpha": ["mine"]})
+        before = machine.head(checkout)
+        machine.ship(checkout, shipped)
+
+        outcome = machine.bring_up(checkout)
+
+        assert machine.head(checkout) == before
+        assert outcome.failed
+        assert example in outcome.said
+
+
 class TestAHotfix:
     def test_a_checkout_moves_to_the_hotfix_asked_for(self, machine):
         checkout = machine.checkout()

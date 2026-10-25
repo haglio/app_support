@@ -14,10 +14,14 @@ says so, only the commit a file of its own names.  A hotfix asked for at ``refs/
 goes ahead of either, and the checkout keeps it until the same fix ships the usual way.  Its libraries go in at exactly the versions
 that commit pins, before its code, and neither moves while one of his programs
 runs out of its venv, or out of the venv of a checkout that declares it starts
-programs from this one.  An update holds ``.git/production-update.turn`` alone
-for as long as it runs, and the launchers of a checkout that declares
-``[tool.haglio.production]`` hold it shared while they start its app, so a launch
-waits for an update rather than starting half way through one.
+programs from this one.  Nor does it move to a commit whose pyproject says, in
+``[tool.haglio.opens-only-with]``, that its app will not open without every key
+one file documents in another, while the checkout's own copy of the other lacks
+one; it moves on the first pass once that copy has them all.  An update holds
+``.git/production-update.turn`` alone for as long as it runs, and the launchers
+of a checkout that declares ``[tool.haglio.production]`` hold it shared while
+they start its app, so a launch waits for an update rather than starting half
+way through one.
 
 Standard library only.
 """
@@ -41,7 +45,7 @@ from ctypes import wintypes
 from pathlib import Path, PureWindowsPath
 from typing import NamedTuple
 
-from app_support import json_store, processes, win32
+from app_support import json_store, overlay, processes, win32
 from app_support.dependencies import SiblingPin, sibling_pins_in
 from app_support.file_channel import publish_whole
 from app_support.logging_utils import configure_logging
@@ -112,6 +116,12 @@ class Declaration:
 
 
 @dataclasses.dataclass(frozen=True)
+class OpensOnlyWith:
+    example: str
+    local: str
+
+
+@dataclasses.dataclass(frozen=True)
 class UpdateProgress:
     steps: tuple[tuple[str, float], ...]
     step: int
@@ -149,8 +159,12 @@ def declared(checkout: Path) -> Declaration | None:
     return _declared_in(text)
 
 
+def _haglio_table(pyproject_text: str, name: str):
+    return tomllib.loads(pyproject_text).get("tool", {}).get("haglio", {}).get(name)
+
+
 def _declared_in(pyproject_text: str) -> Declaration | None:
-    table = tomllib.loads(pyproject_text).get("tool", {}).get("haglio", {}).get("production")
+    table = _haglio_table(pyproject_text, "production")
     if table is None:
         return None
     unknown = sorted(set(table) - _KEYS)
@@ -165,6 +179,18 @@ def _declared_in(pyproject_text: str) -> Declaration | None:
         raise ProductionSpecError(
             f"[tool.haglio.production]: also-runs {also_runs!r} must name checkouts beside this one")
     return Declaration(commit_file, tuple(also_runs))
+
+
+def opens_only_with(pyproject_text: str) -> OpensOnlyWith | None:
+    """What a pyproject says its app will not open without: every key one file documents,
+    in another. None when it says nothing."""
+    table = _haglio_table(pyproject_text, "opens-only-with")
+    if table is None:
+        return None
+    if set(table) != {"every-key-of", "in"} or not all(_inside_the_checkout(path) for path in table.values()):
+        raise ProductionSpecError(
+            f"[tool.haglio.opens-only-with]: {table!r} must name two files inside the checkout, every-key-of and in")
+    return OpensOnlyWith(table["every-key-of"], table["in"])
 
 
 def _inside_the_checkout(path: object) -> bool:
@@ -468,10 +494,34 @@ def _plan(checkout: Path, branch: str, target: str, *, workspace: Path, run: Run
         elif not is_ancestor(checkout, target, head, run=run):
             return _Plan(head, target, False, [],
                          f"has commits {_describe(checkout, branch, target, run=run)} does not; left where it is")
-    libraries = _libraries_off(checkout, target if moves else head, run=run)
+    pyproject = _pyproject_at(checkout, target if moves else head, run=run)
+    if moves and (held := _held_for_its_overlay(checkout, branch, target, pyproject, run=run)):
+        return _Plan(head, target, False, [], held)
+    libraries = _libraries_off(checkout, pyproject)
     if (moves or libraries) and git(checkout, "status", "--porcelain", "--untracked-files=no", run=run):
         return _Plan(head, target, moves, libraries, "has uncommitted changes; left where it is")
     return _Plan(head, target, moves, libraries)
+
+
+def _held_for_its_overlay(checkout: Path, branch: str, target: str, pyproject_text: str, *, run: Run) -> str | None:
+    try:
+        needs = opens_only_with(pyproject_text)
+    except ProductionSpecError as wrong:
+        raise StepFailed(f"the pyproject at {target[:8]}: {wrong}") from None
+    if needs is None:
+        return None
+    try:
+        example = json.loads(git(checkout, "show", f"{target}:{needs.example}", run=run))
+    except ValueError as wrong:
+        raise StepFailed(f"{needs.example} at {target[:8]}: {wrong}") from None
+    try:
+        lacking = overlay.keys_lacking(checkout / needs.local, example)
+    except (OSError, ValueError, TypeError) as unreadable:
+        return f"{needs.local} could not be read ({unreadable}); left where it is"
+    if not lacking:
+        return None
+    return (f"{needs.local} lacks {', '.join(lacking)}, which {_describe(checkout, branch, target, run=run)} "
+            "needs; left where it is")
 
 
 class Original(NamedTuple):
@@ -572,11 +622,11 @@ def _authors_in_effect(repository: Path, base: str, tip: str, *, run: Run) -> se
     return {(email, seconds) for commit, email, seconds, _message in commits if in_effect(commit)}
 
 
-def _libraries_off(checkout: Path, commit: str, *, run: Run) -> list[SiblingPin]:
+def _libraries_off(checkout: Path, pyproject_text: str) -> list[SiblingPin]:
     venv = checkout / ".venv"
     if not venv.is_dir():
         return []
-    return libraries_off_their_pins(_pyproject_at(checkout, commit, run=run), installed_versions(venv))
+    return libraries_off_their_pins(pyproject_text, installed_versions(venv))
 
 
 def _pyproject_at(checkout: Path, commit: str, *, run: Run) -> str:
@@ -678,7 +728,8 @@ def bring_up(checkout: Path, *, workspace: Path, run: Run = run, wait_s: float =
     try:
         branch, target = _branch_and_target(checkout, run=run)
         if (previous is not None and previous.failed and previous.target == target
-                and now() - previous.at < RETRY_FAILED_AFTER_S and not _libraries_off(checkout, "HEAD", run=run)
+                and now() - previous.at < RETRY_FAILED_AFTER_S
+                and not _libraries_off(checkout, _pyproject_at(checkout, "HEAD", run=run))
                 and not _taken_back(checkout, git(checkout, "rev-parse", "HEAD", run=run), run=run)):
             return previous
         said = _bring_up_to(checkout, branch, target, workspace=workspace, run=run, wait_s=wait_s, in_use=in_use,

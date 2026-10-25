@@ -83,7 +83,11 @@ More that every repo in the family needs, and used to keep its own copy of:
   moves while one of his
   programs runs out of the checkout's venv, or out of the venv of a checkout
   that declares it starts programs from this one
-  (`[tool.haglio.production] also-runs`). The launchers of a checkout that
+  (`[tool.haglio.production] also-runs`). Nor does a checkout move to a commit
+  whose app will not open while the checkout's git-ignored overlay lacks a key
+  that commit's example documents (`[tool.haglio.opens-only-with] every-key-of`,
+  `in`, read at the commit); it moves on the first pass once the overlay has
+  them all. The launchers of a checkout that
   declares `[tool.haglio.production]`, even empty, run it for that checkout just
   before they start its app, and hold `.git/production-update.turn` shared
   while the app starts, so a launch waits for an update rather than starting

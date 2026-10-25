@@ -85,11 +85,16 @@ def missing_keys(local_path: Path, example_path: Path) -> tuple[str, ...]:
     fresh or public checkout runs on the example, so there is nothing to be
     short of.
     """
+    return keys_lacking(local_path, json.loads(example_path.read_text(encoding="utf-8")))
+
+
+def keys_lacking(local_path: Path, example: Mapping[str, Any]) -> tuple[str, ...]:
+    """:func:`missing_keys`, against an *example* already read: the one a commit carries,
+    which the production updater asks of a version before it moves a checkout there."""
     if not local_path.exists():
         return ()
-    documented = documented_keys(json.loads(example_path.read_text(encoding="utf-8")))
     present = set(json.loads(local_path.read_text(encoding="utf-8")))
-    return tuple(sorted(documented - present))
+    return tuple(sorted(documented_keys(example) - present))
 
 
 class MissingOverlayKey(LookupError):
