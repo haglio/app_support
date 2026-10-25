@@ -73,14 +73,12 @@ every-minutes = 2
 [tool.haglio.production]
 
 [tool.pytest.ini_options]
-# A ceiling on a hang, not a performance budget. The slowest test on a
-# developer machine is the tracked-tree content scan, but it is not the
-# slowest on a runner: it returns early when no blocklist is reachable, and
-# the blocklist is git-ignored, so a fresh checkout has none. What CI does run
-# longest here is the sanitize hook tests, each driving a real git repo, at
-# about a second. --timeout-method=thread is the half that pays for itself: it
-# dumps the stack of the test that stopped, which turns a stalled required
-# check into a one-line diagnosis. tests/test_timeouts.py holds all three
-# halves of it.
-addopts = "-p no:cacheprovider -p app_support.sanitize.pytest_plugin -p app_support.coverage_gate --cov --cov-report= --timeout=60 --timeout-method=thread"
+# A ceiling on a hang, not a performance budget. The slowest tests are the
+# updater's and the hotfix route's, each making up to 160 real git calls:
+# about 30 s on a developer machine running other suites, and up to 220 s on
+# one carrying a dozen of them (measured 2026-10-24 and 25).
+# --timeout-method=thread is the half that pays for itself: it dumps the
+# stack of the test that stopped, which turns a stalled required check into a
+# one-line diagnosis. tests/test_timeouts.py holds all three halves of it.
+addopts = "-p no:cacheprovider -p app_support.sanitize.pytest_plugin -p app_support.coverage_gate --cov --cov-report= --timeout=240 --timeout-method=thread"
 testpaths = ["tests"]
