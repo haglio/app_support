@@ -244,6 +244,13 @@ def git_or_none(checkout: Path, *arguments: str, run: Run) -> str | None:
         return None
 
 
+def uncommitted_changes(checkout: Path, *, run: Run) -> str:
+    """What ``git status`` says is changed and not committed, asked without the index lock
+    a refresh of the index would take from an update running beside it."""
+    return run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=checkout, timeout=GIT_TIMEOUT_S,
+               env={"GIT_OPTIONAL_LOCKS": "0"}).strip()
+
+
 def default_branch(checkout: Path, *, run: Run) -> str | None:
     head = git_or_none(checkout, "symbolic-ref", "--short", "refs/remotes/origin/HEAD", run=run)
     if head and head.startswith("origin/"):
@@ -497,7 +504,7 @@ def _plan(checkout: Path, branch: str, target: str, *, workspace: Path, run: Run
     if moves and (held := _held_for_its_overlay(checkout, branch, target, pyproject, run=run)):
         return _Plan(head, target, False, [], held)
     libraries = _libraries_off(checkout, pyproject)
-    if (moves or libraries) and git(checkout, "status", "--porcelain", "--untracked-files=no", run=run):
+    if (moves or libraries) and uncommitted_changes(checkout, run=run):
         return _Plan(head, target, moves, libraries, "has uncommitted changes; left where it is")
     return _Plan(head, target, moves, libraries)
 

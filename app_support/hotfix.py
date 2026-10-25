@@ -144,7 +144,7 @@ def _production_of(worktree: Path, *, run: Run) -> Path:
 
 def _a_fix(worktree: Path, *, run: Run) -> _Fix:
     worktree = _top_of(worktree, run=run)
-    if git(worktree, "status", "--porcelain", "--untracked-files=no", run=run):
+    if production_update.uncommitted_changes(worktree, run=run):
         raise Refused(f"{worktree} has uncommitted changes; commit the fix first")
     production = _production_of(worktree, run=run)
     shipped = f"refs/remotes/origin/{production_update.default_branch(production, run=run)}"
