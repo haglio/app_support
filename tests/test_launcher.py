@@ -16,6 +16,7 @@ import time
 from pathlib import Path
 
 import pytest
+from eventually import eventually
 
 from app_support import launcher, loading_screen, production_update
 from app_support.launcher import (
@@ -734,9 +735,7 @@ class TestALaunch:
 
         with subprocess.Popen([str(host), "//Nologo", str(script)], stdout=subprocess.PIPE,
                               stderr=subprocess.STDOUT, text=True) as rehearsal:
-            deadline = time.monotonic() + 30
-            while not (checkout / "rehearsal.ran").exists() and time.monotonic() < deadline:
-                time.sleep(0.05)
+            eventually((checkout / "rehearsal.ran").exists, within_s=30)
             time.sleep(0.6)
             (checkout / "state" / "example.ready").write_text("ready\n", encoding="utf-8")
             output, _ = rehearsal.communicate(timeout=30)
@@ -954,9 +953,7 @@ class TestTheUpdateBeforeALaunch:
 
         with subprocess.Popen([str(host), "//Nologo", str(script)], stdout=subprocess.PIPE,
                               stderr=subprocess.STDOUT, text=True) as rehearsal:
-            deadline = time.monotonic() + 30
-            while not (checkout / "rehearsal.ran").exists() and time.monotonic() < deadline:
-                time.sleep(0.05)
+            eventually((checkout / "rehearsal.ran").exists, within_s=30)
             with pytest.raises(production_update.Busy), production_update.the_turn(checkout, wait_s=0.5):
                 pass
             output, _ = rehearsal.communicate(timeout=30)

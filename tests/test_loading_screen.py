@@ -10,6 +10,7 @@ import zlib
 from pathlib import Path
 
 import pytest
+from eventually import eventually
 
 from app_support import loading_screen, production_update, win32
 
@@ -326,15 +327,6 @@ def a_png(width: int, height: int, color: tuple[int, int, int]) -> bytes:
     rows = b"".join(b"\0" + bytes(color) * width for _ in range(height))
     return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
             + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
-
-
-def eventually(condition, within_s: float = 15.0) -> bool:
-    deadline = time.monotonic() + within_s
-    while time.monotonic() < deadline:
-        if condition():
-            return True
-        time.sleep(0.1)
-    return False
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="a window on a desktop of its own")
