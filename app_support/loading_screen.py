@@ -33,6 +33,7 @@ LINES = "HAGLIO_LOADING_SCREEN_LINES"
 OPENING = "opening.png"
 FULL = "full.png"
 PICTURES = "pictures.json"
+APP_WINDOW = "window.json"
 SHOWN = "shown.json"
 TAKEN = "taken"
 STARTED = "started"
@@ -78,6 +79,12 @@ class Pictures:
 
 
 @dataclasses.dataclass(frozen=True)
+class AppWindow:
+    size: tuple[int, int] | None = None
+    kept_on: Box | None = None
+
+
+@dataclasses.dataclass(frozen=True)
 class MeetingPlace:
     folder: Path
     lines: tuple[str, ...]
@@ -103,6 +110,18 @@ class MeetingPlace:
             return None
         return Pictures(self.folder / OPENING, self.folder / FULL, bar, covers_every_monitor,
                         {line: self.folder / _updating(index) for index, line in enumerate(lines)})
+
+    def say_where_the_app_comes_up(self, window: AppWindow) -> None:
+        if window != self.where_the_app_comes_up():
+            self.folder.mkdir(parents=True, exist_ok=True)
+            _replace_whole(self.folder / APP_WINDOW, json.dumps(dataclasses.asdict(window)).encode("utf-8"))
+
+    def where_the_app_comes_up(self) -> AppWindow | None:
+        try:
+            document = json.loads((self.folder / APP_WINDOW).read_text(encoding="utf-8"))
+            return AppWindow(_numbers(document["size"], 2), _numbers(document["kept_on"], 4))
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
 
     def stand(self, shown: Shown) -> None:
         self.folder.mkdir(parents=True, exist_ok=True)
@@ -138,6 +157,15 @@ def meeting_place(environment: Mapping[str, str]) -> MeetingPlace | None:
 
 def handed_over(environment: MutableMapping[str, str]) -> dict[str, str]:
     return {name: environment.pop(name) for name in (FOLDER, LINES) if name in environment}
+
+
+def _numbers(written: Sequence[int] | None, count: int) -> tuple[int, ...] | None:
+    if written is None:
+        return None
+    numbers = tuple(int(each) for each in written)
+    if len(numbers) != count:
+        raise ValueError(written)
+    return numbers
 
 
 def _updating(index: int) -> str:
@@ -218,10 +246,18 @@ class Showing:
 
 
 @dataclasses.dataclass(frozen=True)
+class Monitor:
+    area: Box
+    work_area: Box
+    main: bool
+
+
+@dataclasses.dataclass(frozen=True)
 class Screens:
     virtual: Box
     primary: tuple[int, int]
     pointer_work_area: Box
+    monitors: tuple[Monitor, ...] = ()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -242,9 +278,51 @@ def over_every_monitor(size: tuple[int, int], screens: Screens, *,
     return Placement(screens.virtual, (panel_at[0] - x, panel_at[1] - y))
 
 
-def where_the_pointer_is(size: tuple[int, int], screens: Screens) -> Placement:
-    x, y, width, height = screens.pointer_work_area
+def on_the_apps_monitor(size: tuple[int, int], screens: Screens, app: AppWindow | None, *,
+                        panel_at: tuple[int, int] | None = None) -> Placement:
+    kept = _monitor_the_app_keeps_its_window_on(screens, app)
+    if panel_at is not None and (kept is None or _inside(panel_at, kept.area)):
+        return Placement((*panel_at, *size), (0, 0))
+    x, y, width, height = kept.work_area if kept else _work_area_qt_opens_it_in(screens, app)
     return Placement((x + (width - size[0]) // 2, y + (height - size[1]) // 2, *size), (0, 0))
+
+
+def _monitor_the_app_keeps_its_window_on(screens: Screens, app: AppWindow | None) -> Monitor | None:
+    if app is None or app.kept_on is None:
+        return None
+    return _holding(_middle(app.kept_on), screens)
+
+
+def _work_area_qt_opens_it_in(screens: Screens, app: AppWindow | None) -> Box:
+    if app is not None and app.size is not None and not _centered_by_qt(app.size, screens.pointer_work_area):
+        return next((monitor.work_area for monitor in screens.monitors if monitor.main), screens.pointer_work_area)
+    return screens.pointer_work_area
+
+
+# Qt centers a window that names no place on the monitor under the pointer only
+# while it is under 8/9 of that monitor's work area each way, and opens a bigger
+# one in the main monitor's top corner (QPlatformWindow::initialGeometry;
+# measured on Qt 6.11).
+_QT_CENTERS_UNDER = (8, 9)
+
+
+def _centered_by_qt(size: tuple[int, int], work_area: Box) -> bool:
+    share, whole = _QT_CENTERS_UNDER
+    return size[0] < work_area[2] * share // whole and size[1] < work_area[3] * share // whole
+
+
+def _holding(point: tuple[int, int], screens: Screens) -> Monitor | None:
+    return next((monitor for monitor in screens.monitors if _inside(point, monitor.area)), None)
+
+
+def _inside(point: tuple[int, int], box: Box) -> bool:
+    x, y, width, height = box
+    return x <= point[0] < x + width and y <= point[1] < y + height
+
+
+def _middle(box: Box) -> tuple[int, int]:
+    x, y, width, height = box
+    return x + width // 2, y + height // 2
 
 
 class _MonitorInfo(ctypes.Structure):
@@ -252,11 +330,21 @@ class _MonitorInfo(ctypes.Structure):
                 ("dwFlags", wintypes.DWORD)]
 
 
+_MONITORINFOF_PRIMARY = 1
+
+
+def _monitor_enum_proc():
+    return ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HMONITOR, wintypes.HDC, ctypes.POINTER(wintypes.RECT),
+                              wintypes.LPARAM)
+
+
 def _user32():  # pragma: no cover -- Windows itself
     user32 = ctypes.WinDLL("user32")
     user32.MonitorFromPoint.argtypes = [wintypes.POINT, wintypes.DWORD]
     user32.MonitorFromPoint.restype = wintypes.HMONITOR
     user32.GetMonitorInfoW.argtypes = [wintypes.HMONITOR, ctypes.POINTER(_MonitorInfo)]
+    user32.EnumDisplayMonitors.argtypes = [wintypes.HDC, ctypes.POINTER(wintypes.RECT), _monitor_enum_proc(),
+                                           wintypes.LPARAM]
     return user32
 
 
@@ -267,13 +355,33 @@ def screens(*, user32: Callable[[], object] = _user32) -> Screens | None:
         metric = windows.GetSystemMetrics
         pointer = wintypes.POINT()
         windows.GetCursorPos(ctypes.byref(pointer))
-        info = _MonitorInfo(cbSize=ctypes.sizeof(_MonitorInfo))
-        windows.GetMonitorInfoW(windows.MonitorFromPoint(pointer, _NEAREST), ctypes.byref(info))
+        pointed_at = _monitor(windows, windows.MonitorFromPoint(pointer, _NEAREST))
+        monitors = _every_monitor(windows)
     except (AttributeError, OSError):
         return None
-    work = info.rcWork
     return Screens(virtual=(metric(76), metric(77), metric(78), metric(79)), primary=(metric(0), metric(1)),
-                   pointer_work_area=(work.left, work.top, work.right - work.left, work.bottom - work.top))
+                   pointer_work_area=pointed_at.work_area, monitors=monitors)
+
+
+def _monitor(windows, handle: int) -> Monitor:
+    info = _MonitorInfo(cbSize=ctypes.sizeof(_MonitorInfo))
+    windows.GetMonitorInfoW(handle, ctypes.byref(info))
+    return Monitor(_box(info.rcMonitor), _box(info.rcWork), bool(info.dwFlags & _MONITORINFOF_PRIMARY))
+
+
+def _every_monitor(windows) -> tuple[Monitor, ...]:
+    found: list[Monitor] = []
+
+    def each(handle, _context, _area, _data):
+        found.append(_monitor(windows, handle))
+        return True
+
+    windows.EnumDisplayMonitors(None, None, _monitor_enum_proc()(each), 0)
+    return tuple(found)
+
+
+def _box(rect: wintypes.RECT) -> Box:
+    return rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top
 
 
 # --- The window ---------------------------------------------------------------------
@@ -298,7 +406,7 @@ class _Window:  # pragma: no cover -- a window, run on a desktop of its own
         self._shown = tkinter.PhotoImage(master=self._root, width=size[0], height=size[1])
         ground = "#{:02x}{:02x}{:02x}".format(*opening.get(0, 0))
         placement = (over_every_monitor(size, screens) if pictures.covers_every_monitor
-                     else where_the_pointer_is(size, screens))
+                     else on_the_apps_monitor(size, screens, place.where_the_app_comes_up()))
         self._panel_on_screen = placement.panel_on_screen
         x, y, width, height = placement.window
         self._root.geometry(f"{width}x{height}+{x}+{y}")
