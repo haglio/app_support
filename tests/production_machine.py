@@ -8,6 +8,9 @@ from pathlib import Path
 from app_support import processes, production_update
 from app_support.production_update import Outcome
 
+EMAIL, NAME = "someone@example.com", "Someone"
+IDENTIFIED = ("-c", f"user.email={EMAIL}", "-c", f"user.name={NAME}")
+
 
 def git(*arguments: str, cwd: Path) -> str:
     return subprocess.run(["git", *arguments], cwd=str(cwd), capture_output=True, text=True,
@@ -41,17 +44,15 @@ class Machine:
         origin.parent.mkdir(exist_ok=True)
         git("init", "--bare", "-b", "main", str(origin), cwd=self.base)
         checkout = self.workspace / name
-        git("clone", "-q", str(origin), str(checkout), cwd=self.base)
-        self._identify(checkout)
+        on_github = f"git@github.com:haglio/{name}.git"
+        git("clone", "-q", *IDENTIFIED, "-c", f"url.{origin.as_posix()}.insteadOf={on_github}", on_github,
+            str(checkout), cwd=self.base)
         for file, text in (files or {"pyproject.toml": pins()}).items():
             (checkout / file).write_text(text, encoding="utf-8")
         git("add", "-A", cwd=checkout)
         git("commit", "-q", "-m", "seed", cwd=checkout)
         git("push", "-q", "-u", "origin", "main", cwd=checkout)
         git("remote", "set-head", "origin", "main", cwd=checkout)
-        on_github = f"git@github.com:haglio/{name}.git"
-        git("config", f"url.{origin.as_posix()}.insteadOf", on_github, cwd=checkout)
-        git("remote", "set-url", "origin", on_github, cwd=checkout)
         if venv:
             (checkout / ".venv" / "Lib" / "site-packages").mkdir(parents=True)
             (checkout / ".venv" / "Scripts").mkdir()
@@ -60,14 +61,18 @@ class Machine:
 
     @staticmethod
     def _identify(repo: Path) -> None:
-        git("config", "user.email", "someone@example.com", cwd=repo)
-        git("config", "user.name", "Someone", cwd=repo)
+        git("config", "user.email", EMAIL, cwd=repo)
+        git("config", "user.name", NAME, cwd=repo)
 
-    def ship(self, checkout: Path, files: dict[str, str], *, fetched: bool = True, authored: int | None = None) -> str:
+    def _clone_of(self, checkout: Path) -> Path:
         self.clones += 1
         clone = self.base / f"clone-{self.clones}"
-        git("clone", "-q", str(self.base / "origins" / f"{checkout.name}.git"), str(clone), cwd=self.base)
-        self._identify(clone)
+        git("clone", "-q", *IDENTIFIED, str(self.base / "origins" / f"{checkout.name}.git"), str(clone),
+            cwd=self.base)
+        return clone
+
+    def ship(self, checkout: Path, files: dict[str, str], *, fetched: bool = True, authored: int | None = None) -> str:
+        clone = self._clone_of(checkout)
         for name, text in files.items():
             (clone / name).write_text(text, encoding="utf-8")
         git("add", "-A", cwd=clone)
@@ -78,7 +83,7 @@ class Machine:
         return git("rev-parse", "HEAD", cwd=clone)
 
     def hotfix(self, checkout: Path, files: dict[str, str], *,
-               stands_for: tuple[tuple[str, int], ...] = (("someone@example.com", 1_700_000_000),),
+               stands_for: tuple[tuple[str, int], ...] = ((EMAIL, 1_700_000_000),),
                on: str = "HEAD") -> str:
         self.clones += 1
         place = self.base / f"hotfix-{self.clones}"
@@ -93,10 +98,7 @@ class Machine:
         return made
 
     def take_back(self, checkout: Path, commit: str) -> str:
-        self.clones += 1
-        clone = self.base / f"clone-{self.clones}"
-        git("clone", "-q", str(self.base / "origins" / f"{checkout.name}.git"), str(clone), cwd=self.base)
-        self._identify(clone)
+        clone = self._clone_of(checkout)
         git("revert", "--no-edit", commit, cwd=clone)
         git("push", "-q", "origin", "main", cwd=clone)
         git("fetch", "-q", "origin", cwd=checkout)
