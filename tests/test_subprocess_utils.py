@@ -19,7 +19,6 @@ from process_trees import ALauncherAndItsChild, within
 
 from app_support import processes, win32
 from app_support.subprocess_utils import hidden_subprocess_kwargs, run_process_tree
-from app_support.threading_utils import wait_until
 
 _windows_half = pytest.mark.skipif(
     not hasattr(subprocess, "STARTUPINFO"),
@@ -78,11 +77,8 @@ def test_a_child_out_of_time_ends_with_everything_it_started_rather_than_waiting
     ended = within(_LIMIT_S + _PROMPTLY_S, lambda: run_process_tree(
         launcher.command, timeout=_LIMIT_S, env={**os.environ, **launcher.env}, **hidden_subprocess_kwargs()))
 
-    def nothing_it_started_is_left_running() -> bool:
-        return not launcher.left_running()
-
     assert isinstance(ended, subprocess.TimeoutExpired)
-    wait_until(nothing_it_started_is_left_running, timeout=_PROMPTLY_S)
+    assert not launcher.left_running()
 
 
 _HANDS_ITS_OUTPUT_TO = """
@@ -138,9 +134,6 @@ def test_a_child_windows_will_not_put_in_a_job_is_still_ended_at_its_limit(monke
     def refused(process: int) -> None:
         raise OSError("AssignProcessToJobObject failed")
 
-    def the_child_is_gone() -> bool:
-        return not [process for process in processes.running() if marker in process.cmdline]
-
     monkeypatch.setattr(win32, "JobObject", refused)
 
     ended = within(_LIMIT_S + _PROMPTLY_S, lambda: run_process_tree(
@@ -148,7 +141,7 @@ def test_a_child_windows_will_not_put_in_a_job_is_still_ended_at_its_limit(monke
         **hidden_subprocess_kwargs()))
 
     assert isinstance(ended, subprocess.TimeoutExpired)
-    wait_until(the_child_is_gone, timeout=_PROMPTLY_S)
+    assert not [process for process in processes.running() if marker in process.cmdline]
 
 
 def test_off_windows_a_child_is_run_without_asking_for_a_job(monkeypatch):

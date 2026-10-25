@@ -8,7 +8,6 @@ from pathlib import Path
 import pytest
 
 from app_support import import_sweep, processes
-from app_support.threading_utils import wait_until
 
 PYPROJECT = """\
 [project]
@@ -131,12 +130,9 @@ def test_a_module_that_never_finishes_importing_is_ended_with_what_it_started(tm
                              f"time.sleep(60)\n"),
     })
 
-    def nothing_it_started_is_left_running() -> bool:
-        return not [process for process in processes.running() if marker in process.cmdline]
-
     import_sweep.sweep(checkout, python=sys._base_executable, each_within_s=5)
 
-    wait_until(nothing_it_started_is_left_running, timeout=5)
+    assert not [process for process in processes.running() if marker in process.cmdline]
 
 
 def test_the_checkout_swept_is_imported_ahead_of_any_other_copy_on_the_interpreter_s_path(tmp_path, monkeypatch):
