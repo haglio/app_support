@@ -79,6 +79,6 @@ every-minutes = 2
 # one carrying a dozen of them (measured 2026-10-24 and 25).
 # --timeout-method=thread is the half that pays for itself: it dumps the
 # stack of the test that stopped, which turns a stalled required check into a
-# one-line diagnosis. tests/test_timeouts.py holds all three halves of it.
-addopts = "-p no:cacheprovider -p app_support.sanitize.pytest_plugin -p app_support.coverage_gate --cov --cov-report= --timeout=240 --timeout-method=thread"
+# one-line diagnosis. app_support.clocks holds all three halves of it.
+addopts = "-p no:cacheprovider -p app_support.sanitize.pytest_plugin -p app_support.clocks.pytest_plugin -p app_support.coverage_gate --cov --cov-report= --timeout=240 --timeout-method=thread"
 testpaths = ["tests"]
