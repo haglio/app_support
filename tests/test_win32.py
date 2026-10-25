@@ -791,29 +791,26 @@ def _opened(pid: int) -> int:
     return 0x7000 + pid
 
 
-class _FakeJobKernel32:
-    def __init__(self, *, job: int = WIDE_HANDLE, assigned: int = 1, holding: tuple[int, ...] = (),
-                 left_since: tuple[int, ...] = ()) -> None:
-        self.log: list[str] = []
-        self.CreateJobObjectW = _FakeFunction(job)
-        self.AssignProcessToJobObject = _FakeFunction(assigned)
-        self.TerminateJobObject = _FakeFunction(1, name="TerminateJobObject", log=self.log)
-        self.WaitForMultipleObjects = _FakeFunction(0, name="WaitForMultipleObjects", log=self.log)
-        self.CloseHandle = _FakeFunction(1)
-        self.OpenProcess = lambda access, inherit, pid: _opened(pid)
+def _a_job_kernel32(*, job: int = WIDE_HANDLE, assigned: int = 1, holding: tuple[int, ...] = (),
+                     left_since: tuple[int, ...] = ()) -> _FakeDll:
+    log: list[str] = []
 
-        def listing(job, info_class, info, length, returned):
-            listed = info._obj
-            listed.assigned = listed.listed = len(holding)
-            for index, pid in enumerate(holding):
-                listed.ids[index] = pid
-            return 1
+    def listing(*asked):
+        listed = asked[2]._obj
+        listed.assigned = listed.listed = len(holding)
+        for index, pid in enumerate(holding):
+            listed.ids[index] = pid
+        return 1
 
-        def still_in_it(process, job, answer):
-            answer._obj.value = process - _opened(0) not in left_since
-            return 1
+    def still_in_it(*asked):
+        asked[2]._obj.value = asked[0] - _opened(0) not in left_since
+        return 1
 
-        self.QueryInformationJobObject, self.IsProcessInJob = listing, still_in_it
+    return _FakeDll(log=log, CreateJobObjectW=_FakeFunction(job), AssignProcessToJobObject=_FakeFunction(assigned),
+                    TerminateJobObject=_FakeFunction(1, name="TerminateJobObject", log=log),
+                    WaitForMultipleObjects=_FakeFunction(0, name="WaitForMultipleObjects", log=log),
+                    CloseHandle=_FakeFunction(1), OpenProcess=lambda *asked: _opened(asked[-1]),
+                    QueryInformationJobObject=listing, IsProcessInJob=still_in_it)
 
 
 A_PROCESS = 0x1F4
@@ -821,21 +818,21 @@ A_PROCESS = 0x1F4
 
 class TestAJobObject:
     def test_the_process_goes_into_the_job_made_for_it(self):
-        kernel32 = _FakeJobKernel32()
+        kernel32 = _a_job_kernel32()
 
         JobObject(A_PROCESS, kernel32=lambda: kernel32)
 
         assert kernel32.AssignProcessToJobObject.calls == [(WIDE_HANDLE, A_PROCESS)]
 
     def test_the_job_is_declared_wide_enough_to_come_back_whole(self):
-        kernel32 = _FakeJobKernel32()
+        kernel32 = _a_job_kernel32()
 
         JobObject(A_PROCESS, kernel32=lambda: kernel32)
 
         assert kernel32.CreateJobObjectW.restype is ctypes.c_void_p
 
     def test_ending_all_ends_every_process_in_it_and_leaving_lets_it_go(self):
-        kernel32 = _FakeJobKernel32()
+        kernel32 = _a_job_kernel32()
 
         with JobObject(A_PROCESS, kernel32=lambda: kernel32) as job:
             job.end_all()
@@ -844,7 +841,7 @@ class TestAJobObject:
         assert kernel32.CloseHandle.calls == [(WIDE_HANDLE,)]
 
     def test_ending_all_returns_only_once_every_process_in_it_has_ended(self):
-        kernel32 = _FakeJobKernel32(holding=(0x101, 0x102))
+        kernel32 = _a_job_kernel32(holding=(0x101, 0x102))
 
         with JobObject(A_PROCESS, kernel32=lambda: kernel32) as job:
             job.end_all()
@@ -855,7 +852,7 @@ class TestAJobObject:
         assert {(_opened(0x101),), (_opened(0x102),)} <= set(kernel32.CloseHandle.calls)
 
     def test_a_process_number_that_has_left_it_since_it_was_listed_is_not_waited_on(self):
-        kernel32 = _FakeJobKernel32(holding=(0x101, 0x102), left_since=(0x101,))
+        kernel32 = _a_job_kernel32(holding=(0x101, 0x102), left_since=(0x101,))
 
         with JobObject(A_PROCESS, kernel32=lambda: kernel32) as job:
             job.end_all()
@@ -865,7 +862,7 @@ class TestAJobObject:
         assert (_opened(0x101),) in kernel32.CloseHandle.calls
 
     def test_a_job_windows_will_not_make_is_a_refusal(self):
-        kernel32 = _FakeJobKernel32(job=0)
+        kernel32 = _a_job_kernel32(job=0)
 
         with pytest.raises(OSError, match="CreateJobObjectW"):
             JobObject(A_PROCESS, kernel32=lambda: kernel32)
@@ -873,7 +870,7 @@ class TestAJobObject:
         assert kernel32.AssignProcessToJobObject.calls == []
 
     def test_a_job_the_process_will_not_go_into_is_let_go_rather_than_leaked(self):
-        kernel32 = _FakeJobKernel32(assigned=0)
+        kernel32 = _a_job_kernel32(assigned=0)
 
         with pytest.raises(OSError, match="AssignProcessToJobObject"):
             JobObject(A_PROCESS, kernel32=lambda: kernel32)
