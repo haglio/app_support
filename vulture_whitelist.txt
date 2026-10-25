@@ -8,7 +8,7 @@
 # an entry that has stopped suppressing anything, so nothing may sit here once
 # its subject is gone. And it is `.txt` rather than the family's usual `.py`
 # because this repo's root may publish exactly one importable top-level name --
-# `tests/test_sanitize_plugin.py` holds that -- while a whitelist inside one of
+# `tests/test_shipped_tests.py` holds that -- while a whitelist inside one of
 # the scanned directories would be read as part of the tree and silence the gate
 # entirely. Outside the scan and outside the import path is the one place left.
 
@@ -17,6 +17,7 @@ _the_process_is_given_back  # tests/conftest.py
 _the_updaters_log_is_given_back  # tests/test_production_update.py
 
 # --- pytest hooks (called by pytest, never by our code) ---
+pytest_configure  # app_support/coverage_gate.py, app_support/sanitize/pytest_plugin.py, tests/conftest.py
 pytest_collection_modifyitems  # app_support/coverage_gate.py
 pytest_terminal_summary  # app_support/coverage_gate.py
 cov_fail_under  # app_support/coverage_gate.py, set on pytest-cov's own namespace
