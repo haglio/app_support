@@ -79,11 +79,22 @@ class TestStamp:
         assert recorded["app_commit"] is None
         assert recorded["app_dirty"] is None
 
-    def test_records_the_recipe_and_the_version_of_it_that_ran(self, tmp_path: Path):
+    def test_records_the_method_and_the_version_of_it_that_ran(self, tmp_path: Path):
+        recorded = provenance.stamp("origenerator", anchor=tmp_path / "app.py",
+                                    method="wan22_i2v", method_version="v007")
+
+        assert (recorded[provenance.METHOD], recorded[provenance.METHOD_VERSION]) == (
+            "wan22_i2v", "v007")
+
+    def test_an_app_pinned_to_an_older_release_still_names_what_ran_its_way(self, tmp_path: Path):
         recorded = provenance.stamp("origenerator", anchor=tmp_path / "app.py",
                                     recipe="wan22_i2v", recipe_version="v007")
 
-        assert (recorded["recipe"], recorded["recipe_version"]) == ("wan22_i2v", "v007")
+        assert (recorded[provenance.METHOD], recorded[provenance.METHOD_VERSION]) == (
+            "wan22_i2v", "v007")
+
+    def test_keeps_what_ran_under_the_keys_every_file_on_disk_already_holds(self):
+        assert (provenance.METHOD, provenance.METHOD_VERSION) == ("recipe", "recipe_version")
 
     def test_records_when_it_was_stamped_because_the_file_gets_moved(self, tmp_path: Path):
         # Evolver moves a clip through the library, so its mtime stops answering
@@ -98,12 +109,12 @@ class TestStamp:
         # A fact nobody knows is an explicit None, never an absent key: a reader
         # of a ten-year-old file should not have to guess which shape it got.
         known = provenance.stamp("origenerator", anchor=tmp_path / "app.py",
-                                 recipe="wan22_i2v", recipe_version="v007")
+                                 method="wan22_i2v", method_version="v007")
         unknown = provenance.stamp("someapp", anchor=tmp_path / "app.py")
 
         assert known.keys() == unknown.keys() == {
             "schema", "app", "app_commit", "app_dirty",
-            "recipe", "recipe_version", "stamped_at"}
+            provenance.METHOD, provenance.METHOD_VERSION, "stamped_at"}
         assert unknown["schema"] == provenance.SCHEMA
 
     def test_a_checkout_with_no_commit_yet_records_none(self, tmp_path: Path):
