@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import struct
+import subprocess
 import sys
 import time
 import zlib
@@ -65,6 +66,53 @@ class TestThePicturesTheAppLeaves:
         pictures = a_place(tmp_path, "Bringing Example up to date...").pictures()
 
         assert pictures.updating("Bringing Example up to date...") is None
+
+
+class TestWhereTheAppSaysItsWindowComesUp:
+    def test_the_next_click_finds_what_the_app_said(self, tmp_path):
+        said = loading_screen.AppWindow(size=(1954, 600), kept_on=(2560, 3, 1440, 3440))
+
+        a_place(tmp_path).say_where_the_app_comes_up(said)
+
+        assert a_place(tmp_path).where_the_app_comes_up() == said
+
+    def test_an_app_that_keeps_its_window_nowhere_says_how_big_it_is_alone(self, tmp_path):
+        said = loading_screen.AppWindow(size=(1954, 600))
+
+        a_place(tmp_path).say_where_the_app_comes_up(said)
+
+        assert a_place(tmp_path).where_the_app_comes_up() == said
+
+    def test_a_launch_before_the_app_ever_said_has_nothing(self, tmp_path):
+        assert a_place(tmp_path).where_the_app_comes_up() is None
+
+    def test_a_window_moved_to_another_monitor_is_what_the_next_click_finds(self, tmp_path):
+        place = a_place(tmp_path)
+        place.say_where_the_app_comes_up(loading_screen.AppWindow(kept_on=(0, 0, 2560, 1440)))
+
+        place.say_where_the_app_comes_up(loading_screen.AppWindow(kept_on=(2560, 3, 1440, 3440)))
+
+        assert place.where_the_app_comes_up() == loading_screen.AppWindow(kept_on=(2560, 3, 1440, 3440))
+
+    def test_saying_it_again_unchanged_writes_nothing(self, tmp_path):
+        said = loading_screen.AppWindow(kept_on=(2560, 3, 1440, 3440))
+        place = a_place(tmp_path)
+        place.say_where_the_app_comes_up(said)
+        os.utime(place.folder / loading_screen.APP_WINDOW, ns=(10**18, 10**18))
+
+        place.say_where_the_app_comes_up(said)
+
+        assert (place.folder / loading_screen.APP_WINDOW).stat().st_mtime_ns == 10**18
+
+    @pytest.mark.parametrize("written", [
+        "{", '{"kept_on": null}', '{"size": 7, "kept_on": null}', '{"size": [1954], "kept_on": null}',
+        '{"size": null, "kept_on": [2560, 3, 1440]}'])
+    def test_what_cannot_be_read_back_is_nothing_said(self, tmp_path, written):
+        place = a_place(tmp_path)
+        place.folder.mkdir(parents=True)
+        (place.folder / loading_screen.APP_WINDOW).write_text(written, encoding="utf-8")
+
+        assert place.where_the_app_comes_up() is None
 
 
 class TestHandingOverToTheAppsOwn:
@@ -255,6 +303,8 @@ class _FakeUser32:
     def __init__(self):
         self.asked: list[str] = []
         self.metrics = {0: 2560, 1: 1440, 76: -1440, 77: 0, 78: 4000, 79: 3440}
+        self.monitors = {7: ((-1440, 0, 0, 3440), (-1440, 0, 0, 3410), 0),
+                         1: ((0, 0, 2560, 1440), (0, 0, 2560, 1410), 1)}
 
     def SetProcessDPIAware(self):  # noqa: N802 - Win32's name
         self.asked.append("pixels")
@@ -270,16 +320,46 @@ class _FakeUser32:
     def MonitorFromPoint(self, point, flags):  # noqa: N802 - Win32's name
         return 7 if point.x < 0 else 1
 
+    def EnumDisplayMonitors(self, _context, _clip, each, data):  # noqa: N802 - Win32's name
+        for monitor in self.monitors:
+            each(monitor, None, None, data)
+        return 1
+
     def GetMonitorInfoW(self, monitor, info):  # noqa: N802 - Win32's name
-        work = info._obj.rcWork
-        work.left, work.top, work.right, work.bottom = (-1440, 0, 0, 3410) if monitor == 7 else (0, 0, 2560, 1410)
+        area, work, flags = self.monitors[monitor]
+        for rect, edges in ((info._obj.rcMonitor, area), (info._obj.rcWork, work)):
+            rect.left, rect.top, rect.right, rect.bottom = edges
+        info._obj.dwFlags = flags
         return 1
 
 
 class TestMeasuringTheScreens:
-    def test_the_whole_desktop_the_main_monitor_and_the_one_he_clicked_on_are_read(self):
+    def test_the_whole_desktop_every_monitor_and_the_one_he_clicked_on_are_read(self):
         assert loading_screen.screens(user32=_FakeUser32) == loading_screen.Screens(
-            virtual=(-1440, 0, 4000, 3440), primary=(2560, 1440), pointer_work_area=(-1440, 0, 1440, 3410))
+            virtual=(-1440, 0, 4000, 3440), primary=(2560, 1440), pointer_work_area=(-1440, 0, 1440, 3410),
+            monitors=(loading_screen.Monitor(area=(-1440, 0, 1440, 3440), work_area=(-1440, 0, 1440, 3410),
+                                             main=False),
+                      loading_screen.Monitor(area=(0, 0, 2560, 1440), work_area=(0, 0, 2560, 1410), main=True)))
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="Windows' own monitors")
+    def test_windows_names_every_monitor_with_the_main_one_at_the_corner_of_the_desktop(self):
+        measured = loading_screen.screens()
+
+        assert [monitor.area[:2] for monitor in measured.monitors if monitor.main] == [(0, 0)]
+        assert measured.pointer_work_area in [monitor.work_area for monitor in measured.monitors]
+
+    def test_it_imports_where_ctypes_has_no_windows_half(self):
+        stripped = ("import ctypes, ctypes.wintypes\n"
+                    "for name in ('windll', 'oledll', 'WinDLL', 'OleDLL', 'WINFUNCTYPE', 'HRESULT'):\n"
+                    "    if hasattr(ctypes, name):\n"
+                    "        delattr(ctypes, name)\n"
+                    "import app_support.loading_screen\n")
+        environment = {**os.environ, "PYTHONPATH": str(Path(loading_screen.__file__).parents[1])}
+
+        imported = subprocess.run([sys._base_executable, "-c", stripped], env=environment, capture_output=True, text=True,
+                                  timeout=60)
+
+        assert imported.returncode == 0, imported.stderr
 
     def test_pixels_are_asked_for_before_anything_is_measured(self):
         # Unaware, Windows answers with scaled numbers, and a cover comes up
@@ -298,8 +378,15 @@ class TestMeasuringTheScreens:
 
 
 class TestWhereTheLoadingScreenStands:
+    PORTRAIT = loading_screen.Monitor(area=(-1440, 0, 1440, 3440), work_area=(-1440, 0, 1440, 3410), main=False)
+    MAIN = loading_screen.Monitor(area=(0, 0, 2560, 1440), work_area=(0, 0, 2560, 1410), main=True)
     SCREENS = loading_screen.Screens(virtual=(-1440, 0, 4000, 3440), primary=(2560, 1440),
-                                     pointer_work_area=(-1440, 0, 1440, 3410))
+                                     pointer_work_area=PORTRAIT.work_area, monitors=(PORTRAIT, MAIN))
+
+    @staticmethod
+    def centered_on(monitor: loading_screen.Monitor, size: tuple[int, int] = (408, 271)) -> tuple[int, int]:
+        x, y, width, height = monitor.work_area
+        return x + (width - size[0]) // 2, y + (height - size[1]) // 2
 
     def test_one_over_every_monitor_centers_its_panel_on_the_main_monitor(self):
         placement = loading_screen.over_every_monitor((408, 271), self.SCREENS)
@@ -307,11 +394,57 @@ class TestWhereTheLoadingScreenStands:
         assert placement.window == (-1440, 0, 4000, 3440)
         assert placement.panel_on_screen == (2560 // 2 - 204, 1440 // 2 - 135)
 
-    def test_one_in_a_window_of_its_own_comes_up_on_the_monitor_he_clicked_on(self):
-        placement = loading_screen.where_the_pointer_is((408, 271), self.SCREENS)
+    def test_one_for_an_app_that_said_nothing_comes_up_on_the_monitor_he_clicked_on(self):
+        placement = loading_screen.on_the_apps_monitor((408, 271), self.SCREENS, None)
 
-        assert placement.window == (-1440 + (1440 - 408) // 2, (3410 - 271) // 2, 408, 271)
+        assert placement.window == (*self.centered_on(self.PORTRAIT), 408, 271)
         assert placement.panel_on_screen == placement.window[:2]
+
+    def test_one_for_an_app_that_keeps_its_window_on_another_monitor_comes_up_there(self):
+        app = loading_screen.AppWindow(kept_on=self.MAIN.area)
+
+        placement = loading_screen.on_the_apps_monitor((408, 271), self.SCREENS, app)
+
+        assert placement.panel_on_screen == self.centered_on(self.MAIN)
+
+    def test_one_for_an_app_that_kept_its_window_on_a_monitor_since_unplugged_comes_up_where_he_clicked(self):
+        app = loading_screen.AppWindow(kept_on=(4000, 0, 1920, 1080))
+
+        placement = loading_screen.on_the_apps_monitor((408, 271), self.SCREENS, app)
+
+        assert placement.panel_on_screen == self.centered_on(self.PORTRAIT)
+
+    @pytest.mark.parametrize("size", [(1954, 600), (1280, 600), (1000, 3031)])
+    def test_one_for_an_app_whose_window_is_too_big_for_the_monitor_he_clicked_on_comes_up_on_the_main_one(
+            self, size):
+        placement = loading_screen.on_the_apps_monitor((408, 271), self.SCREENS, loading_screen.AppWindow(size=size))
+
+        assert placement.panel_on_screen == self.centered_on(self.MAIN)
+
+    def test_one_for_an_app_whose_window_fits_the_monitor_he_clicked_on_comes_up_there(self):
+        app = loading_screen.AppWindow(size=(1279, 3030))
+
+        placement = loading_screen.on_the_apps_monitor((408, 271), self.SCREENS, app)
+
+        assert placement.panel_on_screen == self.centered_on(self.PORTRAIT)
+
+    def test_the_apps_own_panel_taking_over_stays_where_the_launchers_stood(self):
+        placement = loading_screen.on_the_apps_monitor(
+            (408, 271), self.SCREENS, loading_screen.AppWindow(size=(1954, 600)), panel_at=(-1300, 900))
+
+        assert placement.panel_on_screen == (-1300, 900)
+
+    def test_the_apps_own_panel_leaves_a_launchers_that_stood_off_the_monitor_the_app_keeps_its_window_on(self):
+        placement = loading_screen.on_the_apps_monitor(
+            (408, 271), self.SCREENS, loading_screen.AppWindow(kept_on=self.MAIN.area), panel_at=(-1300, 900))
+
+        assert placement.panel_on_screen == self.centered_on(self.MAIN)
+
+    def test_the_apps_own_panel_stays_where_the_launchers_stood_on_the_monitor_the_app_keeps_its_window_on(self):
+        placement = loading_screen.on_the_apps_monitor(
+            (408, 271), self.SCREENS, loading_screen.AppWindow(kept_on=self.MAIN.area), panel_at=(1000, 500))
+
+        assert placement.panel_on_screen == (1000, 500)
 
     def test_a_panel_handed_over_stays_where_it_stood(self):
         placement = loading_screen.over_every_monitor((408, 271), self.SCREENS, panel_at=(100, 200))
@@ -331,19 +464,28 @@ def a_png(width: int, height: int, color: tuple[int, int, int]) -> bytes:
 
 @pytest.mark.skipif(sys.platform != "win32", reason="a window on a desktop of its own")
 class TestTheLoadingScreenItself:
-    def test_it_comes_up_moves_its_bar_for_an_update_and_goes_once_the_app_takes_over(
-            self, tmp_path, desktop_of_its_own):
+    @staticmethod
+    def a_place_with_pictures(tmp_path: Path) -> loading_screen.MeetingPlace:
         place = a_place(tmp_path, "Updating Example...")
         place.leave_pictures(opening=a_png(40, 20, (26, 26, 46)), full=a_png(40, 20, (233, 69, 96)),
                              updating=[a_png(40, 20, (26, 26, 46))], bar=(4, 12, 32, 4), covers_every_monitor=False)
-        checkout = tmp_path / "example"
+        return place
+
+    @staticmethod
+    def start(place: loading_screen.MeetingPlace, checkout: Path, desktop) -> int:
         (checkout / ".git").mkdir(parents=True)
         environment = {**os.environ, loading_screen.FOLDER: str(place.folder),
                        loading_screen.LINES: json.dumps(place.lines),
                        "PYTHONPATH": str(Path(loading_screen.__file__).parents[1])}
+        return desktop.start([sys.executable, "-m", "app_support.loading_screen", str(checkout)],
+                             environment=environment)
 
-        pid = desktop_of_its_own.start([sys.executable, "-m", "app_support.loading_screen", str(checkout)],
-                                       environment=environment)
+    def test_it_comes_up_moves_its_bar_for_an_update_and_goes_once_the_app_takes_over(
+            self, tmp_path, desktop_of_its_own):
+        place = self.a_place_with_pictures(tmp_path)
+        checkout = tmp_path / "example"
+
+        pid = self.start(place, checkout, desktop_of_its_own)
         came_up = eventually(lambda: place.standing() is not None)
         (checkout / ".git" / production_update.PROGRESS).write_text(json.dumps(
             {"steps": [["installing its libraries", 2.0]], "step": 0, "since": time.time(), "pid": os.getpid(),
@@ -357,17 +499,9 @@ class TestTheLoadingScreenItself:
 
     def test_a_message_the_app_puts_up_before_its_own_loading_screen_comes_up_over_it(
             self, tmp_path, desktop_of_its_own):
-        place = a_place(tmp_path, "Updating Example...")
-        place.leave_pictures(opening=a_png(40, 20, (26, 26, 46)), full=a_png(40, 20, (233, 69, 96)),
-                             updating=[a_png(40, 20, (26, 26, 46))], bar=(4, 12, 32, 4), covers_every_monitor=False)
-        checkout = tmp_path / "example"
-        (checkout / ".git").mkdir(parents=True)
-        environment = {**os.environ, loading_screen.FOLDER: str(place.folder),
-                       loading_screen.LINES: json.dumps(place.lines),
-                       "PYTHONPATH": str(Path(loading_screen.__file__).parents[1])}
+        place = self.a_place_with_pictures(tmp_path)
 
-        pid = desktop_of_its_own.start([sys.executable, "-m", "app_support.loading_screen", str(checkout)],
-                                       environment=environment)
+        pid = self.start(place, tmp_path / "example", desktop_of_its_own)
         came_up = eventually(lambda: desktop_of_its_own.shows_a_window_over_every_other() is not None)
         over_every_window_while_waiting = desktop_of_its_own.shows_a_window_over_every_other()
         (place.folder / loading_screen.STARTED).touch()
@@ -375,6 +509,22 @@ class TestTheLoadingScreenItself:
         place.say_taken()
 
         assert (came_up, over_every_window_while_waiting, made_way) == (True, True, True)
+        assert desktop_of_its_own.ended_within(pid, 10)
+
+    def test_it_comes_up_on_the_monitor_the_app_keeps_its_window_on(self, tmp_path, desktop_of_its_own):
+        place = self.a_place_with_pictures(tmp_path)
+        monitors = loading_screen.screens().monitors
+        kept = next((monitor for monitor in monitors if not monitor.main), monitors[0])
+        place.say_where_the_app_comes_up(loading_screen.AppWindow(kept_on=kept.area))
+
+        pid = self.start(place, tmp_path / "example", desktop_of_its_own)
+        came_up = eventually(lambda: place.standing() is not None)
+        stood = place.standing()
+        place.say_taken()
+
+        x, y, width, height = kept.work_area
+        assert came_up
+        assert (stood.left, stood.top) == (x + (width - 40) // 2, y + (height - 20) // 2)
         assert desktop_of_its_own.ended_within(pid, 10)
 
 
