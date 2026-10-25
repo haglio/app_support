@@ -325,9 +325,13 @@ def _log_paths(base: str, launcher: Launcher, log: str, indent: str) -> list[str
     return lines
 
 
+def _venv_checkout(launcher: Launcher) -> str:
+    return "primary" if launcher.venv == "primary" else "root"
+
+
 def _decide(launcher: Launcher) -> list[str]:
     base = "checkout" if launcher.checkout_argument else "root"
-    venv = "primary" if launcher.venv == "primary" else "root"
+    venv = _venv_checkout(launcher)
     lines = ["Sub Decide()"]
     if launcher.checkout_argument:
         lines.append("  Dim index")
@@ -367,7 +371,7 @@ def _gates_decided(launcher: Launcher) -> list[str]:
     gates += [f"fso.BuildPath(fso.GetParentFolderName(base), {_text(name + chr(92) + turn)})"
               for name in launcher.also_runs]
     return [
-        f"  base = {'primary' if launcher.venv == 'primary' else 'root'}",
+        f"  base = {_venv_checkout(launcher)}",
         f"  updater = fso.BuildPath(fso.GetParentFolderName(base), {_text(production_update.UPDATER)})",
         f"  gates = Array({', '.join(gates)})",
     ]
