@@ -2,16 +2,16 @@
 
 Two questions get asked of an old artifact, and nothing in this family could
 answer either.  *Which build of which app produced this* -- so a sweep can find
-everything made before a fix and remake it.  *Under which recipe, at which
-version of that recipe* -- so two outputs that differ only in the code that made
+everything made before a fix and remake it.  *Made with which method, at which
+version of that method* -- so two outputs that differ only in the code that made
 them stay two things rather than collapsing into one.  A stamp answers both, in
 seven keys, wherever the app that made the file chooses to keep it.
 
-Both halves are needed and neither substitutes for the other.  The recipe
+Both halves are needed and neither substitutes for the other.  The method's
 version is the meaningful axis and the one a person reasons about, but it is
 bumped by hand, so it is coarse and it can be forgotten; the commit is exact and
 free and never wrong, but it moves for reasons that have nothing to do with the
-output.  An upgrade sweep reads the recipe version to decide *what* to redo and
+output.  An upgrade sweep reads the method's version to decide *what* to redo and
 the commit to pin down *exactly* what produced it when the version is too coarse
 or was never bumped.
 
@@ -45,6 +45,10 @@ from app_support.subprocess_utils import hidden_subprocess_kwargs, run_process_t
 # The shape below. Bumped when a key is added, removed or re-meant, so a reader
 # of an old artifact knows what it is holding.
 SCHEMA = 1
+
+# The keys a stamp keeps what made a file, and its version, under: the names
+# they were first written with, which every file on disk already holds.
+METHOD, METHOD_VERSION = "recipe", "recipe_version"
 
 # A ceiling on a git that stops answering, not a budget: this runs inside a
 # windowed app, where a child that never returns is a frozen window with
@@ -91,6 +95,7 @@ def _code_version(directory: str) -> tuple[str | None, bool | None]:
 
 
 def stamp(app: str, *, anchor: str | Path,
+          method: str | None = None, method_version: str | None = None,
           recipe: str | None = None, recipe_version: str | None = None) -> dict:
     """The provenance block for something *app* is writing now.
 
@@ -98,11 +103,13 @@ def stamp(app: str, *, anchor: str | Path,
     says which checkout to read.  A worktree answers for itself, which is the
     point: content generated off a preview branch records that branch's commit.
 
-    *recipe* and *recipe_version* are the app's own vocabulary for what it ran
+    *method* and *method_version* are the app's own vocabulary for what it ran
     (Origenerator passes its workflow's name and ``version``); an app whose
-    output has only one shape leaves both unset.
+    output has only one shape leaves both unset. *recipe* and *recipe_version*
+    are what an app pinned to an older release passes them as.
     """
     commit, dirty = _code_version(str(Path(anchor).parent))
     return {"schema": SCHEMA, "app": app, "app_commit": commit, "app_dirty": dirty,
-            "recipe": recipe, "recipe_version": recipe_version,
+            METHOD: method if method is not None else recipe,
+            METHOD_VERSION: method_version if method_version is not None else recipe_version,
             "stamped_at": datetime.now(UTC).isoformat()}
