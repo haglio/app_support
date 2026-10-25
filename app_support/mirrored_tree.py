@@ -15,7 +15,7 @@ arguments; the rule is not.  Standard library only.
 from __future__ import annotations
 
 import os
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 
 #: What the tree of files is called where it sits beside its mirror.
@@ -58,6 +58,23 @@ def mirrored_path(
             except ValueError:
                 continue
             return (Path(mirror_root) / relative).with_suffix(suffix)
+    return None
+
+
+def mirrored_source(
+    counterpart: Path,
+    *,
+    roots: Sequence[Path],
+    mirror_root: Path,
+    suffixes: Iterable[str],
+) -> Path | None:
+    """The file *counterpart* is the counterpart of, or None when no root holds one."""
+    relative, suffixes = Path(counterpart).relative_to(mirror_root), tuple(suffixes)
+    for root in roots:
+        for suffix in suffixes:
+            source = (Path(root) / relative).with_suffix(suffix)
+            if source.is_file():
+                return source
     return None
 
 

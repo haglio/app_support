@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from app_support.mirrored_tree import library_roots_beside, mirrored_path
+from app_support.mirrored_tree import library_roots_beside, mirrored_path, mirrored_source
 
 
 def test_a_record_sits_at_the_same_relative_place_under_the_other_root(tmp_path: Path):
@@ -99,3 +99,29 @@ def test_a_caller_given_only_the_mirror_root_gets_the_pair_it_sits_beside(tmp_pa
         tmp_path / "videos" / "videos",
         tmp_path / "videos",
     )
+
+
+def test_a_record_leads_back_to_the_file_it_mirrors_whatever_that_files_suffix(tmp_path: Path):
+    library = tmp_path / "videos" / "videos"
+    records = tmp_path / "videos" / "metadata"
+    video = library / "2D" / "outbox" / "scene one.webm"
+    video.parent.mkdir(parents=True)
+    video.write_bytes(b"")
+
+    assert mirrored_source(
+        records / "2D" / "outbox" / "scene one.json",
+        roots=(library, tmp_path / "videos"),
+        mirror_root=records,
+        suffixes=(".mp4", ".webm"),
+    ) == video
+
+
+def test_a_record_whose_file_is_gone_leads_nowhere(tmp_path: Path):
+    records = tmp_path / "videos" / "metadata"
+
+    assert mirrored_source(
+        records / "scene two.json",
+        roots=(tmp_path / "videos" / "videos",),
+        mirror_root=records,
+        suffixes=(".mp4",),
+    ) is None
