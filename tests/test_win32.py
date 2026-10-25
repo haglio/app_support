@@ -12,9 +12,11 @@ import ctypes
 import os
 import pathlib
 import subprocess
+import sys
 import uuid
 
 import pytest
+from eventually import eventually
 
 from app_support.win32 import (
     _PROPERTYKEY,
@@ -30,12 +32,15 @@ from app_support.win32 import (
     _PKEY_AppUserModel_RelaunchIconResource,
     _release,
     _vtbl_call,
+    a_job_ending_with_this_process,
+    busy_seconds_of_the_job_this_process_runs_in,
     describe_taskbar_app,
     described_taskbar_app,
     dress_window,
     force_foreground_window,
     is_mutex_held,
     mutex_name,
+    process_started,
     read_shortcut,
     seconds_since_input,
     set_app_user_model_id,
@@ -53,6 +58,7 @@ from app_support.win32 import (
 E_INVALIDARG = -2147024809  # 0x80070057
 RPC_E_CHANGED_MODE = -2147417850  # 0x80010106
 S_FALSE = 1
+ERROR_ACCESS_DENIED = 5
 ERROR_ALREADY_EXISTS = 183
 SYNCHRONIZE = 0x00100000
 
@@ -646,6 +652,8 @@ class _FakeKernel32:
 # back in. Windows hands out low values most of the time, which is why the
 # three copies this replaces got away with saying nothing.
 WIDE_HANDLE = 0x0000_0002_0000_00A4
+# GetCurrentProcess's answer: not a handle Windows opened, a stand-in that always means the caller.
+THIS_PROCESS = 0xFFFF_FFFF_FFFF_FFFF
 
 
 class TestTryAcquireMutex:
@@ -791,50 +799,117 @@ def _opened(pid: int) -> int:
     return 0x7000 + pid
 
 
-def _a_job_kernel32(*, job: int = WIDE_HANDLE, assigned: int = 1, holding: tuple[int, ...] = (),
-                     left_since: tuple[int, ...] = ()) -> _FakeDll:
+_PROCESS_ID_LIST, _ACCOUNTING = 3, 1
+
+
+def _a_job_kernel32(*, job: int = WIDE_HANDLE, limited: int = 1, assigned: int = 1, holding: tuple[int, ...] = (),
+                    left_since: tuple[int, ...] = (), listed: int = 1,
+                    spent: tuple[int, int] | None = (0, 0)) -> _FakeDll:
     log: list[str] = []
 
-    def listing(*asked):
-        listed = asked[2]._obj
-        listed.assigned = listed.listed = len(holding)
-        for index, pid in enumerate(holding):
-            listed.ids[index] = pid
-        return 1
+    def query(*asked):
+        answer = asked[2]._obj
+        if asked[1] == _ACCOUNTING and spent is not None:
+            answer.user, answer.kernel = spent
+            return 1
+        if asked[1] == _PROCESS_ID_LIST and listed:
+            answer.assigned = answer.listed = len(holding)
+            for index, pid in enumerate(holding):
+                answer.ids[index] = pid
+            return 1
+        return 0
 
     def still_in_it(*asked):
         asked[2]._obj.value = asked[0] - _opened(0) not in left_since
         return 1
 
-    return _FakeDll(log=log, CreateJobObjectW=_FakeFunction(job), AssignProcessToJobObject=_FakeFunction(assigned),
+    return _FakeDll(log=log, CreateJobObjectW=_FakeFunction(job), SetInformationJobObject=_FakeFunction(limited),
+                    AssignProcessToJobObject=_FakeFunction(assigned),
                     TerminateJobObject=_FakeFunction(1, name="TerminateJobObject", log=log),
                     WaitForMultipleObjects=_FakeFunction(0, name="WaitForMultipleObjects", log=log),
                     CloseHandle=_FakeFunction(1), OpenProcess=lambda *asked: _opened(asked[-1]),
-                    QueryInformationJobObject=listing, IsProcessInJob=still_in_it)
+                    QueryInformationJobObject=query, IsProcessInJob=still_in_it,
+                    GetCurrentProcess=_FakeFunction(THIS_PROCESS))
 
 
 A_PROCESS = 0x1F4
+
+
+def _a_job(kernel32: _FakeDll, *process: int, **asked) -> JobObject:
+    return JobObject(*process, kernel32=lambda: kernel32, last_error=lambda: ERROR_ACCESS_DENIED, **asked)
 
 
 class TestAJobObject:
     def test_the_process_goes_into_the_job_made_for_it(self):
         kernel32 = _a_job_kernel32()
 
-        JobObject(A_PROCESS, kernel32=lambda: kernel32)
+        _a_job(kernel32, A_PROCESS)
 
         assert kernel32.AssignProcessToJobObject.calls == [(WIDE_HANDLE, A_PROCESS)]
+
+    def test_a_process_given_after_the_job_was_made_goes_into_it(self):
+        kernel32 = _a_job_kernel32()
+        job = _a_job(kernel32)
+
+        job.hold(A_PROCESS)
+
+        assert kernel32.AssignProcessToJobObject.calls == [(WIDE_HANDLE, A_PROCESS)]
+
+    def test_the_processes_in_it_are_the_ones_windows_lists(self):
+        kernel32 = _a_job_kernel32(holding=(0x101, 0x102))
+
+        assert _a_job(kernel32).process_ids() == [0x101, 0x102]
+
+    def test_as_many_processes_as_a_whole_test_run_keeps_going_are_listed(self):
+        a_thousand = tuple(range(0x1000, 0x1000 + 1000))
+        kernel32 = _a_job_kernel32(holding=a_thousand)
+
+        assert _a_job(kernel32).process_ids() == list(a_thousand)
+
+    def test_processes_windows_will_not_list_are_a_refusal(self):
+        kernel32 = _a_job_kernel32(listed=0)
+
+        with pytest.raises(OSError, match="QueryInformationJobObject"):
+            _a_job(kernel32).process_ids()
+
+    def test_its_busy_seconds_are_the_user_and_kernel_time_its_processes_spent(self):
+        kernel32 = _a_job_kernel32(spent=(30_000_000, 12_500_000))
+
+        assert _a_job(kernel32).busy_seconds() == 4.25
+
+    def test_busy_seconds_windows_will_not_count_are_a_refusal(self):
+        kernel32 = _a_job_kernel32(spent=None)
+
+        with pytest.raises(OSError, match="QueryInformationJobObject"):
+            _a_job(kernel32).busy_seconds()
+
+    def test_a_job_whose_processes_windows_will_not_list_is_still_ended(self):
+        kernel32 = _a_job_kernel32(listed=0)
+
+        _a_job(kernel32).end_all()
+
+        assert kernel32.TerminateJobObject.calls == [(WIDE_HANDLE, 1)]
+
+    def test_a_process_that_will_not_go_into_a_job_already_made_leaves_the_job_to_its_holder(self):
+        kernel32 = _a_job_kernel32(assigned=0)
+        job = _a_job(kernel32)
+
+        with pytest.raises(OSError, match="AssignProcessToJobObject"):
+            job.hold(A_PROCESS)
+
+        assert kernel32.CloseHandle.calls == []
 
     def test_the_job_is_declared_wide_enough_to_come_back_whole(self):
         kernel32 = _a_job_kernel32()
 
-        JobObject(A_PROCESS, kernel32=lambda: kernel32)
+        _a_job(kernel32, A_PROCESS)
 
         assert kernel32.CreateJobObjectW.restype is ctypes.c_void_p
 
     def test_ending_all_ends_every_process_in_it_and_leaving_lets_it_go(self):
         kernel32 = _a_job_kernel32()
 
-        with JobObject(A_PROCESS, kernel32=lambda: kernel32) as job:
+        with _a_job(kernel32, A_PROCESS) as job:
             job.end_all()
 
         assert kernel32.TerminateJobObject.calls == [(WIDE_HANDLE, 1)]
@@ -843,7 +918,7 @@ class TestAJobObject:
     def test_ending_all_returns_only_once_every_process_in_it_has_ended(self):
         kernel32 = _a_job_kernel32(holding=(0x101, 0x102))
 
-        with JobObject(A_PROCESS, kernel32=lambda: kernel32) as job:
+        with _a_job(kernel32, A_PROCESS) as job:
             job.end_all()
 
         ((count, waited_on, every_one, _within),) = kernel32.WaitForMultipleObjects.calls
@@ -854,7 +929,7 @@ class TestAJobObject:
     def test_a_process_number_that_has_left_it_since_it_was_listed_is_not_waited_on(self):
         kernel32 = _a_job_kernel32(holding=(0x101, 0x102), left_since=(0x101,))
 
-        with JobObject(A_PROCESS, kernel32=lambda: kernel32) as job:
+        with _a_job(kernel32, A_PROCESS) as job:
             job.end_all()
 
         ((count, waited_on, _every_one, _within),) = kernel32.WaitForMultipleObjects.calls
@@ -865,7 +940,7 @@ class TestAJobObject:
         kernel32 = _a_job_kernel32(job=0)
 
         with pytest.raises(OSError, match="CreateJobObjectW"):
-            JobObject(A_PROCESS, kernel32=lambda: kernel32)
+            _a_job(kernel32, A_PROCESS)
 
         assert kernel32.AssignProcessToJobObject.calls == []
 
@@ -873,9 +948,159 @@ class TestAJobObject:
         kernel32 = _a_job_kernel32(assigned=0)
 
         with pytest.raises(OSError, match="AssignProcessToJobObject"):
-            JobObject(A_PROCESS, kernel32=lambda: kernel32)
+            _a_job(kernel32, A_PROCESS)
 
         assert kernel32.CloseHandle.calls == [(WIDE_HANDLE,)]
+
+    def test_a_refusal_names_the_reason_windows_gave_for_it(self):
+        kernel32 = _a_job_kernel32(assigned=0)
+
+        with pytest.raises(OSError, match=f"AssignProcessToJobObject failed: Win32 error {ERROR_ACCESS_DENIED}$"):
+            _a_job(kernel32, A_PROCESS)
+
+    def test_a_job_windows_will_not_limit_is_let_go_before_anything_goes_into_it(self):
+        kernel32 = _a_job_kernel32(limited=0)
+
+        with pytest.raises(OSError, match="SetInformationJobObject"):
+            _a_job(kernel32, A_PROCESS, processes_end_with_it=True)
+
+        assert kernel32.AssignProcessToJobObject.calls == []
+        assert kernel32.CloseHandle.calls == [(WIDE_HANDLE,)]
+
+
+def _this_process_s_kernel32(*, job_spent: tuple[int, int] | None, own_kernel: int = 0,
+                             own_user: int = 0) -> _FakeDll:
+    asked_of: list = []
+
+    def query(*asked):
+        asked_of.append(asked[0])
+        if job_spent is None:
+            return 0
+        asked[2]._obj.user, asked[2]._obj.kernel = job_spent
+        return 1
+
+    def times(*asked):
+        if asked[0] == THIS_PROCESS:
+            for filetime, ticks in ((asked[3]._obj, own_kernel), (asked[4]._obj, own_user)):
+                filetime.dwLowDateTime, filetime.dwHighDateTime = ticks & 0xFFFF_FFFF, ticks >> 32
+        return 1
+
+    return _FakeDll(asked_of=asked_of, QueryInformationJobObject=query, GetProcessTimes=times,
+                    GetCurrentProcess=_FakeFunction(THIS_PROCESS))
+
+
+class TestAJobEndingWithThisProcess:
+    def test_given_no_process_it_holds_this_one(self):
+        kernel32 = _a_job_kernel32()
+
+        a_job_ending_with_this_process(kernel32=lambda: kernel32)
+
+        assert kernel32.AssignProcessToJobObject.calls == [(WIDE_HANDLE, THIS_PROCESS)]
+
+
+class TestTheBusySecondsOfTheJobThisProcessRunsIn:
+    def test_they_are_asked_of_the_job_this_process_runs_in(self):
+        kernel32 = _this_process_s_kernel32(job_spent=(20_000_000, 5_000_000))
+
+        assert busy_seconds_of_the_job_this_process_runs_in(kernel32=lambda: kernel32) == 2.5
+        assert kernel32.asked_of == [None]
+
+    def test_outside_a_job_they_are_this_process_s_own(self):
+        kernel32 = _this_process_s_kernel32(job_spent=None, own_kernel=15_000_000, own_user=5 << 32)
+
+        assert busy_seconds_of_the_job_this_process_runs_in(kernel32=lambda: kernel32) \
+            == pytest.approx(1.5 + (5 << 32) / 10_000_000)
+
+
+def _running(script: str) -> subprocess.Popen:
+    return subprocess.Popen([sys._base_executable, "-c", script], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            text=True, creationflags=subprocess.CREATE_NO_WINDOW)
+
+
+def _go_on(child: subprocess.Popen) -> None:
+    child.stdin.write("go on\n")
+    child.stdin.flush()
+
+
+_WAITS_TO_BE_TOLD = "import sys; sys.stdin.readline()"
+
+_STARTS_ONE_THAT_BREAKS_AWAY = """
+import subprocess, sys
+sys.stdin.readline()
+print(subprocess.Popen([sys.executable, "-c", "import sys; sys.stdin.readline()"], stdin=sys.stdin,
+                       creationflags=subprocess.CREATE_BREAKAWAY_FROM_JOB | subprocess.CREATE_NO_WINDOW).pid,
+      flush=True)
+sys.stdin.readline()
+"""
+
+_RAISES_ITSELF_AND_SAYS_WHERE_IT_ENDED_UP = """
+import ctypes, subprocess, sys
+sys.stdin.readline()
+kernel32 = ctypes.WinDLL("kernel32")
+kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+kernel32.SetPriorityClass.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+kernel32.GetPriorityClass.argtypes = [ctypes.c_void_p]
+kernel32.SetPriorityClass(kernel32.GetCurrentProcess(), subprocess.ABOVE_NORMAL_PRIORITY_CLASS)
+print(kernel32.GetPriorityClass(kernel32.GetCurrentProcess()), flush=True)
+"""
+
+_HOLDS_ITSELF_AND_LEAVES_ONE_RUNNING = """
+import subprocess, sys
+from app_support.win32 import a_job_ending_with_this_process
+a_job_ending_with_this_process()
+print(subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"],
+                       creationflags=subprocess.CREATE_NO_WINDOW).pid, flush=True)
+sys.stdin.readline()
+"""
+
+_SPINS_FOR_A_THIRD_OF_A_SECOND = """
+import sys, time
+sys.stdin.readline()
+started = time.process_time()
+while time.process_time() - started < 0.3:
+    pass
+"""
+
+
+@pytest.mark.skipif(not hasattr(ctypes, "windll"), reason="a job object: only Windows can say")
+class TestAJobObjectOnWindows:
+    def test_letting_go_of_a_job_its_processes_end_with_ends_them(self):
+        with _running(_WAITS_TO_BE_TOLD) as child:
+            with JobObject(int(child._handle), processes_end_with_it=True):
+                pass
+
+            assert eventually(lambda: child.poll() is not None, within_s=10)
+
+    def test_a_process_that_breaks_away_from_a_job_that_lets_it_outlives_the_job(self):
+        with _running(_STARTS_ONE_THAT_BREAKS_AWAY) as child:
+            with JobObject(int(child._handle), processes_end_with_it=True, processes_may_break_away=True):
+                _go_on(child)
+                broke_away = int(child.stdout.readline())
+
+            assert eventually(lambda: child.poll() is not None, within_s=10)
+            assert process_started(broke_away) is not None
+
+    def test_a_process_in_a_job_held_to_a_priority_class_cannot_raise_itself_out_of_it(self):
+        with (_running(_RAISES_ITSELF_AND_SAYS_WHERE_IT_ENDED_UP) as child,
+              JobObject(int(child._handle), priority_class=subprocess.BELOW_NORMAL_PRIORITY_CLASS)):
+            _go_on(child)
+
+            assert int(child.stdout.readline()) == subprocess.BELOW_NORMAL_PRIORITY_CLASS
+
+    def test_what_a_process_in_a_job_ending_with_it_leaves_running_ends_with_it(self):
+        with _running(_HOLDS_ITSELF_AND_LEAVES_ONE_RUNNING) as holder:
+            left = int(holder.stdout.readline())
+            assert process_started(left) is not None
+
+            holder.stdin.close()
+
+        assert eventually(lambda: process_started(left) is None, within_s=10)
+
+    def test_a_job_counts_the_processor_time_its_processes_spent(self):
+        with _running(_SPINS_FOR_A_THIRD_OF_A_SECOND) as worker, JobObject(int(worker._handle)) as job:
+            worker.communicate("spin\n", timeout=120)
+
+            assert job.busy_seconds() >= 0.25
 
 
 class TestShowErrorPopup:

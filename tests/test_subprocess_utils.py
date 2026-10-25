@@ -7,18 +7,25 @@ refactor of the import does not.
 from __future__ import annotations
 
 import ast
+import logging
 import os
 import subprocess
 import sys
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
+from eventually import eventually
 from process_trees import ALauncherAndItsChild, within
 
 from app_support import processes, win32
-from app_support.subprocess_utils import hidden_subprocess_kwargs, run_process_tree
+from app_support.subprocess_utils import (
+    hidden_subprocess_kwargs,
+    run_process_tree,
+    tie_to_this_process,
+)
 
 _windows_half = pytest.mark.skipif(
     not hasattr(subprocess, "STARTUPINFO"),
@@ -117,6 +124,53 @@ def test_output_still_held_open_outside_the_child_does_not_hold_up_its_end(tmp_p
 
     assert handed_over.exists()
     assert isinstance(ended, subprocess.TimeoutExpired)
+
+
+_TIES_ONE_THAT_STARTS_ANOTHER = """
+import gc, subprocess, sys, time
+from app_support.subprocess_utils import tie_to_this_process
+STARTS_ONE_OF_ITS_OWN = ("import subprocess, sys, time; sys.stdin.readline(); "
+                         "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)', sys.argv[1]], "
+                         "creationflags=subprocess.CREATE_NO_WINDOW); time.sleep(60)")
+child = subprocess.Popen([sys.executable, "-c", STARTS_ONE_OF_ITS_OWN, sys.argv[1]], stdin=subprocess.PIPE,
+                         creationflags=subprocess.CREATE_NO_WINDOW)
+tie_to_this_process(child)
+gc.collect()
+child.stdin.write(b"start yours\\n")
+child.stdin.flush()
+time.sleep(60)
+"""
+
+
+@_windows_half
+def test_a_child_tied_to_this_process_ends_with_what_it_started_the_moment_this_process_does():
+    marker = "app-support-test-" + uuid.uuid4().hex
+    tier = subprocess.Popen([sys._base_executable, "-c", _TIES_ONE_THAT_STARTS_ANOTHER, marker],
+                            creationflags=subprocess.CREATE_NO_WINDOW)
+
+    def tied() -> list[processes.Process]:
+        return [process for process in processes.running() if marker in process.cmdline and process.pid != tier.pid]
+
+    try:
+        assert eventually(lambda: len(tied()) == 2), "the tied child and the one it started never both ran"
+    finally:
+        tier.kill()
+        tier.wait()
+
+    assert eventually(lambda: not tied(), within_s=_PROMPTLY_S)
+
+
+def test_a_child_windows_will_not_tie_is_said_to_be_free_to_outlive_this_process(monkeypatch, caplog):
+    def refused(process: int) -> None:
+        raise OSError("AssignProcessToJobObject failed")
+
+    monkeypatch.setattr(win32, "a_job_ending_with_this_process", refused)
+
+    with caplog.at_level(logging.WARNING):
+        tie_to_this_process(SimpleNamespace(_handle=0x1F4, pid=4321))
+
+    assert "4321" in caplog.text
+    assert "AssignProcessToJobObject failed" in caplog.text
 
 
 def test_what_a_child_that_finishes_in_time_printed_comes_back_with_how_it_ended():

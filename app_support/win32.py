@@ -31,7 +31,8 @@ family ends up doing and had all grown its own spelling of:
     the next one it starts, so a pid names one process only together with the
     moment that process started.
   * **ending a child together with every process it started**, which ending the
-    child alone leaves running.
+    child alone leaves running -- at once, or whenever this process ends -- and
+    counting the processor time they spent.
   * **asking whether the user is at the computer**: how long ago the mouse or
     the keyboard was last touched, anywhere in the session.
 
@@ -656,27 +657,72 @@ def process_started(pid: int, *, kernel32=_kernel32) -> int | None:
             return None
         if not times_of(handle, ctypes.byref(created), *[ctypes.byref(unread)] * 3):
             return None
-        return created.dwHighDateTime << 32 | created.dwLowDateTime
+        return _ticks(created)
     finally:
         close(handle)
 
 
+def _ticks(filetime: wintypes.FILETIME) -> int:
+    return filetime.dwHighDateTime << 32 | filetime.dwLowDateTime
+
+
 # --- Ending a process together with every process it started ----------------
 
+_ACCOUNTING = 1
 _PROCESS_ID_LIST = 3
+_EXTENDED_LIMITS = 9
+_KILL_ON_JOB_CLOSE = 0x00002000
+_BREAKAWAY_OK = 0x00000800
+_PRIORITY_CLASS = 0x00000020
 _MAXIMUM_WAIT_OBJECTS = 64
 _ENDED_WITHIN_MS = 10_000
+_TICKS_A_SECOND = 10_000_000
+
+
+class _Accounting(ctypes.Structure):
+    _fields_ = [("user", ctypes.c_longlong), ("kernel", ctypes.c_longlong),
+                ("this_period_user", ctypes.c_longlong), ("this_period_kernel", ctypes.c_longlong),
+                ("page_faults", wintypes.DWORD), ("processes", wintypes.DWORD),
+                ("active_processes", wintypes.DWORD), ("terminated_processes", wintypes.DWORD)]
 
 
 class _ProcessIdList(ctypes.Structure):
-    _fields_ = [("assigned", wintypes.DWORD), ("listed", wintypes.DWORD), ("ids", ctypes.c_size_t * 256)]
+    _fields_ = [("assigned", wintypes.DWORD), ("listed", wintypes.DWORD), ("ids", ctypes.c_size_t * 1024)]
+
+
+class _BasicLimits(ctypes.Structure):
+    _fields_ = [("per_process_user_time", ctypes.c_longlong), ("per_job_user_time", ctypes.c_longlong),
+                ("flags", wintypes.DWORD), ("minimum_working_set", ctypes.c_size_t),
+                ("maximum_working_set", ctypes.c_size_t), ("active_processes", wintypes.DWORD),
+                ("affinity", ctypes.c_size_t), ("priority_class", wintypes.DWORD),
+                ("scheduling_class", wintypes.DWORD)]
+
+
+class _ExtendedLimits(ctypes.Structure):
+    _fields_ = [("basic", _BasicLimits), ("io", ctypes.c_ulonglong * 6), ("process_memory", ctypes.c_size_t),
+                ("job_memory", ctypes.c_size_t), ("peak_process_memory", ctypes.c_size_t),
+                ("peak_job_memory", ctypes.c_size_t)]
+
+
+def _limits(processes_end_with_it: bool, processes_may_break_away: bool,
+            priority_class: int | None) -> _ExtendedLimits:
+    limits = _ExtendedLimits()
+    limits.basic.flags = ((_KILL_ON_JOB_CLOSE if processes_end_with_it else 0)
+                          | (_BREAKAWAY_OK if processes_may_break_away else 0)
+                          | (_PRIORITY_CLASS if priority_class is not None else 0))
+    limits.basic.priority_class = priority_class or 0
+    return limits
 
 
 class JobObject:
-    def __init__(self, process: int, *, kernel32=_kernel32) -> None:
+    def __init__(self, process: int | None = None, *, processes_end_with_it: bool = False,
+                 processes_may_break_away: bool = False, priority_class: int | None = None,
+                 kernel32=_kernel32, last_error=_last_error) -> None:
         dll = kernel32()
         create = _declare(dll, "CreateJobObjectW", ctypes.c_void_p, ctypes.c_void_p, wintypes.LPCWSTR)
-        assign = _declare(dll, "AssignProcessToJobObject", wintypes.BOOL, ctypes.c_void_p, ctypes.c_void_p)
+        limit = _declare(dll, "SetInformationJobObject", wintypes.BOOL, ctypes.c_void_p, ctypes.c_int,
+                         ctypes.c_void_p, wintypes.DWORD)
+        self._assign = _declare(dll, "AssignProcessToJobObject", wintypes.BOOL, ctypes.c_void_p, ctypes.c_void_p)
         self._terminate = _declare(dll, "TerminateJobObject", wintypes.BOOL, ctypes.c_void_p, wintypes.UINT)
         self._query = _declare(dll, "QueryInformationJobObject", wintypes.BOOL, ctypes.c_void_p, ctypes.c_int,
                                ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD))
@@ -686,12 +732,27 @@ class JobObject:
         self._wait = _declare(dll, "WaitForMultipleObjects", wintypes.DWORD, wintypes.DWORD,
                               ctypes.POINTER(ctypes.c_void_p), wintypes.BOOL, wintypes.DWORD)
         self._close = _declare(dll, "CloseHandle", wintypes.BOOL, ctypes.c_void_p)
+        self._last_error = last_error
         self._handle = create(None, None)
         if not self._handle:
-            raise OSError("CreateJobObjectW failed")
-        if not assign(self._handle, process):
+            raise self._refused("CreateJobObjectW")
+        limits = _limits(processes_end_with_it, processes_may_break_away, priority_class)
+        try:
+            if limits.basic.flags and not limit(self._handle, _EXTENDED_LIMITS, ctypes.byref(limits),
+                                                ctypes.sizeof(limits)):
+                raise self._refused("SetInformationJobObject")
+            if process is not None:
+                self.hold(process)
+        except OSError:
             self._close(self._handle)
-            raise OSError("AssignProcessToJobObject failed")
+            raise
+
+    def hold(self, process: int) -> None:
+        if not self._assign(self._handle, process):
+            raise self._refused("AssignProcessToJobObject")
+
+    def _refused(self, call: str) -> OSError:
+        return OSError(f"{call} failed: Win32 error {self._last_error()}")
 
     def end_all(self) -> None:
         ending = self._each_process_in_it()
@@ -704,11 +765,24 @@ class JobObject:
             for process in ending:
                 self._close(process)
 
-    def _each_process_in_it(self) -> list[int]:
+    def process_ids(self) -> list[int]:
         listed = _ProcessIdList()
-        self._query(self._handle, _PROCESS_ID_LIST, ctypes.byref(listed), ctypes.sizeof(listed), None)
+        if not self._query(self._handle, _PROCESS_ID_LIST, ctypes.byref(listed), ctypes.sizeof(listed), None):
+            raise self._refused("QueryInformationJobObject")
+        return listed.ids[:listed.listed]
+
+    def busy_seconds(self) -> float:
+        if (busy := _busy_seconds_of(self._query, self._handle)) is None:
+            raise self._refused("QueryInformationJobObject")
+        return busy
+
+    def _each_process_in_it(self) -> list[int]:
+        try:
+            listed = self.process_ids()
+        except OSError:
+            return []
         held = []
-        for pid in listed.ids[:listed.listed]:
+        for pid in listed:
             process = self._open(_SYNCHRONIZE | _PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
             if not process:
                 continue
@@ -724,6 +798,33 @@ class JobObject:
 
     def __exit__(self, *raised: object) -> None:
         self._close(self._handle)
+
+
+def a_job_ending_with_this_process(process: int | None = None, *, kernel32=_kernel32) -> JobObject:
+    if process is None:
+        process = _declare(kernel32(), "GetCurrentProcess", ctypes.c_void_p)()
+    return JobObject(process, processes_end_with_it=True, kernel32=kernel32)
+
+
+def _busy_seconds_of(query, job: int | None) -> float | None:
+    spent = _Accounting()
+    if not query(job, _ACCOUNTING, ctypes.byref(spent), ctypes.sizeof(spent), None):
+        return None
+    return (spent.user + spent.kernel) / _TICKS_A_SECOND
+
+
+def busy_seconds_of_the_job_this_process_runs_in(*, kernel32=_kernel32) -> float:
+    dll = kernel32()
+    query = _declare(dll, "QueryInformationJobObject", wintypes.BOOL, ctypes.c_void_p, ctypes.c_int,
+                     ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD))
+    if (busy := _busy_seconds_of(query, None)) is not None:
+        return busy
+    this_process = _declare(dll, "GetCurrentProcess", ctypes.c_void_p)
+    times_of = _declare(dll, "GetProcessTimes", wintypes.BOOL, ctypes.c_void_p,
+                        *[ctypes.POINTER(wintypes.FILETIME)] * 4)
+    created, ended, kernel, user = (wintypes.FILETIME() for _ in range(4))
+    times_of(this_process(), *map(ctypes.byref, (created, ended, kernel, user)))
+    return (_ticks(kernel) + _ticks(user)) / _TICKS_A_SECOND
 
 
 # --- Putting an error where the user will actually see it -------------------

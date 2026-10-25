@@ -142,7 +142,8 @@ More that every repo in the family needs, and used to keep its own copy of:
   onto every taskbar pin under the app's name, a shortcut written whole (one
   already there is changed in place) and read back whole, the named mutex that
   answers whether it may run, a job object that ends a child together with
-  every process it started, and
+  every process it started (at once, or whenever this process ends) and counts
+  the processor time they spent, and
   the error popup for a process with nowhere else to say it. Every call raises
   on refusal and none decides what that means; the caller keeps its try/except.
 - **`peer_watch`** — two apps that must both be up all the time watching each
