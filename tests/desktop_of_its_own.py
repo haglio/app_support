@@ -5,12 +5,15 @@ import ctypes
 import subprocess
 import uuid
 
+from app_support import processes
+
 
 class DesktopOfItsOwn:
     """A desktop made for one test, which nothing started on it can reach his screen from."""
 
     _SUSPENDED, _NO_WINDOW, _UNICODE_ENVIRONMENT = 0x4, 0x08000000, 0x400
     _EXTENDED_STYLE, _TOPMOST = -20, 0x8
+    _TERMINATE, _SYNCHRONIZE = 0x0001, 0x00100000
 
     def __init__(self):
         from ctypes import wintypes
@@ -42,6 +45,8 @@ class DesktopOfItsOwn:
             wintypes.DWORD, wintypes.LPVOID, wintypes.LPCWSTR, ctypes.POINTER(StartupInfo),
             ctypes.POINTER(ProcessInformation)]
         self._kernel32.CreateProcessW.restype = wintypes.BOOL
+        self._kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        self._kernel32.OpenProcess.restype = wintypes.HANDLE
         self._kernel32.TerminateProcess.argtypes = [wintypes.HANDLE, wintypes.UINT]
         self._kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
         self._kernel32.WaitForSingleObject.restype = wintypes.DWORD
@@ -90,10 +95,24 @@ class DesktopOfItsOwn:
         self._user32.EnumDesktopWindows(self._handle, each_window(look), 0)
         return found[0] if found else None
 
+    def running_on_it(self) -> list[processes.Process]:
+        return [process for process in processes.running() if self._runs_on_it(process.pid)]
+
+    def _runs_on_it(self, pid: int) -> bool:
+        return processes.desktop_of(pid) == self.name
+
     def close(self) -> None:
+        while left := self.running_on_it():
+            for process in left:
+                self._end_if_still_on_it(process.pid)
         for started in self._started:
-            self._kernel32.TerminateProcess(started.hProcess, 1)
-            self._kernel32.WaitForSingleObject(started.hProcess, 5000)
             self._kernel32.CloseHandle(started.hThread)
             self._kernel32.CloseHandle(started.hProcess)
         self._user32.CloseDesktop(self._handle)
+
+    def _end_if_still_on_it(self, pid: int) -> None:
+        handle = self._kernel32.OpenProcess(self._TERMINATE | self._SYNCHRONIZE, False, pid)
+        if self._runs_on_it(pid):
+            self._kernel32.TerminateProcess(handle, 1)
+            self._kernel32.WaitForSingleObject(handle, 5000)
+        self._kernel32.CloseHandle(handle)
