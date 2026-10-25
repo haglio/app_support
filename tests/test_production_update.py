@@ -841,6 +841,18 @@ class TestTheTurn:
         assert outcome.said.startswith("up to date")
         assert machine.ran == []
 
+    def test_a_look_at_a_checkout_leaves_its_index_to_the_update_beside_it(self, machine):
+        checkout = machine.checkout()
+        machine.ship(checkout, {"feature.txt": "new\n"})
+        later = time.time() + 120
+        os.utime(checkout / "pyproject.toml", (later, later))
+        index = checkout / ".git" / "index"
+        before = (index.read_bytes(), index.stat().st_mtime_ns)
+
+        production_update.heading_for(checkout, run=machine.run)
+
+        assert (index.read_bytes(), index.stat().st_mtime_ns) == before
+
     def test_a_turn_left_by_a_process_that_died_mid_update_is_taken_over(self, machine):
         checkout = machine.checkout()
         machine.ship(checkout, {"feature.txt": "new\n"})
