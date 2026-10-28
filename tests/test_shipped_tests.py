@@ -44,7 +44,7 @@ class TestWhichRunsAreEnforced:
             [f"{APP_SUPPORT / 'tests' / 'test_cli.py'}::test_one"])
 
     def test_nothing_at_all_is_not_a_tree(self):
-        """Nothing to enforce against, and appending to it would invent a run."""
+        """Nothing to enforce against, and adding to it would invent a run."""
         assert not shipped_tests.is_a_run_of_whole_trees([])
 
     def test_a_check_is_added_once_however_often_it_is_shipped(self):
@@ -54,7 +54,7 @@ class TestWhichRunsAreEnforced:
         shipped_tests.ship(config, SHIPPED[0])
         shipped_tests.ship(config, SHIPPED[0])
 
-        assert config.args == [str(APP_SUPPORT / "tests"), str(SHIPPED[0])]
+        assert config.args == [str(SHIPPED[0]), str(APP_SUPPORT / "tests")]
 
     def test_a_check_shipped_after_another_still_reaches_the_run(self):
         """Every repo in the family names two of these plugins, and the second
@@ -72,17 +72,18 @@ class TestWhichRunsAreEnforced:
 
 class TestWhatShippingReachesInAConsumer:
     def test_this_repo_root_offers_a_consumer_only_the_one_name(self):
-        """Collecting a shipped file puts this repo's root at the front of the
-        consumer's `sys.path` -- measured, under an editable install; under a
-        wheel it is site-packages instead. Whatever top-level names that
-        directory publishes are then offered to ten other suites ahead of their
-        own, and `tools` and `tests` are names every one of them uses.
+        """Collecting a shipped file puts this repo's root on the consumer's
+        `sys.path` -- measured, under an editable install; under a wheel it is
+        site-packages instead -- and a real package anywhere on the path beats a
+        namespace portion of the same name wherever that sits. So every package
+        that directory publishes can stand in for a directory of ten other
+        suites, and `tools` and `tests` are names every one of them uses.
 
         It publishes only `app_support` today because nothing else beside it
-        carries an `__init__.py`, so the rest are namespace portions and lose to
-        a real package of the same name. That is load-bearing and invisible, so
-        it is pinned here: the day this repo grows a `tests/__init__.py` is the
-        day ten suites import the wrong `tests`.
+        carries an `__init__.py`, so the rest are namespace portions themselves.
+        That is load-bearing and invisible, so it is pinned here: the day this
+        repo grows a `tests/__init__.py` is the day ten suites import the wrong
+        `tests`.
         """
         published = sorted(
             entry.name for entry in APP_SUPPORT.iterdir()

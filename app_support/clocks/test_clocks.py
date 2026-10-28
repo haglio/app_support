@@ -8,8 +8,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from app_support.clocks import jobs_without_a_clock, per_test_clock_s
 from app_support.dependencies import declared_dependencies
+
+pytestmark = pytest.mark.repo_check
 
 
 def _pyproject(pytestconfig) -> Path:

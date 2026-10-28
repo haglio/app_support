@@ -21,25 +21,11 @@ import pytest
 
 _THE_RUN_AS_ASKED = pytest.StashKey[list[str]]()
 
-# A shipped file is appended to the session's arguments rather than collected off
+# A shipped file is put into the session's arguments rather than collected off
 # disk: it lives wherever this package was installed, nowhere near the tree pytest
-# walks.
-#
-# Two things follow, and both reach into the consumer's session.
-#
-# Collecting a file puts the root of the package holding it at the FRONT of
-# `sys.path` -- measured: this package's own repo root under an editable install,
-# site-packages under a wheel. So every top-level name that directory publishes
-# is offered to the consumer ahead of its own. Today it publishes exactly one,
-# `app_support`, because nothing else beside it is a package; a directory without
-# an `__init__.py` is only a namespace portion and loses to a real package of the
-# same name. `tests/test_shipped_tests.py` holds that true, since the day this
-# repo grows a `tests/__init__.py` is the day ten other suites import the wrong
-# `tests`.
-#
-# And pytest loads every conftest on the path up from a collected file, so a
-# `conftest.py` added anywhere above a shipped file would run inside every
-# consumer's session. Also held true by a test.
+# walks. What collecting it from there reaches in a consumer's session -- its
+# `sys.path`, and every conftest above the file -- `tests/test_shipped_tests.py`
+# holds down.
 
 
 def is_a_run_of_whole_trees(args: list[str]) -> bool:
@@ -65,4 +51,4 @@ def ship(config, shipped: Path) -> None:
     test_file = str(shipped)
     if test_file in config.args or not is_a_run_of_whole_trees(asked):
         return
-    config.args.append(test_file)
+    config.args.insert(0, test_file)
