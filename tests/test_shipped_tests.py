@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from app_support import shipped_tests
 
 APP_SUPPORT = Path(__file__).resolve().parents[1]
@@ -20,6 +22,7 @@ class TestWhichRunsAreEnforced:
     class _Config:
         def __init__(self, args):
             self.args = list(args)
+            self.stash = pytest.Stash()
 
     def test_no_arguments_of_its_own_is_a_whole_tree(self):
         """pytest fills these in from `testpaths` or the invocation directory,
@@ -52,6 +55,19 @@ class TestWhichRunsAreEnforced:
         shipped_tests.ship(config, SHIPPED[0])
 
         assert config.args == [str(APP_SUPPORT / "tests"), str(SHIPPED[0])]
+
+    def test_a_check_shipped_after_another_still_reaches_the_run(self):
+        """Every repo in the family names two of these plugins, and the second
+        judged the run by the file the first had just put into it: a named file,
+        so a narrowed run, and it shipped nothing. That took the blocked-word
+        check out of every suite from the day the clock checks joined it.
+        """
+        config = self._Config([str(APP_SUPPORT / "tests")])
+
+        shipped_tests.ship(config, SHIPPED[0])
+        shipped_tests.ship(config, SHIPPED[1])
+
+        assert sorted(config.args) == sorted([str(APP_SUPPORT / "tests"), *map(str, SHIPPED)])
 
 
 class TestWhatShippingReachesInAConsumer:

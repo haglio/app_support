@@ -17,6 +17,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
+_THE_RUN_AS_ASKED = pytest.StashKey[list[str]]()
+
 # A shipped file is appended to the session's arguments rather than collected off
 # disk: it lives wherever this package was installed, nowhere near the tree pytest
 # walks.
@@ -57,8 +61,8 @@ def is_a_run_of_whole_trees(args: list[str]) -> bool:
 
 
 def ship(config, shipped: Path) -> None:
+    asked = config.stash.setdefault(_THE_RUN_AS_ASKED, list(config.args))
     test_file = str(shipped)
-    # Appended at most once: a second copy would collect the same check twice.
-    if test_file in config.args or not is_a_run_of_whole_trees(config.args):
+    if test_file in config.args or not is_a_run_of_whole_trees(asked):
         return
     config.args.append(test_file)
