@@ -21,6 +21,8 @@ from app_support.sanitize.guard import (
     scan_files,
 )
 
+pytestmark = pytest.mark.repo_check
+
 # A whole word of letters, with a non-word character on each side.  Both halves
 # are what keep the control clear of the matcher's edges rather than sitting on
 # them: `_matcher` puts a word boundary around a term whose first and last

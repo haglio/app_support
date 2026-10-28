@@ -17,7 +17,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from app_support.dead_code import assert_no_dead_code, assert_whitelist_is_live
+
+pytestmark = pytest.mark.repo_check
 
 ROOT = Path(__file__).resolve().parent.parent
 # Named one by one rather than scanning `.` under an `--exclude` list: vulture

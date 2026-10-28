@@ -348,17 +348,19 @@ class TestDeclaredSiblings:
             assert_every_sibling_is_declared(root, [root / "someapp"], root / "pyproject.toml")
 
 
+@pytest.mark.repo_check
 def test_this_repos_declared_floor_is_the_one_its_gate_runs():
     root = Path(__file__).resolve().parent.parent
     assert_the_declared_floor_is_the_one_the_gate_runs(
         root / "pyproject.toml", root / ".github" / "workflows" / "merge-gate.yml")
 
 
+@pytest.mark.repo_check
 def test_this_repos_own_requirements_are_bounded():
     assert_every_dependency_is_bounded(Path(__file__).resolve().parent.parent / "pyproject.toml")
 
 
-
+@pytest.mark.repo_check
 def test_this_repo_declares_the_siblings_it_imports():
     """It should never have one: standard library only, and nothing here may
     reach for the two packages that install beside it."""
