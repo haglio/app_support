@@ -148,6 +148,19 @@ class TestTheGuardPlugin:
         assert done.returncode != 0, done.stdout
         assert "notes.md" in done.stdout
 
+    def test_a_planted_term_fails_a_run_that_names_the_clock_checks_too(self, tmp_path: Path):
+        """Both plugins, as every repo in the family names them: the one named
+        first used to judge the run by the file the other had just put into it,
+        and leave itself out."""
+        repo = self._repo(
+            tmp_path, blocklist=f"{TERM}\n", tracked=f"this has {TERM} in it\n")
+        (repo / "pyproject.toml").write_text(PYPROJECT.replace(
+            "pytest_plugin", "pytest_plugin -p app_support.clocks.pytest_plugin"), encoding="utf-8")
+
+        done = self._pytest(repo)
+
+        assert "notes.md" in done.stdout, done.stdout
+
     def test_a_clean_tracked_tree_passes(self, tmp_path: Path):
         repo = self._repo(tmp_path, blocklist=f"{TERM}\n", tracked="perfectly clean\n")
 
