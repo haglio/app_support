@@ -14,6 +14,7 @@ from app_support.siblings import (
     assert_imported_from_checkout,
     checkouts_that_import,
     ensure_sibling_importable,
+    primary_checkout_of,
     project_dir,
     project_roots,
     sibling_checkout,
@@ -207,6 +208,18 @@ class TestWhereTheCheckoutsAre:
 
         with pytest.raises(ValueError, match="--workspace"):
             workspace_of(module)
+
+
+class TestThePrimaryCheckout:
+    def test_a_worktree_belongs_to_the_checkout_it_was_made_in(self, tmp_path: Path):
+        primary = tmp_path / "someapp"
+
+        assert primary_checkout_of(primary / ".claude" / "worktrees" / "some-branch") == primary
+
+    @pytest.mark.parametrize("checkout", ["someapp", "someapp/worktrees/some-branch",
+                                          "someapp/.claude/some-branch"])
+    def test_any_other_checkout_is_its_own(self, tmp_path: Path, checkout: str):
+        assert primary_checkout_of(tmp_path / checkout) == tmp_path / checkout
 
 
 class TestTheCheckoutsThatImportAPackage:
