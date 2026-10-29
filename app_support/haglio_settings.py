@@ -41,18 +41,11 @@ def settings_file() -> Path:
     return Path(named) if named else Path.home() / ".haglio" / "settings.json"
 
 
-_RENAMED_KEYS = {"origenerator_pictures_dir": "origenerator_images_dir"}
-
-
 def load() -> dict[str, Any]:
     path = settings_file()
     if os.environ.get(SETTINGS_ENV) == THE_EXAMPLE or not path.is_file():
         return copy.deepcopy(EXAMPLE)
-    settings = json.loads(path.read_text(encoding="utf-8"))
-    for old, new in _RENAMED_KEYS.items():
-        if old in settings:
-            settings.setdefault(new, settings[old])
-    return settings
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 class MissingSetting(LookupError):
