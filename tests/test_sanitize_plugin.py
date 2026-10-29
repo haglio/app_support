@@ -16,6 +16,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from consumer_runs import run_pytest_in
+
 from app_support.sanitize import blocklist_path, test_tracked_tree
 
 APP_SUPPORT = Path(__file__).resolve().parents[1]
@@ -127,15 +129,6 @@ class TestTheGuardPlugin:
         _git(repo, "commit", "-m", "seed", "--no-verify")
         return repo
 
-    def _pytest(
-        self, repo: Path, *args: str, cwd: Path | None = None,
-    ) -> subprocess.CompletedProcess:
-        env = {**os.environ, "PYTHONPATH": str(APP_SUPPORT)}
-        return subprocess.run(
-            [sys.executable, "-m", "pytest", "-q", *args],
-            cwd=cwd or repo, env=env, capture_output=True, text=True,
-        )
-
     def test_a_planted_term_in_a_tracked_file_fails_the_run(self, tmp_path: Path):
         """The negative control the whole plugin is for. If this ever passes,
         every repo that adopted the line is running a check of nothing.
@@ -143,7 +136,7 @@ class TestTheGuardPlugin:
         repo = self._repo(
             tmp_path, blocklist=f"{TERM}\n", tracked=f"this has {TERM} in it\n")
 
-        done = self._pytest(repo)
+        done = run_pytest_in(repo)
 
         assert done.returncode != 0, done.stdout
         assert "notes.md" in done.stdout
@@ -157,14 +150,14 @@ class TestTheGuardPlugin:
         (repo / "pyproject.toml").write_text(PYPROJECT.replace(
             "pytest_plugin", "pytest_plugin -p app_support.clocks.pytest_plugin"), encoding="utf-8")
 
-        done = self._pytest(repo)
+        done = run_pytest_in(repo)
 
         assert "notes.md" in done.stdout, done.stdout
 
     def test_a_clean_tracked_tree_passes(self, tmp_path: Path):
         repo = self._repo(tmp_path, blocklist=f"{TERM}\n", tracked="perfectly clean\n")
 
-        assert self._pytest(repo).returncode == 0
+        assert run_pytest_in(repo).returncode == 0
 
     def test_a_checkout_with_no_blocklist_says_so_instead_of_passing(self, tmp_path: Path):
         """A public clone and a fresh CI checkout both arrive without the
@@ -175,7 +168,7 @@ class TestTheGuardPlugin:
         """
         repo = self._repo(tmp_path, blocklist=None, tracked=f"this has {TERM} in it\n")
 
-        done = self._pytest(repo)
+        done = run_pytest_in(repo)
 
         assert done.returncode == 0
         assert "1 passed" not in done.stdout
@@ -194,7 +187,7 @@ class TestTheGuardPlugin:
         (repo / "tests" / "test_local.py").write_text(
             "def test_local():\n    assert True\n", encoding="utf-8")
 
-        done = self._pytest(repo)
+        done = run_pytest_in(repo)
 
         assert done.returncode == 0, done.stdout
         assert "1 passed, 1 skipped" in done.stdout
@@ -207,7 +200,7 @@ class TestTheGuardPlugin:
         """
         repo = self._repo(tmp_path, blocklist=None, tracked="perfectly clean\n")
 
-        done = self._pytest(repo)
+        done = run_pytest_in(repo)
 
         assert "warnings summary" in done.stdout
         assert "SANITIZE GUARD UNARMED" in done.stdout
@@ -220,7 +213,7 @@ class TestTheGuardPlugin:
         repo = self._repo(tmp_path, blocklist=f"{TERM}\n", tracked="perfectly clean\n")
         (repo / "scratch.md").write_text(f"this has {TERM} in it\n", encoding="utf-8")
 
-        assert self._pytest(repo).returncode == 0
+        assert run_pytest_in(repo).returncode == 0
 
     def test_an_armed_checkout_with_nothing_tracked_is_refused_not_reported_clean(
         self, tmp_path: Path,
@@ -239,7 +232,7 @@ class TestTheGuardPlugin:
             "def test_local():\n    assert True\n", encoding="utf-8")
         _git(repo, "init", "-b", "main")
 
-        done = self._pytest(repo)
+        done = run_pytest_in(repo)
 
         assert done.returncode != 0, done.stdout
         assert "no files at all" in done.stdout
@@ -257,7 +250,7 @@ class TestTheGuardPlugin:
         _git(repo, "add", ".")
         _git(repo, "commit", "-m", "notes", "--no-verify")
 
-        done = self._pytest(repo)
+        done = run_pytest_in(repo)
 
         assert done.returncode != 0, done.stdout
 
@@ -285,7 +278,7 @@ class TestTheGuardPlugin:
         _git(repo, "commit", "-m", "seed", "--no-verify")
         (repo / "notes.md").unlink()
 
-        done = self._pytest(repo)
+        done = run_pytest_in(repo)
 
         assert done.returncode != 0, done.stdout
         assert "read no text at all" in done.stdout
@@ -297,7 +290,7 @@ class TestTheGuardPlugin:
         _git(repo, "commit", "-m", "locked", "--no-verify")
         (repo / "conftest.py").write_text(CONFTEST_REFUSING_LOCKED_MD, encoding="utf-8")
 
-        done = self._pytest(repo)
+        done = run_pytest_in(repo)
 
         assert done.returncode != 0, done.stdout
         assert "locked.md:0  (could not be read: PermissionError)" in done.stdout
@@ -313,7 +306,7 @@ class TestTheGuardPlugin:
         (repo / "tests" / "test_local.py").write_text(
             "def test_local():\n    assert True\n", encoding="utf-8")
 
-        assert self._pytest(repo, "tests").returncode != 0
+        assert run_pytest_in(repo, "tests").returncode != 0
 
     def test_a_run_started_from_a_subdirectory_still_enforces(self, tmp_path: Path):
         """`testpaths` is relative to the root directory, not to wherever pytest
@@ -329,7 +322,7 @@ class TestTheGuardPlugin:
         (repo / "tests" / "test_local.py").write_text(
             "def test_local():\n    assert True\n", encoding="utf-8")
 
-        done = self._pytest(repo, cwd=repo / "tests")
+        done = run_pytest_in(repo / "tests")
 
         assert done.returncode != 0, done.stdout
 
@@ -345,7 +338,7 @@ class TestTheGuardPlugin:
         target = repo / "tests" / "test_local.py"
         target.write_text("def test_local():\n    assert True\n", encoding="utf-8")
 
-        done = self._pytest(repo, str(target))
+        done = run_pytest_in(repo, str(target))
 
         assert done.returncode == 0, done.stdout
         assert "1 passed" in done.stdout
@@ -357,7 +350,7 @@ class TestTheGuardPlugin:
         target = repo / "tests" / "test_local.py"
         target.write_text("def test_local():\n    assert True\n", encoding="utf-8")
 
-        done = self._pytest(repo, f"{target}::test_local")
+        done = run_pytest_in(repo, f"{target}::test_local")
 
         assert done.returncode == 0, done.stdout
         assert "1 passed" in done.stdout
@@ -394,7 +387,7 @@ class TestTheGuardPlugin:
             '[tool.pytest.ini_options]\naddopts = "-p no:cacheprovider"\n',
             encoding="utf-8")
 
-        done = self._pytest(repo)
+        done = run_pytest_in(repo)
 
         # Nothing to run at all, which pytest reports as exit code 5.
         assert done.returncode == 5, done.stdout
