@@ -6,14 +6,13 @@ Every "banned" term here is invented.
 """
 from __future__ import annotations
 
-import os
 import subprocess
-import sys
 from pathlib import Path
+
+from consumer_runs import run_pytest_in
 
 from app_support.sanitize import blocklist_path
 
-APP_SUPPORT = Path(__file__).resolve().parents[1]
 TERM = "plantedterm"
 
 PYPROJECT = """\
@@ -52,14 +51,8 @@ def _repo(tmp_path: Path, files: dict[str, str]) -> Path:
     return repo
 
 
-def _pytest(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    env = {**os.environ, "PYTHONPATH": str(APP_SUPPORT)}
-    return subprocess.run([sys.executable, "-m", "pytest", "-q", *args],
-                          cwd=repo, env=env, capture_output=True, text=True)
-
-
 def _run_order(repo: Path) -> list[str]:
-    listed = _pytest(repo, "--collect-only").stdout
+    listed = run_pytest_in(repo, "--collect-only").stdout
     return [line.rsplit("::", 1)[-1] for line in listed.splitlines() if "::" in line]
 
 
@@ -73,7 +66,7 @@ def test_a_blocked_word_ends_a_fail_fast_run_before_any_other_test_runs(tmp_path
                  ["commit", "-m", "seed", "--no-verify"]):
         subprocess.run(["git", "-C", str(repo), *step], check=True, capture_output=True)
 
-    done = _pytest(repo, "-x")
+    done = run_pytest_in(repo, "-x")
 
     assert "1 failed in" in done.stdout, done.stdout
     assert "notes.md" in done.stdout, done.stdout

@@ -6,14 +6,11 @@ clocks are all in place.
 """
 from __future__ import annotations
 
-import os
-import subprocess
-import sys
 from pathlib import Path
 
-from app_support.clocks import jobs_without_a_clock, per_test_clock_s
+from consumer_runs import run_pytest_in
 
-APP_SUPPORT = Path(__file__).resolve().parents[1]
+from app_support.clocks import jobs_without_a_clock, per_test_clock_s
 
 CLOCKED_OPTIONS = "-p no:cacheprovider -p app_support.clocks.pytest_plugin --timeout=60 --timeout-method=thread"
 DECLARED = '[project]\nname = "example"\n[project.optional-dependencies]\ndev = ["pytest-timeout>=2.4,<3"]\n'
@@ -72,13 +69,8 @@ class TestTheClockPlugin:
             (repo / ".github" / "workflows" / "gate.yml").write_text(workflow, encoding="utf-8")
         return repo
 
-    def _pytest(self, repo: Path, *args: str) -> subprocess.CompletedProcess:
-        env = {**os.environ, "PYTHONPATH": str(APP_SUPPORT)}
-        return subprocess.run([sys.executable, "-m", "pytest", "-q", *args],
-                              cwd=repo, env=env, capture_output=True, text=True)
-
     def test_a_repo_with_every_clock_passes_all_three_checks(self, tmp_path: Path):
-        done = self._pytest(self._repo(tmp_path))
+        done = run_pytest_in(self._repo(tmp_path))
 
         assert done.returncode == 0, done.stdout
         assert "3 passed" in done.stdout, done.stdout
@@ -86,7 +78,7 @@ class TestTheClockPlugin:
     def test_a_repo_whose_options_declare_no_per_test_clock_fails_the_run(self, tmp_path: Path):
         repo = self._repo(tmp_path, options="-p no:cacheprovider -p app_support.clocks.pytest_plugin")
 
-        done = self._pytest(repo)
+        done = run_pytest_in(repo)
 
         assert done.returncode == 1, done.stdout
         assert "test_every_test_runs_under_its_own_clock" in done.stdout, done.stdout
@@ -94,19 +86,19 @@ class TestTheClockPlugin:
     def test_a_workflow_job_with_no_clock_fails_the_run(self, tmp_path: Path):
         repo = self._repo(tmp_path, workflow="jobs:\n  suite:\n    runs-on: windows-latest\n")
 
-        done = self._pytest(repo)
+        done = run_pytest_in(repo)
 
         assert done.returncode == 1, done.stdout
         assert "test_every_workflow_job_runs_under_its_own_clock" in done.stdout, done.stdout
 
     def test_a_repo_with_no_workflows_is_told_so_rather_than_passed(self, tmp_path: Path):
-        done = self._pytest(self._repo(tmp_path, workflow=None))
+        done = run_pytest_in(self._repo(tmp_path, workflow=None))
 
         assert done.returncode == 1, done.stdout
         assert "no workflows found" in done.stdout, done.stdout
 
     def test_a_clock_whose_plugin_ci_never_installs_fails_the_run(self, tmp_path: Path):
-        done = self._pytest(self._repo(tmp_path, project='[project]\nname = "example"\n'))
+        done = run_pytest_in(self._repo(tmp_path, project='[project]\nname = "example"\n'))
 
         assert done.returncode == 1, done.stdout
         assert "test_the_plugin_that_keeps_the_clock_is_declared_where_ci_installs_it" in done.stdout, done.stdout
@@ -115,7 +107,7 @@ class TestTheClockPlugin:
         repo = self._repo(tmp_path, options="-p no:cacheprovider -p app_support.clocks.pytest_plugin")
         (repo / "test_local.py").write_text("def test_local():\n    assert True\n", encoding="utf-8")
 
-        done = self._pytest(repo, "test_local.py")
+        done = run_pytest_in(repo, "test_local.py")
 
         assert done.returncode == 0, done.stdout
         assert "1 passed" in done.stdout, done.stdout
@@ -123,7 +115,7 @@ class TestTheClockPlugin:
     def test_without_the_plugin_line_nothing_is_contributed(self, tmp_path: Path):
         repo = self._repo(tmp_path, options="-p no:cacheprovider")
 
-        done = self._pytest(repo)
+        done = run_pytest_in(repo)
 
         # Nothing to run at all, which pytest reports as exit code 5.
         assert done.returncode == 5, done.stdout

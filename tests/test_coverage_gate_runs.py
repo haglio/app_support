@@ -6,15 +6,12 @@ that never fails and a repo whose coverage is fine look exactly alike from here.
 """
 from __future__ import annotations
 
-import os
-import subprocess
-import sys
 from argparse import Namespace
 from pathlib import Path
 
-from app_support import coverage_gate
+from consumer_runs import run_pytest_in
 
-APP_SUPPORT = Path(__file__).resolve().parents[1]
+from app_support import coverage_gate
 
 MEASURING = """\
 [tool.pytest.ini_options]
@@ -109,25 +106,20 @@ class TestTheFloorAgainstARealRun:
             coverage_gate.render_config((), floor), encoding="utf-8")
         return tmp_path
 
-    def _run(self, repo: Path, *args: str) -> subprocess.CompletedProcess:
-        return subprocess.run([sys.executable, "-m", "pytest", "-q", *args], cwd=repo,
-                              capture_output=True, text=True, check=False,
-                              env={**os.environ, "PYTHONPATH": str(APP_SUPPORT)})
-
     def test_a_suite_over_its_floor_passes_and_says_the_number(self, tmp_path):
-        done = self._run(self._repo(tmp_path, 50.0))
+        done = run_pytest_in(self._repo(tmp_path, 50.0))
 
         assert done.returncode == 0, done.stdout + done.stderr
         assert "Total coverage: 75.00%" in done.stdout
 
     def test_a_suite_under_its_floor_fails_the_run(self, tmp_path):
-        done = self._run(self._repo(tmp_path, 90.0))
+        done = run_pytest_in(self._repo(tmp_path, 90.0))
 
         assert done.returncode != 0, done.stdout + done.stderr
         assert "Required test coverage of 90.0% not reached" in done.stdout
 
     def test_a_run_set_to_stop_at_its_first_failure_is_held_to_the_floor_when_every_test_passes(self, tmp_path):
-        done = self._run(self._repo(tmp_path, 90.0), "-x")
+        done = run_pytest_in(self._repo(tmp_path, 90.0), "-x")
 
         assert done.returncode != 0, done.stdout + done.stderr
         assert "Required test coverage of 90.0% not reached" in done.stdout
@@ -135,14 +127,14 @@ class TestTheFloorAgainstARealRun:
     def test_a_run_stopped_by_a_failure_reports_the_failure_alone(self, tmp_path):
         """What was measured is whatever ran before the failure, and the run is red
         already: a coverage failure beside it would send the reader after the wrong one."""
-        done = self._run(self._repo(tmp_path, 90.0, failing=True), "-x")
+        done = run_pytest_in(self._repo(tmp_path, 90.0, failing=True), "-x")
 
         assert done.returncode != 0, done.stdout + done.stderr
         assert "test_it_fails" in done.stdout
         assert "Required test coverage" not in done.stdout
 
     def test_a_narrowed_run_is_not_held_to_the_floor_and_says_so(self, tmp_path):
-        done = self._run(self._repo(tmp_path, 90.0), "tests/test_mod.py")
+        done = run_pytest_in(self._repo(tmp_path, 90.0), "tests/test_mod.py")
 
         assert done.returncode == 0, done.stdout + done.stderr
         assert "coverage floor not checked" in done.stdout
@@ -150,7 +142,7 @@ class TestTheFloorAgainstARealRun:
     def test_a_repo_asking_for_the_floor_without_measuring_is_refused(self, tmp_path):
         """A gate reading a number nobody collected passes forever, and a repo whose
         coverage is fine looks the same from the outside."""
-        done = self._run(self._repo(tmp_path, 90.0, NOT_MEASURING))
+        done = run_pytest_in(self._repo(tmp_path, 90.0, NOT_MEASURING))
 
         assert done.returncode != 0, done.stdout + done.stderr
         assert "no coverage is being collected" in done.stdout + done.stderr
