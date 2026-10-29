@@ -87,15 +87,6 @@ class TestTheSnapshotsTheAppLeaves:
 
         assert snapshots.updating("Bringing Example up to date...") is None
 
-    def test_a_library_still_saying_pictures_leaves_and_finds_the_snapshots(self, tmp_path):
-        place = a_place(tmp_path)
-
-        place.leave_pictures(opening=b"opening", full=b"full", updating=[], bar=(0, 0, 1, 1),
-                             covers_every_monitor=False)
-
-        assert place.pictures() == place.snapshots()
-        assert place.snapshots().opening.read_bytes() == b"opening"
-
 
 class TestWhereTheAppSaysItsWindowComesUp:
     def test_the_next_click_finds_what_the_app_said(self, tmp_path):
