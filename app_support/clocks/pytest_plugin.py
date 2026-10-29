@@ -18,4 +18,4 @@ _SHIPPED_TESTS = Path(__file__).resolve().parent / "test_clocks.py"
 
 
 def pytest_configure(config) -> None:
-    ship(config, _SHIPPED_TESTS, called="the clock checks")
+    ship(config, _SHIPPED_TESTS)
