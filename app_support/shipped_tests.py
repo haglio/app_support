@@ -25,14 +25,12 @@ import pytest
 # folder those are every other run's folders, any of which can vanish mid-listing.
 
 
-def is_a_run_of_whole_trees(args: list[str]) -> bool:
-    """Whether this session is running trees rather than chosen tests.
+def is_a_full_run(config) -> bool:
+    """Whether this session was started on whole trees rather than chosen tests.
 
-    A run of whole trees is one nobody has narrowed: a bare ``pytest``, whose
-    arguments pytest fills in from ``testpaths`` or the invocation directory, or
-    one naming directories. Those are what CI runs -- every repo in this family
-    runs a bare ``python -m pytest -q`` -- and they are where a shipped check
-    belongs.
+    Asked of pytest's first reading of the run's own command line, never of the
+    list of what the run will collect, which any plugin may name a file in first;
+    for a run started on paths, ``config.option`` holds that very list.
 
     A run that names a file or a node id has been narrowed on purpose, and
     enforcing there costs more than it protects. It puts a whole-tree check in
@@ -40,7 +38,8 @@ def is_a_run_of_whole_trees(args: list[str]) -> bool:
     that shells out to pytest against a chosen file and counts what came back --
     which four repos in this family do, and which is how this rule was found.
     """
-    return bool(args) and all(Path(arg).is_dir() for arg in args)
+    return all((config.invocation_params.dir / named).is_dir()
+               for named in config.known_args_namespace.file_or_dir)
 
 
 _SHIPPED = pytest.StashKey[dict[Path, None]]()
@@ -54,7 +53,7 @@ def ship(config, shipped: Path) -> None:
 
 
 def collected_beside_the_trees(config) -> list[Path]:
-    return list(config.stash.get(_SHIPPED, {})) if is_a_run_of_whole_trees(config.args) else []
+    return list(config.stash.get(_SHIPPED, {})) if is_a_full_run(config) else []
 
 
 class _CollectingBesideTheTrees:
