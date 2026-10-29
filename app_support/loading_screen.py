@@ -2,7 +2,7 @@
 
 An app's launcher can have a wait before the app's own code runs -- an update of
 the app, or of an app it hosts -- and the app's loading screen cannot come up
-from a venv that is being installed.  So the launcher shows the pictures the
+from a venv that is being installed.  So the launcher shows the snapshots the
 app's own loading screen left at its last start, from this package's own
 interpreter, with each update it waits on as a step; the app's loading screen
 then takes over from it where it stands.  This module is the folder they meet
@@ -29,11 +29,11 @@ if TYPE_CHECKING:
     from app_support.production_update import UpdateProgress
 
 FOLDER = "HAGLIO_LOADING_SCREEN"
-PICTURES_FOLDER = "HAGLIO_LOADING_SCREEN_PICTURES"
+SNAPSHOTS_FOLDER = "HAGLIO_LOADING_SCREEN_PICTURES"
 LINES = "HAGLIO_LOADING_SCREEN_LINES"
 OPENING = "opening.png"
 FULL = "full.png"
-PICTURES = "pictures.json"
+SNAPSHOTS = "pictures.json"
 APP_WINDOW = "window.json"
 SHOWN = "shown.json"
 TAKEN = "taken"
@@ -68,7 +68,7 @@ class Shown:
 
 
 @dataclasses.dataclass(frozen=True)
-class Pictures:
+class Snapshots:
     opening: Path
     full: Path
     bar: Box
@@ -89,35 +89,38 @@ class AppWindow:
 class MeetingPlace:
     folder: Path
     lines: tuple[str, ...]
-    pictures_folder: Path | None = None
+    snapshots_folder: Path | None = None
 
-    def leave_pictures(self, *, opening: bytes, full: bytes, updating: Sequence[bytes], bar: Box,
-                       covers_every_monitor: bool) -> None:
-        kept = self._pictures_kept_in
+    def leave_snapshots(self, *, opening: bytes, full: bytes, updating: Sequence[bytes], bar: Box,
+                        covers_every_monitor: bool) -> None:
+        kept = self._snapshots_kept_in
         kept.mkdir(parents=True, exist_ok=True)
         _replace_whole(kept / OPENING, opening)
         _replace_whole(kept / FULL, full)
-        for index, picture in enumerate(updating):
-            _replace_whole(kept / _updating(index), picture)
-        _replace_whole(kept / PICTURES, json.dumps(
+        for index, snapshot in enumerate(updating):
+            _replace_whole(kept / _updating(index), snapshot)
+        _replace_whole(kept / SNAPSHOTS, json.dumps(
             {"bar": list(bar), "covers_every_monitor": covers_every_monitor,
              "lines": list(self.lines[:len(updating)])}).encode("utf-8"))
 
-    def pictures(self) -> Pictures | None:
-        kept = self._pictures_kept_in
+    def snapshots(self) -> Snapshots | None:
+        kept = self._snapshots_kept_in
         try:
-            document = json.loads((kept / PICTURES).read_text(encoding="utf-8"))
+            document = json.loads((kept / SNAPSHOTS).read_text(encoding="utf-8"))
             bar = tuple(int(edge) for edge in document["bar"])
             lines = [str(line) for line in document["lines"]]
             covers_every_monitor = bool(document["covers_every_monitor"])
         except (OSError, ValueError, KeyError, TypeError):
             return None
-        return Pictures(kept / OPENING, kept / FULL, bar, covers_every_monitor,
-                        {line: kept / _updating(index) for index, line in enumerate(lines)})
+        return Snapshots(kept / OPENING, kept / FULL, bar, covers_every_monitor,
+                         {line: kept / _updating(index) for index, line in enumerate(lines)})
+
+    leave_pictures = leave_snapshots
+    pictures = snapshots
 
     @property
-    def _pictures_kept_in(self) -> Path:
-        return self.pictures_folder or self.folder
+    def _snapshots_kept_in(self) -> Path:
+        return self.snapshots_folder or self.folder
 
     def say_where_the_app_comes_up(self, window: AppWindow) -> None:
         if window != self.where_the_app_comes_up():
@@ -160,13 +163,13 @@ class MeetingPlace:
 def meeting_place(environment: Mapping[str, str]) -> MeetingPlace | None:
     if not environment.get(FOLDER):
         return None
-    pictures = environment.get(PICTURES_FOLDER)
+    snapshots = environment.get(SNAPSHOTS_FOLDER)
     return MeetingPlace(Path(environment[FOLDER]), tuple(json.loads(environment.get(LINES) or "[]")),
-                        Path(pictures) if pictures else None)
+                        Path(snapshots) if snapshots else None)
 
 
 def handed_over(environment: MutableMapping[str, str]) -> dict[str, str]:
-    return {name: environment.pop(name) for name in (FOLDER, PICTURES_FOLDER, LINES) if name in environment}
+    return {name: environment.pop(name) for name in (FOLDER, SNAPSHOTS_FOLDER, LINES) if name in environment}
 
 
 def _numbers(written: Sequence[int] | None, count: int) -> tuple[int, ...] | None:
@@ -193,16 +196,16 @@ def _replace_whole(path: Path, data: bytes) -> None:
 
 @dataclasses.dataclass(frozen=True)
 class Frame:
-    picture: Path
+    snapshot: Path
     fraction: float
 
 
 class Showing:
-    def __init__(self, place: MeetingPlace, pictures: Pictures, checkouts: Sequence[Path], *,
+    def __init__(self, place: MeetingPlace, snapshots: Snapshots, checkouts: Sequence[Path], *,
                  progress_of: Callable[[Path], UpdateProgress | None], clock: Callable[[], float],
                  launcher_running: Callable[[], bool]):
         self._place = place
-        self._pictures = pictures
+        self._snapshots = snapshots
         self._checkouts = tuple(checkouts)
         self._progress_of = progress_of
         self._clock = clock
@@ -215,7 +218,7 @@ class Showing:
             if progress := self._progress_of(checkout):
                 return Frame(self._updating(index), self._moved_on(index, progress))
         self._update = None
-        return Frame(self._pictures.opening, self._fraction)
+        return Frame(self._snapshots.opening, self._fraction)
 
     def over(self) -> bool:
         if self._place.taken or (self._place.folder / ENDED).exists():
@@ -241,7 +244,7 @@ class Showing:
 
     def _updating(self, index: int) -> Path:
         line = self._place.lines[index] if index < len(self._place.lines) else None
-        return (line is not None and self._pictures.updating(line)) or self._pictures.opening
+        return (line is not None and self._snapshots.updating(line)) or self._snapshots.opening
 
     def _moved_on(self, index: int, progress: UpdateProgress) -> float:
         if self._update is None or self._update[0] != index:
@@ -398,10 +401,10 @@ def _box(rect: wintypes.RECT) -> Box:
 
 
 class _Window:  # pragma: no cover -- a window, run on a desktop of its own
-    def __init__(self, place: MeetingPlace, pictures: Pictures, showing: Showing, screens: Screens | None):
+    def __init__(self, place: MeetingPlace, snapshots: Snapshots, showing: Showing, screens: Screens | None):
         import tkinter  # noqa: PLC0415
 
-        self._place, self._pictures, self._showing = place, pictures, showing
+        self._place, self._snapshots, self._showing = place, snapshots, showing
         self._root = tkinter.Tk()
         if screens is None:
             size = (self._root.winfo_screenwidth(), self._root.winfo_screenheight())
@@ -411,11 +414,11 @@ class _Window:  # pragma: no cover -- a window, run on a desktop of its own
         self._on_top = showing.stands_over_every_window
         self._root.attributes("-topmost", self._on_top)
         self._images: dict[Path, object] = {}
-        opening, self._full = self._image(pictures.opening), self._image(pictures.full)
+        opening, self._full = self._image(snapshots.opening), self._image(snapshots.full)
         size = (opening.width(), opening.height())
         self._shown = tkinter.PhotoImage(master=self._root, width=size[0], height=size[1])
         ground = "#{:02x}{:02x}{:02x}".format(*opening.get(0, 0))
-        placement = (over_every_monitor(size, screens) if pictures.covers_every_monitor
+        placement = (over_every_monitor(size, screens) if snapshots.covers_every_monitor
                      else on_the_apps_monitor(size, screens, place.where_the_app_comes_up()))
         self._panel_on_screen = placement.panel_on_screen
         x, y, width, height = placement.window
@@ -454,8 +457,8 @@ class _Window:  # pragma: no cover -- a window, run on a desktop of its own
 
     def _draw(self, frame: Frame) -> None:
         if frame != self._last:
-            self._shown.tk.call(self._shown, "copy", self._image(frame.picture))
-            x, y, width, height = self._pictures.bar
+            self._shown.tk.call(self._shown, "copy", self._image(frame.snapshot))
+            x, y, width, height = self._snapshots.bar
             if filled := round(width * max(0.0, min(1.0, frame.fraction))):
                 self._shown.tk.call(self._shown, "copy", self._full, "-from", x, y, x + filled, y + height,
                                     "-to", x, y)
@@ -486,13 +489,13 @@ def main(argv: Sequence[str] | None = None) -> int:  # pragma: no cover -- a win
     from app_support.production_update import progress_of  # noqa: PLC0415
 
     place = meeting_place(os.environ)
-    pictures = place.pictures() if place else None
-    if pictures is None:
+    snapshots = place.snapshots() if place else None
+    if snapshots is None:
         return 0
     checkouts = [Path(each) for each in (sys.argv[1:] if argv is None else argv)]
-    showing = Showing(place, pictures, checkouts, progress_of=progress_of, clock=time.time,
+    showing = Showing(place, snapshots, checkouts, progress_of=progress_of, clock=time.time,
                       launcher_running=_the_launcher_running())
-    _Window(place, pictures, showing, screens()).run()
+    _Window(place, snapshots, showing, screens()).run()
     return 0
 
 

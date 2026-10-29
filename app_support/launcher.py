@@ -190,7 +190,7 @@ def _refuse_contradictions(refuse, launcher: Launcher) -> None:
     if launcher.loading_screen and not launcher.log:
         raise refuse("loading-screen needs a log: the app's own loading screen meets it beside the log")
     if launcher.preview and not launcher.loading_screen:
-        raise refuse("preview needs a loading-screen: what every preview shares is the pictures it shows")
+        raise refuse("preview needs a loading-screen: what every preview shares is the snapshots it shows")
     if launcher.preview and launcher.venv != "primary" and not launcher.checkout_argument:
         raise refuse('preview needs venv = "primary" or a checkout-argument: a preview runs a branch\'s code '
                      "on the primary checkout's venv")
@@ -289,7 +289,7 @@ def _declarations(launcher: Launcher) -> str:
     if launcher.loading_screen:
         names += ["screenFolder", "screenUp"]
     if launcher.preview:
-        names.append("picturesFolder")
+        names.append("snapshotsFolder")
     return "Dim " + ", ".join(names)
 
 
@@ -341,7 +341,7 @@ def _log_paths(base: str, launcher: Launcher, log: str, indent: str) -> list[str
         screen = PureWindowsPath(log).with_suffix(".screen")
         lines.append(f"{indent}screenFolder = {_path(base, str(screen))}")
         if launcher.preview:
-            lines.append(f"{indent}picturesFolder = {_path(_venv_checkout(launcher), str(screen / 'preview'))}")
+            lines.append(f"{indent}snapshotsFolder = {_path(_venv_checkout(launcher), str(screen / 'preview'))}")
     return lines
 
 
@@ -450,7 +450,7 @@ def _report(launcher: Launcher) -> list[str]:
         lines += ['  WScript.Echo "loading screen: " & LoadingScreen()',
                   '  WScript.Echo "screen: " & screenFolder']
     if launcher.preview:
-        lines.append('  WScript.Echo "pictures: " & picturesFolder')
+        lines.append('  WScript.Echo "snapshots: " & snapshotsFolder')
     lines.append("End Sub")
     return lines
 
@@ -625,8 +625,8 @@ End Sub
 def _loading_screen(launcher: Launcher) -> str:
     flag = f"fso.BuildPath(screenFolder, {_text(loading_screen.CANCELED)})"
     said = ", ".join(_text(name) for name in loading_screen.SAID_AT_EACH_LAUNCH)
-    pictures = "picturesFolder" if launcher.preview else "screenFolder"
-    kept_apart = (f'\n  shell.Environment("Process").Item({_text(loading_screen.PICTURES_FOLDER)}) = picturesFolder'
+    snapshots = "snapshotsFolder" if launcher.preview else "screenFolder"
+    kept_apart = (f'\n  shell.Environment("Process").Item({_text(loading_screen.SNAPSHOTS_FOLDER)}) = snapshotsFolder'
                   if launcher.preview else "")
     return f"""\
 Function LoadingScreen()
@@ -646,7 +646,7 @@ Sub ShowLoadingScreen()
   For Each name In Array({said})
     If fso.FileExists(fso.BuildPath(screenFolder, name)) Then fso.DeleteFile fso.BuildPath(screenFolder, name)
   Next
-  If fso.FileExists(updater) And fso.FileExists(fso.BuildPath({pictures}, {_text(loading_screen.PICTURES)})) Then
+  If fso.FileExists(updater) And fso.FileExists(fso.BuildPath({snapshots}, {_text(loading_screen.SNAPSHOTS)})) Then
     shell.Run LoadingScreen(), 1, False
     screenUp = True
   End If

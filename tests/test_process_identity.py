@@ -72,7 +72,7 @@ def _interpreter(tmp_path: Path, name: str = "pythonw.exe") -> Path:
 
 
 def _icon(tmp_path: Path) -> Path:
-    """A minimal two-frame .ico -- enough to index, not a real picture."""
+    """A minimal two-frame .ico -- enough to index, not a real image."""
     first, second = b"\x01" * 40, b"\x02" * 60
     header = struct.pack("<HHH", 0, 1, 2)
     offset = len(header) + 32

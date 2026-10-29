@@ -107,7 +107,7 @@ class TestTheSpec:
         with pytest.raises(LauncherSpecError, match="copy-from-primary"):
             launchers(_checkout(tmp_path, spec))
 
-    def test_a_preview_shares_only_the_pictures_of_a_loading_screen_it_shows(self, tmp_path: Path):
+    def test_a_preview_shares_only_the_snapshots_of_a_loading_screen_it_shows(self, tmp_path: Path):
         with pytest.raises(LauncherSpecError, match="preview needs a loading-screen"):
             launchers(_checkout(tmp_path, WORKTREE + "preview = true\n"))
 
@@ -509,7 +509,7 @@ class TestACheckoutArgument:
         assert report.value("exited") == str(checkout / "state" / "two_launcher.exited")
         assert report.value("arguments") == f'-m example.branch "{checkout}" --two'
 
-    def test_a_preview_handed_its_checkout_shares_its_pictures_beside_the_launcher(self, tmp_path: Path):
+    def test_a_preview_handed_its_checkout_shares_its_snapshots_beside_the_launcher(self, tmp_path: Path):
         primary = _checkout(tmp_path, BRANCH.replace("watch = true\n", "watch = true\n" + PREVIEWS) + KEPT,
                             name="primary")
         checkout = _checkout(tmp_path, "", name="worktree")
@@ -518,8 +518,8 @@ class TestACheckoutArgument:
         report = dry_run(script, str(checkout))
         two = dry_run(script, str(checkout), "--two")
 
-        assert report.value("pictures") == str(primary / "state" / "launcher.screen" / "preview")
-        assert two.value("pictures") == str(primary / "state" / "two_launcher.screen" / "preview")
+        assert report.value("snapshots") == str(primary / "state" / "launcher.screen" / "preview")
+        assert two.value("snapshots") == str(primary / "state" / "two_launcher.screen" / "preview")
 
     def test_a_flag_where_the_label_would_be_leaves_the_checkout_as_the_label(
         self, tmp_path: Path,
@@ -986,14 +986,14 @@ class TestTheUpdateBeforeALaunch:
             pass
 
 
-def _screened(tmp_path: Path, *, pictures: bool = True) -> Path:
+def _screened(tmp_path: Path, *, snapshots: bool = True) -> Path:
     """A checkout whose launcher shows a loading screen, with its venv and the
-    updater beside it, and the pictures its app left at the last start."""
+    updater beside it, and the snapshots its app left at the last start."""
     checkout = _checkout(tmp_path, SCREENED)
     _venv(checkout, "python.exe")
     _updater_beside(checkout)
-    if pictures:
-        loading_screen.MeetingPlace(_screen_of(checkout), ()).leave_pictures(
+    if snapshots:
+        loading_screen.MeetingPlace(_screen_of(checkout), ()).leave_snapshots(
             opening=b"", full=b"", updating=[], bar=(0, 0, 1, 1), covers_every_monitor=False)
     return checkout
 
@@ -1005,7 +1005,7 @@ def _screen_of(checkout: Path) -> Path:
 PREVIEW = WORKTREE + PREVIEWS + KEPT
 
 
-def _pictures_of_every_preview(primary: Path) -> Path:
+def _snapshots_of_every_preview(primary: Path) -> Path:
     return _screen_of(primary) / "preview"
 
 
@@ -1038,45 +1038,45 @@ class TestTheLoadingScreenAtTheClick:
         app = _line_index(run, f'rehearsal: run cmd /c cd /d "{checkout}"')
         assert max(told, lines) < screen < update < app
 
-    def test_a_dry_run_of_a_preview_names_the_pictures_every_preview_of_the_app_shares(self, tmp_path: Path):
+    def test_a_dry_run_of_a_preview_names_the_snapshots_every_preview_of_the_app_shares(self, tmp_path: Path):
         primary, worktree = _worktree(tmp_path, PREVIEW)
 
         report = dry_run(_rendered(worktree))
 
         assert report.value("screen") == str(_screen_of(worktree))
-        assert report.value("pictures") == str(_pictures_of_every_preview(primary))
+        assert report.value("snapshots") == str(_snapshots_of_every_preview(primary))
 
-    def test_a_new_previews_first_click_shows_the_pictures_an_earlier_preview_left(self, tmp_path: Path):
+    def test_a_new_previews_first_click_shows_the_snapshots_an_earlier_preview_left(self, tmp_path: Path):
         primary, worktree = _worktree(tmp_path, PREVIEW)
         _venv(primary, "python.exe")
         _updater_beside(primary)
-        kept = _pictures_of_every_preview(primary)
-        loading_screen.MeetingPlace(kept, ()).leave_pictures(
+        kept = _snapshots_of_every_preview(primary)
+        loading_screen.MeetingPlace(kept, ()).leave_snapshots(
             opening=b"", full=b"", updating=[], bar=(0, 0, 1, 1), covers_every_monitor=False)
 
         run = _rehearsed_to_the_end(_rehearse(_rendered(worktree)))
 
-        told = _line_index(run, f"rehearsal: environment {loading_screen.PICTURES_FOLDER}={kept}")
+        told = _line_index(run, f"rehearsal: environment {loading_screen.SNAPSHOTS_FOLDER}={kept}")
         screen = _line_index(run, f'rehearsal: run "{tmp_path / UPDATER}" -m app_support.loading_screen '
                                   f'"{primary}" (style 1, wait False)')
         assert told < screen
 
-    def test_before_the_app_has_left_its_pictures_no_loading_screen_is_started(self, tmp_path: Path):
-        checkout = _screened(tmp_path, pictures=False)
+    def test_before_the_app_has_left_its_snapshots_no_loading_screen_is_started(self, tmp_path: Path):
+        checkout = _screened(tmp_path, snapshots=False)
 
         run = _rehearsed_to_the_end(_rehearse(_rendered(checkout), child=CHILD_COMES_UP))
 
         assert "app_support.loading_screen" not in run.output
         assert f"rehearsal: environment {loading_screen.FOLDER}={_screen_of(checkout)}" in run.output
 
-    def test_the_first_launch_before_the_app_left_pictures_still_waits_out_its_update(self, tmp_path: Path):
-        checkout = _screened(tmp_path, pictures=False)
+    def test_the_first_launch_before_the_app_left_snapshots_still_waits_out_its_update(self, tmp_path: Path):
+        checkout = _screened(tmp_path, snapshots=False)
 
         run = _rehearsed_to_the_end(_rehearse(_rendered(checkout), child=CHILD_COMES_UP))
 
         assert "app_support.production_update" in run.output
 
-    def test_each_launch_clears_what_the_last_one_said_and_keeps_the_pictures(self, tmp_path: Path):
+    def test_each_launch_clears_what_the_last_one_said_and_keeps_the_snapshots(self, tmp_path: Path):
         checkout = _screened(tmp_path)
         for said in loading_screen.SAID_AT_EACH_LAUNCH:
             (_screen_of(checkout) / said).write_text("", encoding="utf-8")
@@ -1086,7 +1086,7 @@ class TestTheLoadingScreenAtTheClick:
         left = {path.name for path in _screen_of(checkout).iterdir()}
         assert left & {loading_screen.SHOWN, loading_screen.TAKEN, loading_screen.CANCELED} == set()
         assert loading_screen.UPDATED in left
-        assert loading_screen.PICTURES in left
+        assert loading_screen.SNAPSHOTS in left
 
     def test_it_is_told_once_the_app_is_started_and_again_once_the_app_is_up(self, tmp_path: Path):
         checkout = _screened(tmp_path)
