@@ -216,14 +216,6 @@ python tools/githooks/install.py
 #    addopts = "-p app_support.sanitize.pytest_plugin"
 ```
 
-**A run that loses the check ends.** pytest fails nothing over a test file it
-never collected, so a check missing from a run reads exactly like one that
-passed. In a run of whole trees, a check the plugin handed over that the run
-never collected, or collected and then dropped without deselecting, ends the run
-before any test runs, with an error naming it; the same holds for every check
-`app_support.shipped_tests` hands over. `-k`, `-m`, `--deselect`, `--lf` and the
-gate's parts leave a check out without a word.
-
 **The hooks fail loudly.** While the guard was a file in each repo it ran off any
 interpreter, so "cannot run" meant "no python at all". Now it is an installed
 package and "cannot run" means "not installed in the interpreter this hook
