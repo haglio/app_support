@@ -518,8 +518,8 @@ class TestACheckoutArgument:
         report = dry_run(script, str(checkout))
         two = dry_run(script, str(checkout), "--two")
 
-        assert report.value("snapshots") == str(primary / "state" / "launcher.screen" / "preview")
-        assert two.value("snapshots") == str(primary / "state" / "two_launcher.screen" / "preview")
+        assert report.value("pictures") == str(primary / "state" / "launcher.screen" / "preview")
+        assert two.value("pictures") == str(primary / "state" / "two_launcher.screen" / "preview")
 
     def test_a_flag_where_the_label_would_be_leaves_the_checkout_as_the_label(
         self, tmp_path: Path,
@@ -1044,7 +1044,7 @@ class TestTheLoadingScreenAtTheClick:
         report = dry_run(_rendered(worktree))
 
         assert report.value("screen") == str(_screen_of(worktree))
-        assert report.value("snapshots") == str(_snapshots_of_every_preview(primary))
+        assert report.value("pictures") == str(_snapshots_of_every_preview(primary))
 
     def test_a_new_previews_first_click_shows_the_snapshots_an_earlier_preview_left(self, tmp_path: Path):
         primary, worktree = _worktree(tmp_path, PREVIEW)

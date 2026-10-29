@@ -289,7 +289,7 @@ def _declarations(launcher: Launcher) -> str:
     if launcher.loading_screen:
         names += ["screenFolder", "screenUp"]
     if launcher.preview:
-        names.append("snapshotsFolder")
+        names.append("picturesFolder")
     return "Dim " + ", ".join(names)
 
 
@@ -341,7 +341,7 @@ def _log_paths(base: str, launcher: Launcher, log: str, indent: str) -> list[str
         screen = PureWindowsPath(log).with_suffix(".screen")
         lines.append(f"{indent}screenFolder = {_path(base, str(screen))}")
         if launcher.preview:
-            lines.append(f"{indent}snapshotsFolder = {_path(_venv_checkout(launcher), str(screen / 'preview'))}")
+            lines.append(f"{indent}picturesFolder = {_path(_venv_checkout(launcher), str(screen / 'preview'))}")
     return lines
 
 
@@ -450,7 +450,7 @@ def _report(launcher: Launcher) -> list[str]:
         lines += ['  WScript.Echo "loading screen: " & LoadingScreen()',
                   '  WScript.Echo "screen: " & screenFolder']
     if launcher.preview:
-        lines.append('  WScript.Echo "snapshots: " & snapshotsFolder')
+        lines.append('  WScript.Echo "pictures: " & picturesFolder')
     lines.append("End Sub")
     return lines
 
@@ -625,8 +625,8 @@ End Sub
 def _loading_screen(launcher: Launcher) -> str:
     flag = f"fso.BuildPath(screenFolder, {_text(loading_screen.CANCELED)})"
     said = ", ".join(_text(name) for name in loading_screen.SAID_AT_EACH_LAUNCH)
-    snapshots = "snapshotsFolder" if launcher.preview else "screenFolder"
-    kept_apart = (f'\n  shell.Environment("Process").Item({_text(loading_screen.SNAPSHOTS_FOLDER)}) = snapshotsFolder'
+    snapshots = "picturesFolder" if launcher.preview else "screenFolder"
+    kept_apart = (f'\n  shell.Environment("Process").Item({_text(loading_screen.SNAPSHOTS_FOLDER)}) = picturesFolder'
                   if launcher.preview else "")
     return f"""\
 Function LoadingScreen()
