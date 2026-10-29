@@ -19,23 +19,20 @@ from pathlib import Path
 
 import pytest
 
-_THE_RUN_AS_ASKED = pytest.StashKey[list[str]]()
-
-# A shipped file is put into the session's arguments rather than collected off
-# disk: it lives wherever this package was installed, nowhere near the tree pytest
-# walks. What collecting it from there reaches in a consumer's session -- its
-# `sys.path`, and every conftest above the file -- `tests/test_shipped_tests.py`
-# holds down.
+# A shipped file is collected beside the run's trees, as a module of the package
+# it is installed in, and never handed to pytest as a path: pytest reaches a path
+# it is handed by listing every folder above it, and above a venv in the temp
+# folder those are every other run's folders, any of which can vanish mid-listing.
 
 
 def is_a_run_of_whole_trees(args: list[str]) -> bool:
     """Whether this session is running trees rather than chosen tests.
 
     A run of whole trees is one nobody has narrowed: a bare ``pytest``, whose
-    arguments pytest fills in from ``testpaths`` or the invocation directory as
-    absolute paths, or one naming directories. Those are what CI runs -- every
-    repo in this family runs a bare ``python -m pytest -q`` -- and they are where
-    a shipped check belongs.
+    arguments pytest fills in from ``testpaths`` or the invocation directory, or
+    one naming directories. Those are what CI runs -- every repo in this family
+    runs a bare ``python -m pytest -q`` -- and they are where a shipped check
+    belongs.
 
     A run that names a file or a node id has been narrowed on purpose, and
     enforcing there costs more than it protects. It puts a whole-tree check in
@@ -46,9 +43,28 @@ def is_a_run_of_whole_trees(args: list[str]) -> bool:
     return bool(args) and all(Path(arg).is_dir() for arg in args)
 
 
+_SHIPPED = pytest.StashKey[dict[Path, None]]()
+
+
 def ship(config, shipped: Path) -> None:
-    asked = config.stash.setdefault(_THE_RUN_AS_ASKED, list(config.args))
-    test_file = str(shipped)
-    if test_file in config.args or not is_a_run_of_whole_trees(asked):
-        return
-    config.args.insert(0, test_file)
+    if _SHIPPED not in config.stash:
+        config.stash[_SHIPPED] = {}
+        config.pluginmanager.register(_CollectingBesideTheTrees(), "app_support.shipped_tests")
+    config.stash[_SHIPPED][shipped] = None
+
+
+def collected_beside_the_trees(config) -> list[Path]:
+    return list(config.stash.get(_SHIPPED, {})) if is_a_run_of_whole_trees(config.args) else []
+
+
+class _CollectingBesideTheTrees:
+    @pytest.hookimpl(wrapper=True)
+    def pytest_make_collect_report(self, collector):
+        report = yield
+        if isinstance(collector, pytest.Session) and report.passed:
+            report.result[:0] = [pytest.Module.from_parent(collector, path=shipped)
+                                 for shipped in collected_beside_the_trees(collector.config)]
+        return report
+
+    def pytest_ignore_collect(self, collection_path, config) -> bool | None:
+        return collection_path in config.stash[_SHIPPED] or None

@@ -1,6 +1,7 @@
 """Tests for how a check this package ships reaches a consumer's session."""
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 import pytest
@@ -11,7 +12,22 @@ from app_support import shipped_tests
 APP_SUPPORT = Path(__file__).resolve().parents[1]
 SHIPPED = sorted((APP_SUPPORT / "app_support").rglob("test_*.py"))
 
+FAMILY_OPTIONS = ("-p no:cacheprovider -p app_support.sanitize.pytest_plugin"
+                  " -p app_support.clocks.pytest_plugin")
 THE_BLOCKED_WORD_CHECK = "test_no_blocklisted_terms_in_the_tracked_tree"
+A_CONFTEST_THAT_LEAVES_A_MARK = """\
+from pathlib import Path
+
+Path(__file__).with_name("ran").touch()
+"""
+ANOTHER_RUN_CLEARING_AWAY_ITS_FOLDER_AS_THIS_ONE_COLLECTS = """\
+import shutil
+
+
+def pytest_collect_directory(path):
+    if path.name == "another-runs-folder":
+        shutil.rmtree(path)
+"""
 A_PLUGIN_THAT_SHUFFLES_THE_RUN = """\
 from random import Random
 
@@ -35,6 +51,23 @@ def pytest_collection_modifyitems(items):
 """
 
 
+def a_consumer(tmp_path: Path) -> Path:
+    repo = tmp_path / "family" / "repo"
+    (repo / "tests").mkdir(parents=True)
+    (repo / "pyproject.toml").write_text(
+        f'[tool.pytest.ini_options]\naddopts = "{FAMILY_OPTIONS}"\ntestpaths = ["tests"]\n',
+        encoding="utf-8")
+    (repo / "tests" / "test_code.py").write_text("def test_the_repos_own():\n    pass\n",
+                                                 encoding="utf-8")
+    return repo
+
+
+def installed_at(site: Path) -> Path:
+    shutil.copytree(APP_SUPPORT / "app_support", site / "app_support",
+                    ignore=shutil.ignore_patterns("__pycache__"))
+    return site
+
+
 class TestWhichRunsAreEnforced:
     """The rule itself, without a subprocess in the way.
 
@@ -47,11 +80,12 @@ class TestWhichRunsAreEnforced:
         def __init__(self, args):
             self.args = list(args)
             self.stash = pytest.Stash()
+            self.pluginmanager = pytest.PytestPluginManager()
 
     def test_no_arguments_of_its_own_is_a_whole_tree(self):
-        """pytest fills these in from `testpaths` or the invocation directory,
-        as absolute paths, before any plugin is configured -- so an empty list
-        never actually reaches here, and a directory is what does.
+        """pytest fills these in from `testpaths` or the invocation directory
+        before any plugin is configured -- so an empty list never actually
+        reaches here, and a directory is what does.
         """
         assert shipped_tests.is_a_run_of_whole_trees([str(APP_SUPPORT / "tests")])
 
@@ -71,27 +105,28 @@ class TestWhichRunsAreEnforced:
         """Nothing to enforce against, and adding to it would invent a run."""
         assert not shipped_tests.is_a_run_of_whole_trees([])
 
-    def test_a_check_is_added_once_however_often_it_is_shipped(self):
-        """Two copies would collect the same check twice."""
+    def test_a_check_is_collected_once_however_often_it_is_shipped(self):
         config = self._Config([str(APP_SUPPORT / "tests")])
 
         shipped_tests.ship(config, SHIPPED[0])
         shipped_tests.ship(config, SHIPPED[0])
 
-        assert config.args == [str(SHIPPED[0]), str(APP_SUPPORT / "tests")]
+        assert shipped_tests.collected_beside_the_trees(config) == [SHIPPED[0]]
 
     def test_a_check_shipped_after_another_still_reaches_the_run(self):
-        """Every repo in the family names two of these plugins, and the second
-        judged the run by the file the first had just put into it: a named file,
-        so a narrowed run, and it shipped nothing. That took the blocked-word
-        check out of every suite from the day the clock checks joined it.
-        """
         config = self._Config([str(APP_SUPPORT / "tests")])
 
         shipped_tests.ship(config, SHIPPED[0])
         shipped_tests.ship(config, SHIPPED[1])
 
-        assert sorted(config.args) == sorted([str(APP_SUPPORT / "tests"), *map(str, SHIPPED)])
+        assert shipped_tests.collected_beside_the_trees(config) == SHIPPED[:2]
+
+    def test_a_narrowed_run_collects_no_check_beside_what_it_named(self):
+        config = self._Config([str(APP_SUPPORT / "tests" / "test_cli.py")])
+
+        shipped_tests.ship(config, SHIPPED[0])
+
+        assert shipped_tests.collected_beside_the_trees(config) == []
 
 
 class TestWhatShippingReachesInAConsumer:
@@ -117,20 +152,50 @@ class TestWhatShippingReachesInAConsumer:
 
         assert published == ["app_support"], published
 
-    def test_nothing_this_package_ships_can_smuggle_in_a_conftest(self):
-        """pytest loads every conftest.py on the path up from a collected file,
-        and a shipped one is collected from inside an installed package.
-        Measured: a conftest beside the shipped module, and one at the
-        site-packages root above it, both execute inside the consumer's session
-        -- so one added here would run arbitrary setup in ten other repos'
-        suites, which is not a thing this package may be able to do by accident.
-        """
-        chains = {d for here in SHIPPED for d in here.parents if APP_SUPPORT in (d, *d.parents)}
+    def test_a_conftest_beside_the_installed_package_never_runs_in_a_consumers_session(
+        self, tmp_path: Path,
+    ):
+        site = installed_at(tmp_path / "temp" / "venv" / "Lib" / "site-packages")
+        beside = [site, site / "app_support", site / "app_support" / "sanitize"]
+        for folder in beside:
+            (folder / "conftest.py").write_text(A_CONFTEST_THAT_LEAVES_A_MARK, encoding="utf-8")
 
-        smuggled = sorted(d / "conftest.py" for d in chains if (d / "conftest.py").exists())
+        done = run_pytest_in(a_consumer(tmp_path), "--collect-only", app_support_from=site)
 
-        assert SHIPPED, "this package ships no test file to check"
-        assert smuggled == [], f"these would load in every consumer's suite: {smuggled}"
+        assert done.returncode == pytest.ExitCode.OK, done.stdout + done.stderr
+        assert THE_BLOCKED_WORD_CHECK in done.stdout, done.stdout
+        assert [folder for folder in beside if (folder / "ran").exists()] == []
+
+    def test_a_folder_beside_the_installed_package_vanishing_as_the_run_collects_leaves_the_run_alone(
+        self, tmp_path: Path,
+    ):
+        temp = tmp_path / "temp"
+        (temp / "another-runs-folder").mkdir(parents=True)
+        site = installed_at(temp / "venv" / "Lib" / "site-packages")
+        (site / "another_run.py").write_text(ANOTHER_RUN_CLEARING_AWAY_ITS_FOLDER_AS_THIS_ONE_COLLECTS,
+                                             encoding="utf-8")
+
+        done = run_pytest_in(a_consumer(tmp_path), "--collect-only", "-p", "another_run",
+                             app_support_from=site)
+
+        assert done.returncode == pytest.ExitCode.OK, done.stdout + done.stderr
+        assert THE_BLOCKED_WORD_CHECK in done.stdout, done.stdout
+
+    @pytest.mark.parametrize(("site", "passing_over"), [
+        pytest.param("vendor", [], id="a folder the run walks"),
+        pytest.param("vendor", ["--ignore=vendor"], id="a folder the run is told to pass over"),
+        pytest.param(".venv/Lib/site-packages", [], id="the checkout's own venv"),
+    ])
+    def test_a_check_installed_inside_the_checkout_is_collected_once_by_a_run_of_the_whole_checkout(
+        self, tmp_path: Path, site: str, passing_over: list[str],
+    ):
+        repo = a_consumer(tmp_path)
+
+        done = run_pytest_in(repo, "--collect-only", ".", *passing_over,
+                             app_support_from=installed_at(repo / site))
+
+        assert done.returncode == pytest.ExitCode.OK, done.stdout + done.stderr
+        assert done.stdout.count(THE_BLOCKED_WORD_CHECK) == 1, done.stdout
 
     def test_this_package_declares_no_pytest_entry_point(self):
         """What makes naming the plugin the *only* way in.
@@ -153,13 +218,7 @@ class TestWhatShippingReachesInAConsumer:
     def test_a_shuffled_run_dealt_into_parts_runs_the_blocked_word_check_in_exactly_one_part(
         self, tmp_path: Path,
     ):
-        repo = tmp_path / "family" / "repo"
-        (repo / "tests").mkdir(parents=True)
-        (repo / "pyproject.toml").write_text(
-            '[tool.pytest.ini_options]\naddopts = "-p no:cacheprovider -p app_support.sanitize.pytest_plugin'
-            ' -p app_support.clocks.pytest_plugin"\ntestpaths = ["tests"]\n', encoding="utf-8")
-        (repo / "tests" / "test_code.py").write_text("def test_the_repos_own():\n    pass\n",
-                                                     encoding="utf-8")
+        repo = a_consumer(tmp_path)
         (repo / "tests" / "conftest.py").write_text(A_PLUGIN_THAT_SHUFFLES_THE_RUN, encoding="utf-8")
         listed = []
         for part in (1, 2):
