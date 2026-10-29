@@ -1,6 +1,7 @@
 """Tests for how a check this package ships reaches a consumer's session."""
 from __future__ import annotations
 
+import argparse
 import shutil
 from pathlib import Path
 
@@ -77,33 +78,38 @@ class TestWhichRunsAreEnforced:
     """
 
     class _Config:
-        def __init__(self, args):
+        def __init__(self, args, *, started_with=()):
             self.args = list(args)
+            self.known_args_namespace = argparse.Namespace(file_or_dir=list(started_with))
+            self.invocation_params = pytest.Config.InvocationParams(
+                args=tuple(started_with), plugins=None, dir=APP_SUPPORT)
             self.stash = pytest.Stash()
             self.pluginmanager = pytest.PytestPluginManager()
 
-    def test_no_arguments_of_its_own_is_a_whole_tree(self):
-        """pytest fills these in from `testpaths` or the invocation directory
-        before any plugin is configured -- so an empty list never actually
-        reaches here, and a directory is what does.
-        """
-        assert shipped_tests.is_a_run_of_whole_trees([str(APP_SUPPORT / "tests")])
+    def _is_a_full_run(self, *started_with: str) -> bool:
+        return shipped_tests.is_a_full_run(self._Config([], started_with=started_with))
 
-    def test_several_directories_are_still_whole_trees(self):
-        assert shipped_tests.is_a_run_of_whole_trees(
-            [str(APP_SUPPORT / "tests"), str(APP_SUPPORT / "app_support")])
+    def test_a_run_started_with_nothing_named_is_a_full_run(self):
+        assert self._is_a_full_run()
+
+    def test_a_run_started_on_directories_is_a_full_run(self):
+        assert self._is_a_full_run("tests", str(APP_SUPPORT / "app_support"))
 
     def test_one_named_file_among_directories_narrows_the_whole_run(self):
-        assert not shipped_tests.is_a_run_of_whole_trees(
-            [str(APP_SUPPORT / "tests"), str(APP_SUPPORT / "tests" / "test_cli.py")])
+        assert not self._is_a_full_run("tests", str(Path("tests") / "test_cli.py"))
 
-    def test_a_node_id_is_not_a_tree(self):
-        assert not shipped_tests.is_a_run_of_whole_trees(
-            [f"{APP_SUPPORT / 'tests' / 'test_cli.py'}::test_one"])
+    def test_a_node_id_narrows_the_run(self):
+        assert not self._is_a_full_run(f"{Path('tests') / 'test_cli.py'}::test_one")
 
-    def test_nothing_at_all_is_not_a_tree(self):
-        """Nothing to enforce against, and adding to it would invent a run."""
-        assert not shipped_tests.is_a_run_of_whole_trees([])
+    def test_a_test_file_other_code_has_already_named_in_the_run_leaves_it_full(self):
+        """The list of what a run will collect is anyone's to add to: the clock
+        checks once named their file there first, and the blocked-word check,
+        reading the list, took every run for a narrowed one and left itself out."""
+        config = self._Config([str(APP_SUPPORT / "tests"), str(SHIPPED[1])])
+
+        shipped_tests.ship(config, SHIPPED[0])
+
+        assert shipped_tests.collected_beside_the_trees(config) == [SHIPPED[0]]
 
     def test_a_check_is_collected_once_however_often_it_is_shipped(self):
         config = self._Config([str(APP_SUPPORT / "tests")])
@@ -122,7 +128,8 @@ class TestWhichRunsAreEnforced:
         assert shipped_tests.collected_beside_the_trees(config) == SHIPPED[:2]
 
     def test_a_narrowed_run_collects_no_check_beside_what_it_named(self):
-        config = self._Config([str(APP_SUPPORT / "tests" / "test_cli.py")])
+        named = str(APP_SUPPORT / "tests" / "test_cli.py")
+        config = self._Config([named], started_with=[named])
 
         shipped_tests.ship(config, SHIPPED[0])
 

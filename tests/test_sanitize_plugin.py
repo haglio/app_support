@@ -16,6 +16,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 from consumer_runs import run_pytest_in
 
 from app_support.sanitize import blocklist_path, test_tracked_tree
@@ -41,6 +42,17 @@ def _refuse_locked_md(path, *args, **kwargs):
 
 
 Path.open = _refuse_locked_md
+"""
+
+CONFTEST_NAMING_A_TEST_FILE_FIRST = """\
+from pathlib import Path
+
+import pytest
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_configure(config):
+    config.args.append(str(Path(__file__).with_name("test_local.py")))
 """
 
 
@@ -141,14 +153,28 @@ class TestTheGuardPlugin:
         assert done.returncode != 0, done.stdout
         assert "notes.md" in done.stdout
 
-    def test_a_planted_term_fails_a_run_that_names_the_clock_checks_too(self, tmp_path: Path):
+    @pytest.mark.parametrize("started_on", [[], ["."]], ids=["nothing named", "its directory"])
+    def test_a_planted_term_fails_a_run_that_names_the_clock_checks_too(
+            self, tmp_path: Path, started_on: list[str]):
         """Both plugins, as every repo in the family names them: the one named
         first used to judge the run by the file the other had just put into it,
-        and leave itself out."""
+        and leave itself out. pytest hands a run started on a directory the very
+        list it parsed that directory into, so the file lands in both."""
         repo = self._repo(
             tmp_path, blocklist=f"{TERM}\n", tracked=f"this has {TERM} in it\n")
         (repo / "pyproject.toml").write_text(PYPROJECT.replace(
             "pytest_plugin", "pytest_plugin -p app_support.clocks.pytest_plugin"), encoding="utf-8")
+
+        done = run_pytest_in(repo, *started_on)
+
+        assert "notes.md" in done.stdout, done.stdout
+
+    def test_a_planted_term_fails_a_full_run_other_code_has_already_named_a_test_file_in(
+            self, tmp_path: Path):
+        repo = self._repo(
+            tmp_path, blocklist=f"{TERM}\n", tracked=f"this has {TERM} in it\n")
+        (repo / "test_local.py").write_text("def test_local():\n    assert True\n", encoding="utf-8")
+        (repo / "conftest.py").write_text(CONFTEST_NAMING_A_TEST_FILE_FIRST, encoding="utf-8")
 
         done = run_pytest_in(repo)
 
