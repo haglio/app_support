@@ -21,4 +21,4 @@ _SHIPPED_TESTS = Path(__file__).resolve().parent / "test_tracked_tree.py"
 
 
 def pytest_configure(config) -> None:
-    ship(config, _SHIPPED_TESTS)
+    ship(config, _SHIPPED_TESTS, called="the blocked-word check")

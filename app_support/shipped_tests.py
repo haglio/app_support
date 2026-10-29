@@ -12,14 +12,17 @@ test to every suite in any venv that happens to have this package installed,
 which is most of them -- so adoption would be something that happened to a repo
 rather than something it asked for, and there would be no way to roll it out one
 repo at a time.
+
+A check handed to a run of whole trees is held to being in it. pytest fails
+nothing over a file it never collected and counts it nowhere, so a check that
+drops out of a run reads exactly like one that passed; a run that loses one ends
+before any test runs, with an error naming it.
 """
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
-
-_THE_RUN_AS_ASKED = pytest.StashKey[list[str]]()
 
 # A shipped file is put into the session's arguments rather than collected off
 # disk: it lives wherever this package was installed, nowhere near the tree pytest
@@ -46,9 +49,63 @@ def is_a_run_of_whole_trees(args: list[str]) -> bool:
     return bool(args) and all(Path(arg).is_dir() for arg in args)
 
 
-def ship(config, shipped: Path) -> None:
-    asked = config.stash.setdefault(_THE_RUN_AS_ASKED, list(config.args))
+def ship(config, shipped: Path, *, called: str) -> None:
+    handed = _ChecksHandedToTheRun.of(config)
+    handed.names[shipped] = called
     test_file = str(shipped)
-    if test_file in config.args or not is_a_run_of_whole_trees(asked):
+    if test_file in config.args or not is_a_run_of_whole_trees(handed.run_as_asked):
         return
     config.args.insert(0, test_file)
+
+
+class _ChecksHandedToTheRun:
+    _KEY = pytest.StashKey["_ChecksHandedToTheRun"]()
+    _NAME = "app_support.shipped_tests.handed"
+
+    def __init__(self, run_as_asked: list[str]):
+        self.run_as_asked = run_as_asked
+        self.names: dict[Path, str] = {}
+        self._deselected: set[pytest.Item] = set()
+
+    @classmethod
+    def of(cls, config) -> _ChecksHandedToTheRun:
+        if (handed := config.stash.get(cls._KEY, None)) is None:
+            handed = config.stash[cls._KEY] = cls(list(config.args))
+            config.pluginmanager.register(handed, cls._NAME)
+        return handed
+
+    def pytest_deselected(self, items) -> None:
+        self._deselected.update(items)
+
+    @pytest.hookimpl(wrapper=True, trylast=True)
+    def pytest_collection_modifyitems(self, config, items):
+        """The innermost wrapper, so a run dealt into parts is held to what it collected:
+        pytest-test-groups, which deals the family gate's parts, splits the run in a
+        wrapper outside this one and reports none of what it leaves to the other parts."""
+        collected = {item: shipped for item in items
+                     if (shipped := self._shipped_file_of(item)) is not None}
+        if self._owes_every_check(config):
+            self._refuse_the_run(without=sorted(set(self.names) - set(collected.values())),
+                                 because="handed to this run and never collected")
+        yield
+        kept = set(items) | self._deselected
+        self._refuse_the_run(
+            without=sorted({shipped for item, shipped in collected.items() if item not in kept}),
+            because="collected and then dropped from this run without being deselected")
+
+    def _owes_every_check(self, config) -> bool:
+        """Not a run of only the last failures: pytest's cache plugin leaves every file
+        without a recorded failure uncollected then, and reports none of them."""
+        return is_a_run_of_whole_trees(self.run_as_asked) and not config.getoption("lf", False)
+
+    def _shipped_file_of(self, item) -> Path | None:
+        return next((shipped for shipped in self.names
+                     if item.path.name == shipped.name
+                     and item.path.resolve() == shipped.resolve()), None)
+
+    def _refuse_the_run(self, without: list[Path], because: str) -> None:
+        if without:
+            raise pytest.UsageError(*(
+                f"{because}: {self.names[shipped]} ({shipped}). "
+                "A run cannot pass without every check it is handed."
+                for shipped in without))

@@ -1,14 +1,64 @@
-"""Tests for how a check this package ships reaches a consumer's session."""
+"""Tests for how a check this package ships reaches a consumer's session, and how a run that loses one ends."""
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 import pytest
+from consumer_runs import run_pytest_in
 
 from app_support import shipped_tests
 
 APP_SUPPORT = Path(__file__).resolve().parents[1]
 SHIPPED = sorted((APP_SUPPORT / "app_support").rglob("test_*.py"))
+
+FAMILY_OPTIONS = ("-p no:cacheprovider -p app_support.sanitize.pytest_plugin"
+                  " -p app_support.clocks.pytest_plugin")
+THE_BLOCKED_WORD_CHECK = "test_no_blocklisted_terms_in_the_tracked_tree"
+A_TEST_THAT_LEAVES_A_MARK = """\
+from pathlib import Path
+
+
+def test_the_repos_own():
+    Path(__file__).with_name("ran").touch()
+"""
+A_PLUGIN_THAT_DROPS_THE_BLOCKED_WORD_CHECK = f"""\
+def pytest_collection_modifyitems(items):
+    items[:] = [item for item in items if item.name != "{THE_BLOCKED_WORD_CHECK}"]
+"""
+A_PLUGIN_THAT_TAKES_A_CHECK_BACK_OUT_OF_THE_RUNS_ARGUMENTS = """\
+import pytest
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_configure(config):
+    config.args[:] = [arg for arg in config.args if not arg.endswith("{shipped}")]
+"""
+A_HOOK_THAT_PASSES_OVER_VENDOR = """\
+def pytest_ignore_collect(collection_path):
+    return collection_path.name == "vendor" or None
+"""
+A_PLUGIN_THAT_SHUFFLES_THE_RUN = """\
+from random import Random
+
+
+def pytest_collection_modifyitems(items):
+    Random(3).shuffle(items)
+"""
+A_PLUGIN_THAT_DEALS_THE_RUN_INTO_TWO_PARTS_THE_WAY_PYTEST_TEST_GROUPS_DOES = """\
+from random import Random
+
+import pytest
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_collection_modifyitems(items):
+    yield
+    collected = items[:]
+    Random(7).shuffle(items)
+    items[:] = items[{part} - 1::2]
+    items.sort(key=collected.index)
+"""
 
 
 class TestWhichRunsAreEnforced:
@@ -23,6 +73,7 @@ class TestWhichRunsAreEnforced:
         def __init__(self, args):
             self.args = list(args)
             self.stash = pytest.Stash()
+            self.pluginmanager = pytest.PytestPluginManager()
 
     def test_no_arguments_of_its_own_is_a_whole_tree(self):
         """pytest fills these in from `testpaths` or the invocation directory,
@@ -51,8 +102,8 @@ class TestWhichRunsAreEnforced:
         """Two copies would collect the same check twice."""
         config = self._Config([str(APP_SUPPORT / "tests")])
 
-        shipped_tests.ship(config, SHIPPED[0])
-        shipped_tests.ship(config, SHIPPED[0])
+        shipped_tests.ship(config, SHIPPED[0], called="a check")
+        shipped_tests.ship(config, SHIPPED[0], called="a check")
 
         assert config.args == [str(SHIPPED[0]), str(APP_SUPPORT / "tests")]
 
@@ -64,8 +115,8 @@ class TestWhichRunsAreEnforced:
         """
         config = self._Config([str(APP_SUPPORT / "tests")])
 
-        shipped_tests.ship(config, SHIPPED[0])
-        shipped_tests.ship(config, SHIPPED[1])
+        shipped_tests.ship(config, SHIPPED[0], called="a check")
+        shipped_tests.ship(config, SHIPPED[1], called="a check")
 
         assert sorted(config.args) == sorted([str(APP_SUPPORT / "tests"), *map(str, SHIPPED)])
 
@@ -125,3 +176,125 @@ class TestWhatShippingReachesInAConsumer:
         pyproject = (APP_SUPPORT / "pyproject.toml").read_text(encoding="utf-8")
 
         assert "pytest11" not in pyproject
+
+
+class TestAShippedCheckIsInTheRunOrTheRunEnds:
+    def _consumer(self, tmp_path: Path, *, conftest: str | None = None,
+                  options: str = FAMILY_OPTIONS) -> Path:
+        repo = tmp_path / "family" / "repo"
+        (repo / "tests").mkdir(parents=True)
+        (repo / "pyproject.toml").write_text(
+            f'[tool.pytest.ini_options]\naddopts = "{options}"\ntestpaths = ["tests"]\n',
+            encoding="utf-8")
+        (repo / "tests" / "test_code.py").write_text(A_TEST_THAT_LEAVES_A_MARK, encoding="utf-8")
+        if conftest is not None:
+            (repo / "conftest.py").write_text(conftest, encoding="utf-8")
+        return repo
+
+    def _installed_in_the_checkout(self, repo: Path, site: str) -> Path:
+        shutil.copytree(APP_SUPPORT / "app_support", repo / site / "app_support",
+                        ignore=shutil.ignore_patterns("__pycache__"))
+        return repo / site
+
+    @pytest.mark.parametrize(("shipped", "called"), [("test_tracked_tree.py", "the blocked-word check"),
+                                                     ("test_clocks.py", "the clock checks")])
+    def test_a_check_kept_out_of_the_runs_arguments_ends_the_run_before_any_test(
+        self, tmp_path: Path, shipped: str, called: str,
+    ):
+        repo = self._consumer(tmp_path, conftest=A_PLUGIN_THAT_TAKES_A_CHECK_BACK_OUT_OF_THE_RUNS_ARGUMENTS
+                              .format(shipped=shipped))
+
+        done = run_pytest_in(repo)
+
+        assert done.returncode == pytest.ExitCode.USAGE_ERROR, done.stdout + done.stderr
+        assert f"never collected: {called}" in done.stderr, done.stderr
+        assert not (repo / "tests" / "ran").exists()
+
+    def test_a_check_a_plugin_drops_without_deselecting_it_ends_the_run_before_any_test(
+        self, tmp_path: Path,
+    ):
+        repo = self._consumer(tmp_path, conftest=A_PLUGIN_THAT_DROPS_THE_BLOCKED_WORD_CHECK)
+
+        done = run_pytest_in(repo)
+
+        assert done.returncode == pytest.ExitCode.USAGE_ERROR, done.stdout + done.stderr
+        assert "the blocked-word check" in done.stderr, done.stderr
+        assert not (repo / "tests" / "ran").exists()
+
+    @pytest.mark.parametrize(("site", "args", "conftest"), [
+        pytest.param(".venv/Lib/site-packages", [], None, id="the checkout's .venv"),
+        pytest.param("vendor", ["--ignore=vendor"], None, id="--ignore"),
+        pytest.param("vendor", [], 'collect_ignore = ["vendor"]\n', id="collect_ignore"),
+        pytest.param("vendor", [], A_HOOK_THAT_PASSES_OVER_VENDOR, id="pytest_ignore_collect"),
+    ])
+    def test_a_check_a_run_of_the_whole_checkout_passes_over_ends_the_run(
+        self, tmp_path: Path, site: str, args: list[str], conftest: str | None,
+    ):
+        repo = self._consumer(tmp_path, conftest=conftest)
+
+        done = run_pytest_in(repo, ".", *args,
+                             app_support_from=self._installed_in_the_checkout(repo, site))
+
+        assert done.returncode == pytest.ExitCode.USAGE_ERROR, done.stdout + done.stderr
+        assert "never collected: the blocked-word check" in done.stderr, done.stderr
+        assert not (repo / "tests" / "ran").exists()
+
+    def test_a_check_installed_inside_the_checkout_is_collected_by_a_run_of_the_whole_checkout(
+        self, tmp_path: Path,
+    ):
+        repo = self._consumer(tmp_path)
+        site = self._installed_in_the_checkout(repo, "vendor")
+
+        done = run_pytest_in(repo, "--collect-only", ".", app_support_from=site)
+
+        assert done.returncode == pytest.ExitCode.OK, done.stdout + done.stderr
+        assert THE_BLOCKED_WORD_CHECK in done.stdout, done.stdout
+
+    @pytest.mark.parametrize("narrowing", [["-k", "not tracked_tree"], ["-m", "not repo_check"]])
+    def test_a_check_the_run_was_told_to_deselect_is_left_out_quietly(
+        self, tmp_path: Path, narrowing: list[str],
+    ):
+        done = run_pytest_in(self._consumer(tmp_path), "--collect-only", *narrowing)
+
+        assert done.returncode == pytest.ExitCode.OK, done.stdout + done.stderr
+        assert "deselected" in done.stdout, done.stdout
+        assert THE_BLOCKED_WORD_CHECK not in done.stdout
+
+    def test_a_check_deselected_by_its_node_id_is_left_out_quietly(self, tmp_path: Path):
+        repo = self._consumer(tmp_path)
+        listed = run_pytest_in(repo, "--collect-only").stdout.splitlines()
+        node_id = next(line for line in listed if line.endswith(f"::{THE_BLOCKED_WORD_CHECK}"))
+
+        done = run_pytest_in(repo, "--collect-only", "--deselect", node_id)
+
+        assert done.returncode == pytest.ExitCode.OK, done.stdout + done.stderr
+        assert "1 deselected" in done.stdout, done.stdout
+
+    def test_a_shuffled_run_dealt_into_parts_runs_each_check_in_one_part_and_says_nothing(
+        self, tmp_path: Path,
+    ):
+        repo = self._consumer(tmp_path)
+        (repo / "tests" / "conftest.py").write_text(A_PLUGIN_THAT_SHUFFLES_THE_RUN, encoding="utf-8")
+        listed = []
+        for part in (1, 2):
+            (repo / "conftest.py").write_text(
+                A_PLUGIN_THAT_DEALS_THE_RUN_INTO_TWO_PARTS_THE_WAY_PYTEST_TEST_GROUPS_DOES.format(part=part),
+                encoding="utf-8")
+            done = run_pytest_in(repo, "--collect-only")
+            assert done.returncode == pytest.ExitCode.OK, done.stdout + done.stderr
+            listed.append(done.stdout)
+
+        assert [THE_BLOCKED_WORD_CHECK in part for part in listed].count(True) == 1, listed
+
+    def test_a_run_of_only_its_last_failures_leaves_the_checks_out_and_says_nothing(
+        self, tmp_path: Path,
+    ):
+        repo = self._consumer(tmp_path, options=FAMILY_OPTIONS.replace("-p no:cacheprovider ", ""))
+        (repo / "tests" / "test_code.py").write_text("def test_failing():\n    assert False\n",
+                                                     encoding="utf-8")
+        run_pytest_in(repo)
+
+        done = run_pytest_in(repo, "--lf")
+
+        assert done.returncode == pytest.ExitCode.TESTS_FAILED, done.stdout + done.stderr
+        assert "1 failed" in done.stdout, done.stdout
