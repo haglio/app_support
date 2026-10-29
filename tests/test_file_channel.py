@@ -210,12 +210,7 @@ def test_publish_retries_past_a_reader_holding_the_file_open(tmp_path: Path):
 
 
 def test_a_publish_keeps_the_line_endings_the_format_asks_for(tmp_path: Path):
-    """A format that terminates its own lines must not have them translated again.
-
-    The comma-separated favorites file writes its own carriage returns, so a
-    publish that translated a newline a second time would put two of them at the
-    end of every row -- a file the spreadsheet reads as blank lines between the
-    favorites."""
+    """A format that terminates its own lines must not have them translated again."""
     path = tmp_path / "rows.csv"
 
     assert publish_whole(path, "one\r\ntwo\r\n", newline="") is True

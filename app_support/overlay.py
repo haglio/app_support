@@ -13,8 +13,8 @@ Three answers, and each repo says which, per key:
   * **backfill** it from the example -- a phrase list, a vocabulary, anything
     whose placeholder is a usable fallback (:func:`backfilled`);
   * leave it **empty** -- a list of gallery URLs the example fills with
-    ``example.com`` markers, which written verbatim into a favorites file would
-    be worse than nothing (:func:`backfilled`'s ``empty_when_absent``);
+    ``example.com`` markers, which written verbatim onto a favorite's record
+    would be worse than nothing (:func:`backfilled`'s ``empty_when_absent``);
   * **refuse** -- a suite root, a model path, where a placeholder is a launch
     that fails somewhere far from the cause (:func:`missing_keys` before there is
     a window to say so, or :func:`overlay_value` at the read).

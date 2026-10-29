@@ -57,7 +57,7 @@ class TestBackfilled:
 
     def test_a_key_named_empty_when_absent_takes_that_value_not_the_placeholder(self):
         # Gallery URLs the example fills with markers, which written verbatim
-        # into a favorites file would be worse than nothing.
+        # onto a favorite's record would be worse than nothing.
         data = backfilled({"acts": {}}, _EXAMPLE, empty_when_absent={"web_providers": []})
 
         assert data["web_providers"] == []
