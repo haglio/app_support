@@ -115,9 +115,6 @@ class MeetingPlace:
         return Snapshots(kept / OPENING, kept / FULL, bar, covers_every_monitor,
                          {line: kept / _updating(index) for index, line in enumerate(lines)})
 
-    leave_pictures = leave_snapshots
-    pictures = snapshots
-
     @property
     def _snapshots_kept_in(self) -> Path:
         return self.snapshots_folder or self.folder
