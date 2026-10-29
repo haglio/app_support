@@ -51,7 +51,7 @@ def load() -> dict[str, Any]:
     settings = json.loads(path.read_text(encoding="utf-8"))
     for old, new in _RENAMED_KEYS.items():
         if old in settings:
-            settings.setdefault(new, settings.pop(old))
+            settings.setdefault(new, settings[old])
     return settings
 
 

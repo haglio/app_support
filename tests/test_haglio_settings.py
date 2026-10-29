@@ -45,6 +45,7 @@ def test_a_settings_file_written_before_the_images_folder_was_renamed_reads_unde
         {"library_root": "D:/library", "origenerator_pictures_dir": "D:/library/images/origenerator"})))
 
     assert haglio_settings.value("origenerator_images_dir") == "D:/library/images/origenerator"
+    assert haglio_settings.value("origenerator_pictures_dir") == "D:/library/images/origenerator"
 
 
 def test_a_setting_the_file_lacks_is_named_with_the_file(tmp_path, monkeypatch):
