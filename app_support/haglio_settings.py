@@ -27,7 +27,7 @@ EXAMPLE: dict[str, Any] = {
     "ambient_audio_dir": "videos/example-folder/ambient-clips",
     "genau_dir": "C:/path/to/library-root/videos/videos/genau",
     "genau_audio_dir": "C:/path/to/library-root/videos/audio/genau",
-    "origenerator_pictures_dir": "C:/path/to/library-root/images/origenerator",
+    "origenerator_images_dir": "C:/path/to/library-root/images/origenerator",
     "origenerator_videos_dir": "C:/path/to/library-root/videos/videos/origenerator",
     "origenerator_scripts_dir": "C:/path/to/library-root/videos/scripts/origenerator",
     "origenerator_audio_dir": "C:/path/to/library-root/videos/audio/origenerator",
@@ -41,11 +41,18 @@ def settings_file() -> Path:
     return Path(named) if named else Path.home() / ".haglio" / "settings.json"
 
 
+_RENAMED_KEYS = {"origenerator_pictures_dir": "origenerator_images_dir"}
+
+
 def load() -> dict[str, Any]:
     path = settings_file()
     if os.environ.get(SETTINGS_ENV) == THE_EXAMPLE or not path.is_file():
         return copy.deepcopy(EXAMPLE)
-    return json.loads(path.read_text(encoding="utf-8"))
+    settings = json.loads(path.read_text(encoding="utf-8"))
+    for old, new in _RENAMED_KEYS.items():
+        if old in settings:
+            settings.setdefault(new, settings.pop(old))
+    return settings
 
 
 class MissingSetting(LookupError):

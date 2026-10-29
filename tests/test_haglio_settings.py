@@ -38,6 +38,15 @@ def test_a_machine_with_no_settings_file_runs_on_the_example(tmp_path, monkeypat
     assert haglio_settings.value("library_root") == haglio_settings.EXAMPLE["library_root"]
 
 
+def test_a_settings_file_written_before_the_images_folder_was_renamed_reads_under_the_new_name(
+        tmp_path, monkeypatch):
+    monkeypatch.setenv(haglio_settings.SETTINGS_ENV, str(_settings(
+        tmp_path / "settings.json",
+        {"library_root": "D:/library", "origenerator_pictures_dir": "D:/library/images/origenerator"})))
+
+    assert haglio_settings.value("origenerator_images_dir") == "D:/library/images/origenerator"
+
+
 def test_a_setting_the_file_lacks_is_named_with_the_file(tmp_path, monkeypatch):
     settings = _settings(tmp_path / "settings.json", {"genau_flick_words": {"one": "flick"}})
     monkeypatch.setenv(haglio_settings.SETTINGS_ENV, str(settings))
@@ -70,7 +79,7 @@ def test_one_reader_changing_what_it_was_handed_changes_nobody_else_s(monkeypatc
 FOLDERS_THE_APPS_READ = (
     "genau_dir",
     "genau_audio_dir",
-    "origenerator_pictures_dir",
+    "origenerator_images_dir",
     "origenerator_videos_dir",
     "origenerator_scripts_dir",
     "origenerator_audio_dir",

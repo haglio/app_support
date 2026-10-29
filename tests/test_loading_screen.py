@@ -31,7 +31,7 @@ class TestWhereTheLauncherAndTheAppMeet:
 
     def test_the_app_hands_the_place_to_its_loading_screen_alone(self, tmp_path):
         place = {loading_screen.FOLDER: str(tmp_path / "screen"), loading_screen.LINES: "[]",
-                 loading_screen.PICTURES_FOLDER: str(tmp_path / "primary" / "screen" / "preview")}
+                 loading_screen.SNAPSHOTS_FOLDER: str(tmp_path / "primary" / "screen" / "preview")}
         environment = {**place, "PATH": "x"}
 
         handed = loading_screen.handed_over(environment)
@@ -44,48 +44,57 @@ def a_place(tmp_path: Path, *lines: str) -> loading_screen.MeetingPlace:
     return loading_screen.MeetingPlace(tmp_path / "screen", lines or ("Updating Example...",))
 
 
-def a_preview(checkout: Path, pictures: Path) -> loading_screen.MeetingPlace:
+def a_preview(checkout: Path, snapshots: Path) -> loading_screen.MeetingPlace:
     return loading_screen.meeting_place({loading_screen.FOLDER: str(checkout / "screen"),
-                                         loading_screen.PICTURES_FOLDER: str(pictures),
+                                         loading_screen.SNAPSHOTS_FOLDER: str(snapshots),
                                          loading_screen.LINES: '["Updating Example..."]'})
 
 
-class TestThePicturesTheAppLeaves:
-    def test_a_preview_finds_the_pictures_an_earlier_preview_of_the_app_left(self, tmp_path):
+class TestTheSnapshotsTheAppLeaves:
+    def test_a_preview_finds_the_snapshots_an_earlier_preview_of_the_app_left(self, tmp_path):
         kept = tmp_path / "primary" / "screen" / "preview"
-        a_preview(tmp_path / "one", kept).leave_pictures(
+        a_preview(tmp_path / "one", kept).leave_snapshots(
             opening=b"opening", full=b"full", updating=[b"updating"], bar=(24, 220, 360, 18),
             covers_every_monitor=False)
 
-        pictures = a_preview(tmp_path / "two", kept).pictures()
+        snapshots = a_preview(tmp_path / "two", kept).snapshots()
 
-        assert pictures.opening.read_bytes() == b"opening"
-        assert pictures.updating("Updating Example...").read_bytes() == b"updating"
+        assert snapshots.opening.read_bytes() == b"opening"
+        assert snapshots.updating("Updating Example...").read_bytes() == b"updating"
         assert not (tmp_path / "one").exists()
 
-    def test_the_next_click_finds_the_pictures_the_app_left(self, tmp_path):
+    def test_the_next_click_finds_the_snapshots_the_app_left(self, tmp_path):
         place = a_place(tmp_path)
 
-        place.leave_pictures(opening=b"opening", full=b"full", updating=[b"updating"], bar=(24, 220, 360, 18),
-                             covers_every_monitor=True)
-        pictures = place.pictures()
+        place.leave_snapshots(opening=b"opening", full=b"full", updating=[b"updating"], bar=(24, 220, 360, 18),
+                              covers_every_monitor=True)
+        snapshots = place.snapshots()
 
-        assert pictures.opening.read_bytes() == b"opening"
-        assert pictures.full.read_bytes() == b"full"
-        assert pictures.updating("Updating Example...").read_bytes() == b"updating"
-        assert pictures.bar == (24, 220, 360, 18)
-        assert pictures.covers_every_monitor
+        assert snapshots.opening.read_bytes() == b"opening"
+        assert snapshots.full.read_bytes() == b"full"
+        assert snapshots.updating("Updating Example...").read_bytes() == b"updating"
+        assert snapshots.bar == (24, 220, 360, 18)
+        assert snapshots.covers_every_monitor
 
-    def test_a_launch_before_the_app_ever_left_pictures_has_none(self, tmp_path):
-        assert a_place(tmp_path).pictures() is None
+    def test_a_launch_before_the_app_ever_left_snapshots_has_none(self, tmp_path):
+        assert a_place(tmp_path).snapshots() is None
 
-    def test_a_line_the_launcher_has_changed_since_has_no_picture_yet(self, tmp_path):
-        a_place(tmp_path, "Updating Example...").leave_pictures(
+    def test_a_line_the_launcher_has_changed_since_has_no_snapshot_yet(self, tmp_path):
+        a_place(tmp_path, "Updating Example...").leave_snapshots(
             opening=b"opening", full=b"full", updating=[b"updating"], bar=(0, 0, 1, 1), covers_every_monitor=False)
 
-        pictures = a_place(tmp_path, "Bringing Example up to date...").pictures()
+        snapshots = a_place(tmp_path, "Bringing Example up to date...").snapshots()
 
-        assert pictures.updating("Bringing Example up to date...") is None
+        assert snapshots.updating("Bringing Example up to date...") is None
+
+    def test_a_library_still_saying_pictures_leaves_and_finds_the_snapshots(self, tmp_path):
+        place = a_place(tmp_path)
+
+        place.leave_pictures(opening=b"opening", full=b"full", updating=[], bar=(0, 0, 1, 1),
+                             covers_every_monitor=False)
+
+        assert place.pictures() == place.snapshots()
+        assert place.snapshots().opening.read_bytes() == b"opening"
 
 
 class TestWhereTheAppSaysItsWindowComesUp:
@@ -184,22 +193,22 @@ def updating(step: int = 0, *, since: float = 1000.0) -> production_update.Updat
 
 class Launch:
     """A launcher's loading screen over two checkouts, the app's and one it hosts,
-    with the pictures the app left at its last start."""
+    with the snapshots the app left at its last start."""
 
     def __init__(self, tmp_path: Path):
         self.place = a_place(tmp_path, "Updating Example...", "Updating Hosted...")
-        self.place.leave_pictures(opening=b"opening", full=b"full", updating=[b"example", b"hosted"],
-                                  bar=(24, 220, 360, 18), covers_every_monitor=False)
+        self.place.leave_snapshots(opening=b"opening", full=b"full", updating=[b"example", b"hosted"],
+                                   bar=(24, 220, 360, 18), covers_every_monitor=False)
         self.checkouts = (tmp_path / "example", tmp_path / "hosted")
         self.under_way: dict[Path, production_update.UpdateProgress] = {}
         self.clock = Clock()
         self.launcher_running = True
         self.showing = loading_screen.Showing(
-            self.place, self.place.pictures(), self.checkouts, progress_of=self.under_way.get, clock=self.clock,
+            self.place, self.place.snapshots(), self.checkouts, progress_of=self.under_way.get, clock=self.clock,
             launcher_running=lambda: self.launcher_running)
 
-    def picture(self) -> bytes:
-        return self.showing.tick().picture.read_bytes()
+    def snapshot(self) -> bytes:
+        return self.showing.tick().snapshot.read_bytes()
 
 
 @pytest.fixture
@@ -208,10 +217,10 @@ def launch(tmp_path):
 
 
 class TestWhatTheLaunchersLoadingScreenShows:
-    def test_it_opens_on_the_picture_the_app_opens_on_with_the_bar_empty(self, launch):
+    def test_it_opens_on_the_snapshot_the_app_opens_on_with_the_bar_empty(self, launch):
         frame = launch.showing.tick()
 
-        assert (frame.picture.read_bytes(), frame.fraction) == (b"opening", 0.0)
+        assert (frame.snapshot.read_bytes(), frame.fraction) == (b"opening", 0.0)
 
     def test_an_update_it_waits_for_shows_that_checkouts_line_and_moves_the_bar(self, launch):
         launch.under_way[launch.checkouts[1]] = updating()
@@ -220,7 +229,7 @@ class TestWhatTheLaunchersLoadingScreenShows:
         launch.clock.now += 10
         later = launch.showing.tick()
 
-        assert first.picture.read_bytes() == b"hosted"
+        assert first.snapshot.read_bytes() == b"hosted"
         assert 0.0 < first.fraction < later.fraction < 1.0
 
     def test_the_bar_stays_where_the_update_left_it_once_it_is_done(self, launch):
@@ -230,7 +239,7 @@ class TestWhatTheLaunchersLoadingScreenShows:
         launch.under_way.clear()
         after = launch.showing.tick()
 
-        assert after.picture.read_bytes() == b"opening"
+        assert after.snapshot.read_bytes() == b"opening"
         assert after.fraction == during.fraction
 
     def test_a_second_update_carries_the_bar_on_from_where_the_first_left_it(self, launch):
@@ -245,18 +254,18 @@ class TestWhatTheLaunchersLoadingScreenShows:
 
         assert first.fraction == second.fraction < later.fraction < 1.0
 
-    def test_an_update_whose_line_has_no_picture_yet_moves_the_bar_under_the_opening_one(self, tmp_path):
+    def test_an_update_whose_line_has_no_snapshot_yet_moves_the_bar_under_the_opening_one(self, tmp_path):
         place = a_place(tmp_path, "Updating Example...")
-        place.leave_pictures(opening=b"opening", full=b"full", updating=[], bar=(0, 0, 1, 1),
-                             covers_every_monitor=False)
+        place.leave_snapshots(opening=b"opening", full=b"full", updating=[], bar=(0, 0, 1, 1),
+                              covers_every_monitor=False)
         under_way = {tmp_path / "example": updating()}
         clock = Clock(1010.0)
-        showing = loading_screen.Showing(place, place.pictures(), (tmp_path / "example",),
+        showing = loading_screen.Showing(place, place.snapshots(), (tmp_path / "example",),
                                          progress_of=under_way.get, clock=clock, launcher_running=lambda: True)
 
         frame = showing.tick()
 
-        assert frame.picture.read_bytes() == b"opening"
+        assert frame.snapshot.read_bytes() == b"opening"
         assert frame.fraction > 0.0
 
 
@@ -485,10 +494,10 @@ def a_png(width: int, height: int, color: tuple[int, int, int]) -> bytes:
 @pytest.mark.skipif(sys.platform != "win32", reason="a window on a desktop of its own")
 class TestTheLoadingScreenItself:
     @staticmethod
-    def a_place_with_pictures(tmp_path: Path) -> loading_screen.MeetingPlace:
+    def a_place_with_snapshots(tmp_path: Path) -> loading_screen.MeetingPlace:
         place = a_place(tmp_path, "Updating Example...")
-        place.leave_pictures(opening=a_png(40, 20, (26, 26, 46)), full=a_png(40, 20, (233, 69, 96)),
-                             updating=[a_png(40, 20, (26, 26, 46))], bar=(4, 12, 32, 4), covers_every_monitor=False)
+        place.leave_snapshots(opening=a_png(40, 20, (26, 26, 46)), full=a_png(40, 20, (233, 69, 96)),
+                              updating=[a_png(40, 20, (26, 26, 46))], bar=(4, 12, 32, 4), covers_every_monitor=False)
         return place
 
     @staticmethod
@@ -497,14 +506,14 @@ class TestTheLoadingScreenItself:
         environment = {**os.environ, loading_screen.FOLDER: str(place.folder),
                        loading_screen.LINES: json.dumps(place.lines),
                        "PYTHONPATH": str(Path(loading_screen.__file__).parents[1])}
-        if place.pictures_folder:
-            environment[loading_screen.PICTURES_FOLDER] = str(place.pictures_folder)
+        if place.snapshots_folder:
+            environment[loading_screen.SNAPSHOTS_FOLDER] = str(place.snapshots_folder)
         return desktop.start([sys.executable, "-m", "app_support.loading_screen", str(checkout)],
                              environment=environment)
 
-    def test_a_previews_first_click_comes_up_on_the_pictures_an_earlier_preview_left(
+    def test_a_previews_first_click_comes_up_on_the_snapshots_an_earlier_preview_left(
             self, tmp_path, desktop_of_its_own):
-        kept = self.a_place_with_pictures(tmp_path / "primary").folder
+        kept = self.a_place_with_snapshots(tmp_path / "primary").folder
         place = loading_screen.MeetingPlace(tmp_path / "branch" / "screen", ("Updating Example...",), kept)
 
         pid = self.start(place, tmp_path / "example", desktop_of_its_own)
@@ -516,7 +525,7 @@ class TestTheLoadingScreenItself:
 
     def test_it_comes_up_moves_its_bar_for_an_update_and_goes_once_the_app_takes_over(
             self, tmp_path, desktop_of_its_own):
-        place = self.a_place_with_pictures(tmp_path)
+        place = self.a_place_with_snapshots(tmp_path)
         checkout = tmp_path / "example"
 
         pid = self.start(place, checkout, desktop_of_its_own)
@@ -533,7 +542,7 @@ class TestTheLoadingScreenItself:
 
     def test_a_message_the_app_puts_up_before_its_own_loading_screen_comes_up_over_it(
             self, tmp_path, desktop_of_its_own):
-        place = self.a_place_with_pictures(tmp_path)
+        place = self.a_place_with_snapshots(tmp_path)
 
         pid = self.start(place, tmp_path / "example", desktop_of_its_own)
         came_up = eventually(lambda: desktop_of_its_own.shows_a_window_over_every_other() is not None)
@@ -546,7 +555,7 @@ class TestTheLoadingScreenItself:
         assert desktop_of_its_own.ended_within(pid, 10)
 
     def test_it_comes_up_on_the_monitor_the_app_keeps_its_window_on(self, tmp_path, desktop_of_its_own):
-        place = self.a_place_with_pictures(tmp_path)
+        place = self.a_place_with_snapshots(tmp_path)
         monitors = loading_screen.screens().monitors
         kept = next((monitor for monitor in monitors if not monitor.main), monitors[0])
         place.say_where_the_app_comes_up(loading_screen.AppWindow(kept_on=kept.area))
@@ -563,7 +572,7 @@ class TestTheLoadingScreenItself:
 
 
 class TestEachLaunchStartsAfresh:
-    def test_the_launcher_clears_everything_the_last_launch_said_but_the_pictures(self):
+    def test_the_launcher_clears_everything_the_last_launch_said_but_the_snapshots(self):
         assert set(loading_screen.SAID_AT_EACH_LAUNCH) == {
             loading_screen.SHOWN, loading_screen.TAKEN, loading_screen.STARTED, loading_screen.ENDED,
             loading_screen.CANCELED, loading_screen.UPDATED}
