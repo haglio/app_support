@@ -117,6 +117,10 @@ def _declare(dll, name: str, restype, *argtypes):
     return function
 
 
+def _close_handle(dll):
+    return _declare(dll, "CloseHandle", wintypes.BOOL, ctypes.c_void_p)
+
+
 def _hresult(call: str, hr: int) -> OSError:
     """The failure of *call*, spelled the way its HRESULT is written down.
 
@@ -598,7 +602,7 @@ def try_acquire_mutex(name: str, *, kernel32=_kernel32, last_error=_last_error) 
     dll = kernel32()
     create = _declare(dll, "CreateMutexW", ctypes.c_void_p,
                       ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR)
-    close = _declare(dll, "CloseHandle", wintypes.BOOL, ctypes.c_void_p)
+    close = _close_handle(dll)
 
     handle = create(None, False, name)
     if not handle:
@@ -610,6 +614,10 @@ def try_acquire_mutex(name: str, *, kernel32=_kernel32, last_error=_last_error) 
         close(handle)
         return None
     return handle
+
+
+def release_mutex(handle: int, *, kernel32=_kernel32) -> None:
+    _close_handle(kernel32())(handle)
 
 
 def is_mutex_held(name: str, *, kernel32=_kernel32) -> bool:
@@ -624,7 +632,7 @@ def is_mutex_held(name: str, *, kernel32=_kernel32) -> bool:
     dll = kernel32()
     open_mutex = _declare(dll, "OpenMutexW", ctypes.c_void_p,
                           wintypes.DWORD, wintypes.BOOL, wintypes.LPCWSTR)
-    close = _declare(dll, "CloseHandle", wintypes.BOOL, ctypes.c_void_p)
+    close = _close_handle(dll)
 
     handle = open_mutex(_SYNCHRONIZE, False, name)
     if not handle:
@@ -646,7 +654,7 @@ def process_started(pid: int, *, kernel32=_kernel32) -> int | None:
                             ctypes.POINTER(wintypes.DWORD))
     times_of = _declare(dll, "GetProcessTimes", wintypes.BOOL, ctypes.c_void_p,
                         *[ctypes.POINTER(wintypes.FILETIME)] * 4)
-    close = _declare(dll, "CloseHandle", wintypes.BOOL, ctypes.c_void_p)
+    close = _close_handle(dll)
 
     handle = open_process(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
     if not handle:
@@ -731,7 +739,7 @@ class JobObject:
                                 ctypes.POINTER(wintypes.BOOL))
         self._wait = _declare(dll, "WaitForMultipleObjects", wintypes.DWORD, wintypes.DWORD,
                               ctypes.POINTER(ctypes.c_void_p), wintypes.BOOL, wintypes.DWORD)
-        self._close = _declare(dll, "CloseHandle", wintypes.BOOL, ctypes.c_void_p)
+        self._close = _close_handle(dll)
         self._last_error = last_error
         self._handle = create(None, None)
         if not self._handle:
