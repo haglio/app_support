@@ -240,22 +240,50 @@ and `#` comments are skipped.
 A checkout with no blocklist beside it enforces nothing and commits normally —
 that is what a public clone and a fresh CI checkout both look like.
 
+## The family's gates
+
+Every repository of the family holds its own tree to the same checks: a clock on
+each test and each workflow job, no dead code, dependencies declared the way the
+merge gate installs them, the family's lint, launchers that are what their specs
+render, the family's coverage config where it measures coverage, and, for a
+package every app installs, a version an app can pin. It asks for all of them by
+naming one plugin:
+
+```toml
+[tool.pytest.ini_options]
+addopts = "-p app_support.sanitize.pytest_plugin -p app_support.gates.pytest_plugin --timeout=60 --timeout-method=thread"
+```
+
+The gates read what to scan off the tree -- every package beside the root, the
+modules at the root, `tools/` and `tests/` -- and what is the repository's own to
+say from its pyproject, each entry with its reason beside it:
+
+```toml
+[tool.haglio.dead-code]
+each-package-alone = true
+apps-are-callers = true
+unread-dataclass-fields = ["RunRecord.finished_at"]
+unread-arguments = ["the_package/hooks.py: frames"]
+
+[tool.haglio.dependencies]
+unbounded = ["tzdata"]
+
+[tool.haglio.coverage]
+not-unit-tested = [{ path = "the_package/shell.py", because = "needs a screen" }]
+```
+
+An allowance nothing is reported for any more fails its gate, so the lists only
+shrink. A new family gate is one more module in `app_support/gates`, and reaches
+every repository with its next pin of this package. `app_support.clocks.pytest_plugin`
+still ships the clocks alone, for a repository that has not asked for the rest.
+
 ## The dead-code gate
 
-`app_support.dead_code` runs vulture over the directories a repo names and fails
-the suite on the report:
+`app_support.dead_code` runs vulture over the directories it is handed and fails
+the suite on the report; `app_support.gates` hands it each repository's own tree:
 
 ```python
-# tests/test_dead_code.py
-from pathlib import Path
-
-from app_support.dead_code import assert_no_dead_code
-
-ROOT = Path(__file__).resolve().parent.parent
-
-
-def test_no_dead_code():
-    assert_no_dead_code(ROOT / "the_package", whitelist=ROOT / "vulture_whitelist.py")
+assert_no_dead_code(ROOT / "the_package", whitelist=ROOT / "vulture_whitelist.py")
 ```
 
 Add `vulture` to the repo's `[dev]` extra — it is the *scanning* repo's dev
@@ -294,7 +322,7 @@ else -- its own tests, the apps that import it -- so the scan takes them as
 left out of the report, since what is dead inside them is their own gate's.
 `checkouts_that_import` finds the apps beside the checkout rather than naming
 them, and `tracked_python` reads only what a checkout tracks, never its venv or
-its worktrees:
+its worktrees; a library asks the gates for this with `apps-are-callers = true`:
 
 ```python
 apps = checkouts_that_import("the_package", near=Path(__file__))
@@ -318,24 +346,13 @@ Each is a floor: a name that collides with a live one elsewhere is not reported.
 
 `app_support.lint` holds the family's ruff config -- line length 100, double
 quotes, the audit's select with `E501`, `BLE001` and `S110` ignored -- and the
-check that runs it. A repo commits the `ruff.toml` that `render_config` writes
-and asks for both halves:
+check that runs it. A repo commits the `ruff.toml` that `render_config` writes,
+and `app_support.gates` asks both halves of it, over the packages, the tools and
+the tests:
 
 ```python
-# tests/test_lint.py
-from pathlib import Path
-
-from app_support.lint import assert_config_is_the_familys, assert_lint_is_clean
-
-ROOT = Path(__file__).resolve().parent.parent
-
-
-def test_the_ruff_config_is_the_familys():
-    assert_config_is_the_familys(ROOT / "ruff.toml")
-
-
-def test_ruff_finds_nothing():
-    assert_lint_is_clean(ROOT, ROOT / "the_package", ROOT / "tests")
+assert_config_is_the_familys(ROOT / "ruff.toml")
+assert_lint_is_clean(ROOT, ROOT / "the_package", ROOT / "tools", ROOT / "tests")
 ```
 
 Add `ruff==0.16.6` -- `lint.RUFF_VERSION`, the one version the gate accepts --

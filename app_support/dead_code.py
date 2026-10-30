@@ -7,15 +7,10 @@ the eight report a clean tree for a directory that holds no Python at all**
 (evolver is the one that already asserts it found sources), and **one of them
 reports a clean tree when vulture is not installed** -- the four that compare an
 exit code to zero fail that case instead, with a message reading "Vulture found
-dead code:" and then nothing. A repo asks for the gate in a few lines instead::
+dead code:" and then nothing. Every repo now asks for the gate by naming
+``app_support.gates.pytest_plugin``, which hands it the repo's own tree::
 
-    # tests/test_dead_code.py
-    from app_support.dead_code import assert_no_dead_code
-
-    ROOT = Path(__file__).resolve().parent.parent
-
-    def test_no_dead_code():
-        assert_no_dead_code(ROOT / "the_package", whitelist=ROOT / "vulture_whitelist.py")
+    assert_no_dead_code(ROOT / "the_package", whitelist=ROOT / "vulture_whitelist.py")
 
 Name the production directories rather than scanning ``.`` under an
 ``--exclude`` list. vulture matches those patterns against absolute paths, and
@@ -39,7 +34,7 @@ import tempfile
 from collections.abc import Iterable
 from pathlib import Path
 
-from app_support import lint
+from app_support import lint, unread
 
 # vulture's exit codes: 0 nothing to report, 3 the report is not empty. Every
 # other code means it did not get as far as an answer -- 1 for input it could
@@ -311,9 +306,18 @@ def assert_nothing_is_imported_or_assigned_and_left_unread(root, *targets) -> No
     assert not found, "ruff found dead code:\n" + "\n".join(found)
 
 
+_UNREAD_ARGUMENT = re.compile(r"^(?P<path>.+?):\d+:\d+: [A-Z]+\d+ .*`(?P<name>[^`]+)`$")
+
+
+def _allowed_by(finding: str) -> str:
+    found = _UNREAD_ARGUMENT.match(finding)
+    return f"{Path(found['path']).as_posix()}: {found['name']}" if found else finding
+
+
 def assert_no_function_takes_an_argument_it_never_reads(
-    root, *targets, rules=UNREAD_ARGUMENT_RULES,
+    root, *targets, rules=UNREAD_ARGUMENT_RULES, allowing=(),
 ) -> None:
     """A signature that asks for something it does not use is a lie."""
     found = lint.findings_for_rules(root, rules, *targets)
+    found = unread.not_allowed({finding: _allowed_by(finding) for finding in found}, allowing)
     assert not found, "ruff found unread arguments:\n" + "\n".join(found)

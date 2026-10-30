@@ -4,7 +4,8 @@ A required check with no budget stalls until GitHub's own six-hour job limit and
 prints nothing that says which test stopped -- so every repo in the family puts a
 clock on each test and on each workflow job, and ``test_clocks`` goes red in its
 suite when one is missing rather than letting the gap pass quietly. A repo asks
-for those checks by naming ``app_support.clocks.pytest_plugin`` once.
+for those checks, with the family's other gates, by naming
+``app_support.gates.pytest_plugin`` once.
 
 Both clocks are ceilings, not targets: a repo's per-test budget clears its
 slowest test several times over, and its job budget is about three times a green

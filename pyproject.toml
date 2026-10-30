@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "app-support"
 # The version is the tag on the landing, read by setuptools-scm -- see
-# [tool.setuptools_scm] and tests/test_version_source.py. Written down here it
+# [tool.setuptools_scm], held by the family's gates. Written down here it
 # said 0.1.0 for the life of the repo, which is no use to a consumer that wants
 # to name the copy of this package it was built against.
 dynamic = ["version"]
@@ -21,7 +21,7 @@ dependencies = []
 # each run installs whatever PyPI served that morning, which is how the family's
 # gates came to run a major version of the imaging stack past the one the
 # developer machines have. The floors are what the machines actually hold today;
-# tests/test_dependencies.py refuses a requirement with no upper bound.
+# the family's dependency gate refuses a requirement with no upper bound.
 dev = [
     "pytest>=9,<10",
     "pytest-timeout>=2.4,<3",
@@ -72,6 +72,17 @@ every-minutes = 2
 # checkout and brings it up first, as every app's launcher does for its own.
 [tool.haglio.production]
 
+# What the family's gates (app_support.gates) let stand here, each for the
+# reason beside it. An entry nothing is reported for any more fails the gate.
+[tool.haglio.dead-code]
+# Fields of records this package writes for the apps: Fun Time and Evolver read
+# a favorite's video and page, Fun Time and Line a run's length and exit.
+unread-dataclass-fields = ["Favorite.video", "Favorite.page", "RunRecord.short",
+                           "RunRecord.exit_code"]
+# pytest hands the coverage gate's collection hook the run's items by name; the
+# hook reads only the run's config.
+unread-arguments = ["app_support/coverage_gate.py: items"]
+
 [tool.pytest.ini_options]
 # A ceiling on a hang, not a performance budget. The slowest tests are the
 # updater's and the hotfix route's, each making up to 160 real git calls:
@@ -79,6 +90,6 @@ every-minutes = 2
 # one carrying a dozen of them (measured 2026-10-24 and 25).
 # --timeout-method=thread is the half that pays for itself: it dumps the
 # stack of the test that stopped, which turns a stalled required check into a
-# one-line diagnosis. app_support.clocks holds all three halves of it.
-addopts = "-p no:cacheprovider -p app_support.sanitize.pytest_plugin -p app_support.clocks.pytest_plugin -p app_support.coverage_gate --cov --cov-report= --timeout=240 --timeout-method=thread"
+# one-line diagnosis. app_support.gates holds all three halves of it.
+addopts = "-p no:cacheprovider -p app_support.sanitize.pytest_plugin -p app_support.gates.pytest_plugin -p app_support.coverage_gate --cov --cov-report= --timeout=240 --timeout-method=thread"
 testpaths = ["tests"]

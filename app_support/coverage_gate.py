@@ -1,17 +1,9 @@
 """The family's coverage settings and floor, published once instead of measured nowhere.
 
-A repo adopts both in a few lines::
+A repo adopts both in a line::
 
     # pyproject.toml
-    addopts = "... -p app_support.coverage_gate --cov --cov-report="
-
-    # tests/test_coverage.py
-    from app_support.coverage_gate import assert_config_is_the_familys
-
-    ROOT = Path(__file__).resolve().parent.parent
-
-    def test_the_coverage_config_is_the_familys():
-        assert_config_is_the_familys(ROOT / ".coveragerc")
+    addopts = "... -p app_support.gates.pytest_plugin -p app_support.coverage_gate --cov --cov-report="
 
 and commits the `.coveragerc` that `render_config` writes: the family's settings,
 whatever the repo says it does not unit-test with the reason it gives, and its floor --

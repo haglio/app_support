@@ -18,6 +18,7 @@ from app_support.dependencies import (
     assert_the_version_comes_from_the_tag,
     declared_dependencies,
     inherited_siblings,
+    is_a_family_sibling,
     pinned_siblings,
     release_of,
     repinned,
@@ -350,27 +351,6 @@ class TestDeclaredSiblings:
             assert_every_sibling_is_declared(root, [root / "someapp"], root / "pyproject.toml")
 
 
-@pytest.mark.repo_check
-def test_this_repos_declared_floor_is_the_one_its_gate_runs():
-    root = Path(__file__).resolve().parent.parent
-    assert_the_declared_floor_is_the_one_the_gate_runs(
-        root / "pyproject.toml", root / ".github" / "workflows" / "merge-gate.yml")
-
-
-@pytest.mark.repo_check
-def test_this_repos_own_requirements_are_bounded():
-    assert_every_dependency_is_bounded(Path(__file__).resolve().parent.parent / "pyproject.toml")
-
-
-@pytest.mark.repo_check
-def test_this_repo_declares_the_siblings_it_imports():
-    """It should never have one: standard library only, and nothing here may
-    reach for the two packages that install beside it."""
-    root = Path(__file__).resolve().parent.parent
-    assert_every_sibling_is_declared(
-        root, [root / "app_support", root / "tests"], root / "pyproject.toml")
-
-
 class TestASiblingsOwnSiblings:
     def _checkout(self, parent: Path, name: str, *, siblings: str = "") -> Path:
         checkout = parent / name
@@ -410,6 +390,19 @@ class TestASiblingsOwnSiblings:
         (tmp_path / "somewhere").mkdir()
 
         assert inherited_siblings(["funestra"], tmp_path / "somewhere") is None
+
+
+class TestAFamilySibling:
+    def _pyproject(self, tmp_path: Path, name: str) -> Path:
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text(f'[project]\nname = "{name}"\n', encoding="utf-8")
+        return pyproject
+
+    def test_a_shared_package_is_one_however_its_name_is_spelled(self, tmp_path: Path):
+        assert is_a_family_sibling(self._pyproject(tmp_path, "Shared_UI"))
+
+    def test_an_app_is_not(self, tmp_path: Path):
+        assert not is_a_family_sibling(self._pyproject(tmp_path, "someapp"))
 
 
 class TestTheVersionComesFromTheTag:
