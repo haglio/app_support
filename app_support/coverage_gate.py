@@ -6,10 +6,10 @@ A repo adopts both in a line::
     addopts = "... -p app_support.gates.pytest_plugin -p app_support.coverage_gate --cov --cov-report="
 
 and commits the `.coveragerc` that `render_config` writes: the family's settings,
-whatever the repo says it does not unit-test with the reason it gives, and its floor --
-the number measured the day it adopted this, which the run refuses to go below. The
-floor is raised as coverage climbs and never lowered, so the config test refuses a file
-that drifted anywhere but there.
+whatever the repo says it does not unit-test with the reason it gives, and its floor,
+the number the run refuses to go below. The floor is the one line the config test lets
+differ from repo to repo, and it rises with the suite: a whole run that beats it by a
+point fails and names the number to raise it to.
 
 What is measured is the repo itself, less its tests: `source = .` reaches the root's
 own modules and every package under it, which a list of package names does not -- a
@@ -124,6 +124,30 @@ def pytest_collection_modifyitems(config, items) -> None:
         config.stash[_STOOD_DOWN] = why
     elif config.option.maxfail:
         measuring.no_cov_on_fail = True
+
+
+def risen_floor(total: float, floor: float) -> float | None:
+    hundredths = round(total * 100)
+    if hundredths < round((floor + 1) * 100):
+        return None
+    return (hundredths - 50) // 10 / 10
+
+
+@pytest.hookimpl(wrapper=True, tryfirst=True)
+def pytest_runtestloop(session):
+    finished = yield
+    measuring = session.config.pluginmanager.get_plugin("_cov")
+    total, floor = measuring.cov_total, measuring.options.cov_fail_under
+    if session.config.option.collectonly or session.testsfailed or not floor or total is None:
+        return finished
+    risen = risen_floor(total, floor)
+    if risen is not None:
+        session.config.pluginmanager.get_plugin("terminalreporter").write(
+            f"\nERROR: coverage of {total:.2f}% beats the floor of {floor}% by a point or more: "
+            f"raise fail_under in .coveragerc to {risen}, so what the suite has reached is kept\n",
+            red=True, bold=True)
+        session.testsfailed += 1
+    return finished
 
 
 def pytest_terminal_summary(terminalreporter) -> None:
