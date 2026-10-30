@@ -33,6 +33,8 @@ EXAMPLE: dict[str, Any] = {
     "origenerator_audio_dir": "C:/path/to/library-root/videos/audio/origenerator",
     "warm_gun_journal_dir": "C:/path/to/library-root/app_data/warm_gun",
     "funscript_corpus_dir": "C:/path/to/library-root/app_data/funestra/funscript_corpus",
+    "microphone": "Example microphone",
+    "vosk_model": "vosk-model-en-us-0.22-lgraph",
 }
 
 
