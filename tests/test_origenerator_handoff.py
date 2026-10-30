@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import time
 from pathlib import Path
 
@@ -197,27 +198,33 @@ class TestTheSessionsClaim:
 
 
 class TestWhereTheyMeet:
-    def test_a_production_checkout_meets_in_its_own_state_folder(self, tmp_path: Path):
-        assert handoff.meeting_places(tmp_path / "origenerator") == (tmp_path / "origenerator" / "state",)
+    @pytest.fixture
+    def production(self, branch_from) -> Path:
+        return branch_from({"README.md": "a checkout\n"}).path
 
-    def test_a_worktree_meets_in_its_own_state_folder_and_its_production_checkout_s(self, tmp_path: Path):
-        production = tmp_path / "origenerator"
-        worktree = production / ".claude" / "worktrees" / "my-branch"
+    @pytest.fixture
+    def worktree(self, production: Path) -> Path:
+        place = production / ".claude" / "worktrees" / "my-branch"
+        subprocess.run(["git", "-C", str(production), "worktree", "add", "-q", str(place), "main"],
+                       check=True, capture_output=True)
+        return place
 
+    def test_a_production_checkout_meets_in_its_own_state_folder(self, production: Path):
+        assert handoff.meeting_places(production) == (production / "state",)
+
+    def test_a_worktree_meets_in_its_own_state_folder_and_its_production_checkout_s(
+            self, production: Path, worktree: Path):
         assert handoff.meeting_places(worktree) == (worktree / "state", production / "state")
 
-    def test_a_session_hosting_a_worktree_finds_the_production_copy_open_on_its_library(self, tmp_path: Path):
-        production = tmp_path / "origenerator"
-        worktree = production / ".claude" / "worktrees" / "my-branch"
+    def test_a_session_hosting_a_worktree_finds_the_production_copy_open_on_its_library(
+            self, production: Path, worktree: Path):
         _write(production / "state", handoff.OFFER, _this_process())
 
         assert [handoff.the_offer_in(place) for place in handoff.meeting_places(worktree)] == [
             None, handoff.Offer(handoff.this_process(), starting=False)]
 
-    def test_a_session_hosting_a_worktree_claims_the_osr2_in_its_production_checkout_too(self, tmp_path: Path):
-        production = tmp_path / "origenerator"
-        worktree = production / ".claude" / "worktrees" / "my-branch"
-
+    def test_a_session_hosting_a_worktree_claims_the_osr2_in_its_production_checkout_too(
+            self, production: Path, worktree: Path):
         handoff.claim_the_osr2(*handoff.meeting_places(worktree))
 
         assert [handoff.a_session_claims_the_osr2(place) for place in (worktree / "state", production / "state")] == [
