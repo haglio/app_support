@@ -209,7 +209,7 @@ Two ways in, and a repo can take either:
 
 ```bash
 # 1. the git hooks, which catch a term while the fix is still free
-python tools/githooks/install.py
+python -m app_support.githooks
 
 # 2. the suite, which catches it afterwards -- one line in pyproject.toml
 #    [tool.pytest.ini_options]
