@@ -4,7 +4,7 @@
 # Nothing imports or runs it. Grouped by reason, so each entry can be checked
 # against the thing that actually calls it.
 #
-# Two rules about this file, both enforced. `tests/test_dead_code.py` fails on
+# Two rules about this file, both enforced. The family's dead-code gate fails on
 # an entry that has stopped suppressing anything, so nothing may sit here once
 # its subject is gone. And it is `.txt` rather than the family's usual `.py`
 # because this repo's root may publish exactly one importable top-level name --

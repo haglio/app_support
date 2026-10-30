@@ -100,6 +100,12 @@ def _normalized(name: str) -> str:
     return name.lower().replace("_", "-")
 
 
+def is_a_family_sibling(pyproject: Path) -> bool:
+    with Path(pyproject).open("rb") as handle:
+        name = tomllib.load(handle).get("project", {}).get("name", "")
+    return _normalized(name) in {_normalized(sibling) for sibling in FAMILY_SIBLINGS}
+
+
 def declared_dependencies(pyproject: Path) -> set[str]:
     """The distributions ``[project.dependencies]`` and every optional extra name, normalized.
 

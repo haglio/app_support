@@ -1,24 +1,13 @@
-"""The clock checks whose subject is the repository under test, not this package.
-
-Shipped, not collected: ``app_support.clocks.pytest_plugin`` hands this file to
-pytest, so a repo gets them by naming the plugin once rather than by keeping a
-copy of them.
-"""
+"""The clock checks whose subject is the repository under test, not this package."""
 from __future__ import annotations
-
-from pathlib import Path
 
 import pytest
 
 from app_support.clocks import jobs_without_a_clock, per_test_clock_s
 from app_support.dependencies import declared_dependencies
+from app_support.gates import Checkout
 
 pytestmark = pytest.mark.repo_check
-
-
-def _pyproject(pytestconfig) -> Path:
-    assert pytestconfig.inipath, "no pyproject declares this repo's pytest options"
-    return Path(pytestconfig.inipath)
 
 
 def test_every_test_runs_under_its_own_clock(pytestconfig):
@@ -35,7 +24,7 @@ def test_every_workflow_job_runs_under_its_own_clock(pytestconfig):
     pytest's timer is armed -- in collection, in a plugin, in pip -- is caught by
     nothing but the job's clock, and that is as true of a workflow nobody is
     watching as of the required check."""
-    workflows = _pyproject(pytestconfig).parent / ".github" / "workflows"
+    workflows = Checkout.of(pytestconfig).root / ".github" / "workflows"
     unclocked = {path.name: jobs_without_a_clock(path.read_text(encoding="utf-8"))
                  for path in sorted(workflows.glob("*.y*ml"))}
 
@@ -54,4 +43,4 @@ def test_the_plugin_that_keeps_the_clock_is_declared_where_ci_installs_it(pytest
     declaration is checked here, where a run that works can still say it is
     missing.
     """
-    assert "pytest-timeout" in declared_dependencies(_pyproject(pytestconfig))
+    assert "pytest-timeout" in declared_dependencies(Checkout.of(pytestconfig).pyproject)

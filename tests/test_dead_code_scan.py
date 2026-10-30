@@ -1,8 +1,7 @@
 """Unit tests for the shared dead-code scan.
 
-The scan itself is the subject here. Each repo's own gate — the one whose
-subject is that repo's tree — is `tests/test_dead_code.py`, which is a handful
-of lines calling into this.
+The scan itself is the subject here. The gate whose subject is a repo's own
+tree is `app_support.gates`, which every repo names once.
 """
 from __future__ import annotations
 
@@ -288,6 +287,18 @@ def test_an_argument_a_function_never_reads_is_reported(tmp_path):
         "def a(used, unused):\n    return used\n\n\ndef _cb(_frames):\n    return 1\n", encoding="utf-8")
     with pytest.raises(AssertionError, match=r"a\.py:1:13: ARG001"):
         assert_no_function_takes_an_argument_it_never_reads(tmp_path, tmp_path / "pkg")
+
+
+def test_an_unread_argument_the_repo_allows_is_named_by_its_file_and_left_out(tmp_path):
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "pkg" / "a.py").write_text("def a(used, unused):\n    return used\n", encoding="utf-8")
+
+    assert_no_function_takes_an_argument_it_never_reads(
+        tmp_path, tmp_path / "pkg", allowing=("pkg/a.py: unused",))
+    with pytest.raises(AssertionError, match="unused"):
+        assert_no_function_takes_an_argument_it_never_reads(
+            tmp_path, tmp_path / "pkg", allowing=("pkg/b.py: unused",))
 
 
 def _two_packages_sharing_a_name(tmp_path):

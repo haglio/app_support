@@ -1,22 +1,10 @@
 """The family's ruff config and lint gate, published once instead of copied eleven times.
 
-A repo adopts both in a few lines::
-
-    # tests/test_lint.py
-    from app_support.lint import assert_config_is_the_familys, assert_lint_is_clean
-
-    ROOT = Path(__file__).resolve().parent.parent
-
-    def test_the_ruff_config_is_the_familys():
-        assert_config_is_the_familys(ROOT / "ruff.toml")
-
-    def test_ruff_finds_nothing():
-        assert_lint_is_clean(ROOT, ROOT / "the_package", ROOT / "tests")
-
-and commits the `ruff.toml` that `render_config` writes: the family's numbers, plus
-the repo's own ratchet -- each rule the config still finds there, with the places the
-lint test holds it to. The config test refuses a file that drifted anywhere else, so
-there is one config, held here, and eleven copies of it that cannot differ.
+``app_support.gates`` asks both of every repo, which commits the `ruff.toml` that
+`render_config` writes: the family's numbers, plus the repo's own ratchet -- each
+rule the config still finds there, with the places the lint test holds it to. The
+config test refuses a file that drifted anywhere else, so there is one config,
+held here, and eleven copies of it that cannot differ.
 
 ruff is a dev dependency of the repo asking for the gate, pinned to `RUFF_VERSION`,
 never a dependency of this package.
