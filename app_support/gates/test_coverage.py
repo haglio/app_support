@@ -10,6 +10,6 @@ pytestmark = pytest.mark.repo_check
 
 def test_the_coverage_config_is_the_familys(pytestconfig):
     checkout = Checkout.of(pytestconfig)
-    not_unit_tested = tuple(NotUnitTested(**entry)
-                            for entry in checkout.numbers("coverage").get("not-unit-tested", ()))
-    assert_config_is_the_familys(checkout.root / ".coveragerc", not_unit_tested)
+    numbers = checkout.numbers("coverage")
+    not_unit_tested = tuple(NotUnitTested(**entry) for entry in numbers.get("not-unit-tested", ()))
+    assert_config_is_the_familys(checkout.root / ".coveragerc", not_unit_tested, numbers.get("max-pragmas", 0))
