@@ -22,22 +22,19 @@ should err in.
 from __future__ import annotations
 
 import ast
+import os
 from pathlib import Path
 
-_NOT_THE_REPOS = frozenset({".venv", "__pycache__", ".claude", ".git"})
+_NOT_THE_REPOS = frozenset({".venv", "__pycache__", ".claude", ".git", "state"})
 
 
 def python_files(root) -> list[Path]:
-    """Every ``.py`` under *root* that is the repo's own.
-
-    Judged by the parts of the path relative to *root*, never the absolute
-    path: a checkout under ``.claude/worktrees`` would otherwise skip itself.
-    """
-    root = Path(root)
-    return sorted(
-        path for path in root.rglob("*.py")
-        if not _NOT_THE_REPOS & set(path.relative_to(root).parts)
-    )
+    """Every ``.py`` under *root* that is the repo's own."""
+    found: list[Path] = []
+    for folder, subfolders, files in os.walk(root):
+        subfolders[:] = [name for name in subfolders if name not in _NOT_THE_REPOS]
+        found.extend(Path(folder) / name for name in files if name.endswith(".py"))
+    return sorted(found)
 
 
 def _parse(path: Path) -> ast.Module | None:
@@ -51,15 +48,14 @@ def _where(root, path: Path, lineno: int) -> str:
     return f"{path.relative_to(root).as_posix()}:{lineno}"
 
 
-def _names_read_per_file(root) -> dict[Path, set[str]]:
-    """Per file: every plain name and attribute read in it, its strings, and the
+def _names_read_anywhere(root) -> set[str]:
+    """Every plain name and attribute read in the tree, its strings, and the
     first segment of everything it imports."""
-    per_file: dict[Path, set[str]] = {}
+    names: set[str] = set()
     for path in python_files(root):
         tree = _parse(path)
         if tree is None:
             continue
-        names: set[str] = set()
         for node in ast.walk(tree):
             if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
                 names.add(node.id)
@@ -69,41 +65,42 @@ def _names_read_per_file(root) -> dict[Path, set[str]]:
                 names.add(node.value)
             elif isinstance(node, ast.alias):
                 names.add(node.name.split(".")[0])
-        per_file[path] = names
-    return per_file
+    return names
 
 
 def _package_modules(packages) -> list[Path]:
     return sorted(path for package in packages for path in Path(package).rglob("*.py"))
 
 
+def not_allowed(found: dict[str, str], allowing) -> list[str]:
+    """The reports in *found*, each keyed to the name a repo would allow it by,
+    less the names it allows, and every allowed name nothing is reported for."""
+    return ([report for report, name in found.items() if name not in allowing]
+            + [f"allowed, and no longer reported -- take it off the list: {name}"
+               for name in allowing if name not in found.values()])
+
+
 def _not_allowed(found, allowing) -> list[str]:
-    """*found* minus the reports whose name the repo allows -- a field read only
-    by ``dataclasses.asdict``, a constant a sibling repo reads -- each named with
-    its reason beside the call."""
-    return [report for report in found if report.rsplit(": ", 1)[1] not in allowing]
+    return not_allowed({report: report.rsplit(": ", 1)[1] for report in found}, allowing)
 
 
-def _is_a_dunder(name: str) -> bool:
-    """``__all__``, ``__version__``: read by the language and its tools, never by name."""
-    return name.startswith("__") and name.endswith("__")
+_NAMES_PYTEST_READS_OFF_A_MODULE = frozenset({"pytestmark", "pytest_plugins"})
+
+
+def _read_by_the_language_or_its_tools(name: str) -> bool:
+    """``__all__``, ``__version__``, a test module's ``pytestmark``: read by
+    Python or pytest, never by name."""
+    return (name.startswith("__") and name.endswith("__")) or name in _NAMES_PYTEST_READS_OFF_A_MODULE
 
 
 def module_constants(root, packages) -> list[str]:
-    """Module-level names assigned in *packages* and read nowhere in the tree.
-
-    A name defined in one module and read only by another is safe; one read in
-    no file but its own beyond the assignment itself is reported.
-    """
-    read = _names_read_per_file(root)
+    """Module-level names assigned in *packages* and read nowhere in the tree."""
+    read_anywhere = _names_read_anywhere(root)
     found: list[str] = []
     for path in _package_modules(packages):
         tree = _parse(path)
         if tree is None:
             continue
-        elsewhere: set[str] = set().union(
-            *(names for other, names in read.items() if other != path))
-        here = read.get(path, set())
         for node in tree.body:
             if isinstance(node, ast.Assign):
                 targets = [t for t in node.targets if isinstance(t, ast.Name)]
@@ -114,8 +111,8 @@ def module_constants(root, packages) -> list[str]:
             found.extend(
                 f"{_where(root, path, node.lineno)}: {target.id}"
                 for target in targets
-                if not _is_a_dunder(target.id)
-                and target.id not in here and target.id not in elsewhere)
+                if not _read_by_the_language_or_its_tools(target.id)
+                and target.id not in read_anywhere)
     return found
 
 

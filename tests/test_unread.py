@@ -17,6 +17,17 @@ def _tree(tmp_path, files: dict[str, str]) -> Path:
     return tmp_path
 
 
+def test_a_repos_python_leaves_out_its_venv_its_caches_its_state_and_the_worktrees_inside_it(
+        tmp_path):
+    root = _tree(tmp_path / "repo" / ".claude" / "worktrees" / "branch", {
+        "pkg/a.py": "", ".venv/Lib/b.py": "", "pkg/__pycache__/c.py": "",
+        ".claude/worktrees/other/pkg/a.py": "", ".git/hooks/d.py": "",
+        "state/preview/Lib/site-packages/e.py": "",
+    })
+
+    assert unread.python_files(root) == [root / "pkg" / "a.py"]
+
+
 def test_a_module_constant_nothing_reads_is_reported(tmp_path):
     root = _tree(tmp_path, {
         "pkg/__init__.py": "",
@@ -121,6 +132,23 @@ def test_a_name_the_repo_allows_is_left_out_of_the_report(tmp_path):
     unread.assert_no_module_constant_goes_unread(root, [root / "pkg"], allowing=("SERIALIZED", "UNREAD"))
     with pytest.raises(AssertionError, match="UNREAD"):
         unread.assert_no_module_constant_goes_unread(root, [root / "pkg"], allowing=("SERIALIZED",))
+
+
+def test_an_allowance_for_a_name_that_is_read_now_is_refused(tmp_path):
+    root = _tree(tmp_path, {
+        "pkg/__init__.py": "",
+        "pkg/a.py": "SERIALIZED = 1\n\nprint(SERIALIZED)\n",
+    })
+    with pytest.raises(AssertionError, match="SERIALIZED"):
+        unread.assert_no_module_constant_goes_unread(root, [root / "pkg"], allowing=("SERIALIZED",))
+
+
+def test_the_names_pytest_reads_off_a_module_are_read(tmp_path):
+    root = _tree(tmp_path, {
+        "pkg/__init__.py": "",
+        "pkg/a.py": "pytestmark = []\npytest_plugins = ['pkg.b']\nUNREAD = 2\n",
+    })
+    assert unread.module_constants(root, [root / "pkg"]) == ["pkg/a.py:3: UNREAD"]
 
 
 def test_a_dunder_is_read_by_the_language_not_by_name(tmp_path):
