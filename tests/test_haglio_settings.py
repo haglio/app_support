@@ -67,6 +67,14 @@ def test_one_reader_changing_what_it_was_handed_changes_nobody_else_s(monkeypatc
     assert haglio_settings.value("genau_flick_words", "one") == "flick"
 
 
+@pytest.mark.parametrize("setting", ["microphone", "vosk_model"])
+def test_the_example_names_what_every_app_that_listens_hears_with(setting, monkeypatch):
+    monkeypatch.setenv(haglio_settings.SETTINGS_ENV, haglio_settings.THE_EXAMPLE)
+
+    assert isinstance(haglio_settings.value(setting), str)
+    assert haglio_settings.value(setting)
+
+
 FOLDERS_THE_APPS_READ = (
     "genau_dir",
     "genau_audio_dir",
