@@ -9,7 +9,11 @@ and commits the `.coveragerc` that `render_config` writes: the family's settings
 whatever the repo says it does not unit-test with the reason it gives, and its floor,
 the number the run refuses to go below. The floor is the one line the config test lets
 differ from repo to repo, and it rises with the suite: a whole run that beats it by a
-point fails and names the number to raise it to.
+point fails and names the number to raise it to, half a point under what the run
+reached. What a repo does not unit-test is named
+there and nowhere else, so the config test also counts the lines of what is measured
+that carry `pragma: no cover`, and refuses more than the repo says it still carries --
+none, unless its pyproject's [tool.haglio.coverage] says `max-pragmas`.
 
 What is measured is the repo itself, less its tests: `source = .` reaches the root's
 own modules and every package under it, which a list of package names does not -- a
@@ -28,10 +32,14 @@ from __future__ import annotations
 
 import configparser
 import difflib
+import fnmatch
+import os
+import re
 from pathlib import Path
 from typing import NamedTuple
 
 import pytest
+from coverage.config import DEFAULT_EXCLUDE
 
 
 class NotUnitTested(NamedTuple):
@@ -163,9 +171,10 @@ def floor_of(coveragerc) -> float:
     return parsed.getfloat("report", "fail_under")
 
 
-def assert_config_is_the_familys(coveragerc, not_unit_tested=()) -> None:
-    """*coveragerc* is `render_config` of its own floor, byte for byte, and every
-    file it excuses is still in the repo."""
+def assert_config_is_the_familys(coveragerc, not_unit_tested=(), max_pragmas=0) -> None:
+    """*coveragerc* is `render_config` of its own floor, byte for byte, every file it
+    excuses is still in the repo, and no more lines of what it measures carry
+    `pragma: no cover` than *max_pragmas*."""
     coveragerc = Path(coveragerc)
     written = coveragerc.read_text(encoding="utf-8")
     expected = render_config(not_unit_tested, floor_of(coveragerc))
@@ -179,3 +188,28 @@ def assert_config_is_the_familys(coveragerc, not_unit_tested=()) -> None:
     for shell in not_unit_tested:
         if not (repo / shell.path).exists():
             raise AssertionError(f"{coveragerc} excuses {shell.path}, which {repo} no longer has")
+    excused = _lines_excused_where_they_stand(repo, (*_NOT_WHAT_A_REPO_SHIPS, *not_unit_tested))
+    if len(excused) > max_pragmas:
+        raise AssertionError(
+            f"{len(excused)} lines of {repo} carry `pragma: no cover`, over its ceiling of "
+            f"{max_pragmas}. Name what the repo does not unit-test in its pyproject's "
+            "[tool.haglio.coverage] not-unit-tested, a file of its own with the reason, rather than excusing lines where they stand; "
+            "the ceiling only comes down:\n" + "\n".join(excused))
+
+
+def _lines_excused_where_they_stand(repo: Path, unmeasured) -> list[str]:
+    pragma = re.compile(DEFAULT_EXCLUDE[0])
+    return [f"{source}:{number}"
+            for source in _python_files_coverage_walks(repo)
+            if not any(fnmatch.fnmatch(source, shell.path) for shell in unmeasured)
+            for number, line in enumerate((repo / source).read_text(encoding="utf-8").splitlines(), 1)
+            if pragma.search(line)]
+
+
+def _python_files_coverage_walks(repo: Path) -> list[str]:
+    found = []
+    for folder, folders, files in os.walk(repo):
+        folders[:] = sorted(name for name in folders if not name.startswith("."))
+        found += [Path(folder, name).relative_to(repo).as_posix()
+                  for name in sorted(files) if name.endswith(".py")]
+    return found

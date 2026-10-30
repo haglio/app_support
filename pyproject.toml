@@ -37,6 +37,9 @@ dev = [
     # suite runs rather than in a pass of its own. A dev dependency of every repo
     # that asks for that gate, this one included, never of the package.
     "pytest-cov>=7,<8",
+    # Whose own pattern for an excused line the coverage gate counts; pytest-cov
+    # brings it, and the gate names it.
+    "coverage>=7.13,<8",
 ]
 
 # Consumers name a tag of this repository in their own [project.dependencies],
@@ -82,6 +85,11 @@ unread-dataclass-fields = ["Favorite.video", "Favorite.page", "RunRecord.short",
 # pytest hands the coverage gate's collection hook the run's items by name; the
 # hook reads only the run's config.
 unread-arguments = ["app_support/coverage_gate.py: items"]
+
+# The loading screen's window, its Windows calls and its process are not
+# unit-tested, until the window is a module of its own that not-unit-tested names.
+[tool.haglio.coverage]
+max-pragmas = 4
 
 [tool.pytest.ini_options]
 # A ceiling on a hang, not a performance budget. The slowest tests are the
