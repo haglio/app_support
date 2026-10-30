@@ -33,6 +33,10 @@ class FrameWriter:
         self._sequence = 0
         _HEADER.pack_into(self._map, 0, 0, 0, 0, 0)
 
+    @property
+    def written(self) -> int:
+        return self._sequence // 2
+
     @contextmanager
     def writing(self) -> Iterator[None]:
         self._sequence += 1
