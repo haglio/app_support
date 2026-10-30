@@ -37,6 +37,7 @@ from app_support.production_update import (
     hotfix_message,
     is_ancestor,
 )
+from app_support.siblings import primary_checkout_of
 from app_support.subprocess_utils import hidden_subprocess_kwargs, run_process_tree
 
 CHECKS_TIMEOUT_S = 10 * 60.0
@@ -92,7 +93,7 @@ def hotfix(worktree: Path, *, libraries: Sequence[Path] = (), run: Run = product
 
 def take_back(worktree: Path, *, run: Run = production_update.run, bring_up: BringUp) -> str:
     worktree = _top_of(Path(worktree), run=run)
-    production = _production_of(worktree, run=run)
+    production = primary_checkout_of(worktree)
     apps = _apps_reached_from(worktree, production, {production.name})
     return _in_each(apps, "went back", lambda app: _taken_back_from(app, run=run, bring_up=bring_up))
 
@@ -138,15 +139,11 @@ def _top_of(worktree: Path, *, run: Run) -> Path:
     return Path(git(worktree, "rev-parse", "--show-toplevel", run=run))
 
 
-def _production_of(worktree: Path, *, run: Run) -> Path:
-    return Path(git(worktree, "rev-parse", "--path-format=absolute", "--git-common-dir", run=run)).parent
-
-
 def _a_fix(worktree: Path, *, run: Run) -> _Fix:
     worktree = _top_of(worktree, run=run)
     if production_update.uncommitted_changes(worktree, run=run):
         raise Refused(f"{worktree} has uncommitted changes; commit the fix first")
-    production = _production_of(worktree, run=run)
+    production = primary_checkout_of(worktree)
     shipped = f"refs/remotes/origin/{production_update.default_branch(production, run=run)}"
     tip = git(worktree, "rev-parse", "HEAD", run=run)
     commits = [line.split("\x1f") for line in git(

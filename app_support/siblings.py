@@ -48,8 +48,17 @@ def names_of(sibling: str) -> tuple[str, ...]:
 
 
 def primary_checkout_of(checkout: Path) -> Path:
-    in_a_worktree = checkout.parent.name == "worktrees" and checkout.parent.parent.name == ".claude"
-    return checkout.parents[2] if in_a_worktree else checkout
+    # Imported here: the run's plugins import this module before pytest-cov starts
+    # measuring, and so would be every module it imports, win32 among them.
+    from app_support.subprocess_utils import hidden_subprocess_kwargs  # noqa: PLC0415
+
+    try:
+        found = subprocess.run(
+            ["git", "-C", str(checkout), "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            capture_output=True, text=True, check=False, **hidden_subprocess_kwargs())
+    except OSError:
+        return checkout
+    return Path(found.stdout.strip()).parent if found.returncode == 0 else checkout
 
 
 def workspace_of(module_file: Path) -> Path:

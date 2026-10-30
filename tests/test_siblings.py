@@ -4,6 +4,7 @@ refusal of a suite that imported its package from a different checkout.
 Every checkout here is a fabricated tree under tmp_path."""
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -196,10 +197,11 @@ class TestWhereTheCheckoutsAre:
 
     def test_from_a_worktree_they_are_beside_its_primary_checkout(self, tmp_path: Path):
         primary = tmp_path / "workspace" / "app_support"
-        module = self._module_in(primary / ".claude" / "worktrees" / "some-branch")
-        (primary / "pyproject.toml").write_text("", encoding="utf-8")
+        self._module_in(primary)
+        _commit_everything_in(primary)
+        worktree = _worktree_of(primary, primary / ".claude" / "worktrees" / "some-branch")
 
-        assert workspace_of(module) == tmp_path / "workspace"
+        assert workspace_of(worktree / "app_support" / "siblings.py") == tmp_path / "workspace"
 
     def test_a_copy_installed_into_a_venv_has_to_be_told(self, tmp_path: Path):
         module = tmp_path / "venv" / "Lib" / "site-packages" / "app_support" / "siblings.py"
@@ -210,16 +212,49 @@ class TestWhereTheCheckoutsAre:
             workspace_of(module)
 
 
+def _commit_everything_in(checkout: Path) -> None:
+    for args in (("init", "-q", "-b", "main"), ("config", "user.email", "someone@example.com"),
+                 ("config", "user.name", "Someone"), ("add", "-A"), ("commit", "-q", "-m", "the base")):
+        subprocess.run(["git", "-C", str(checkout), *args], check=True, capture_output=True)
+
+
+def _worktree_of(primary: Path, place: Path) -> Path:
+    subprocess.run(["git", "-C", str(primary), "worktree", "add", "-q", str(place)], check=True,
+                   capture_output=True)
+    return place
+
+
 class TestThePrimaryCheckout:
-    def test_a_worktree_belongs_to_the_checkout_it_was_made_in(self, tmp_path: Path):
-        primary = tmp_path / "someapp"
+    @pytest.fixture
+    def primary(self, tmp_path: Path) -> Path:
+        checkout = tmp_path / "someapp"
+        (checkout / "pkg").mkdir(parents=True)
+        (checkout / "pkg" / "module.py").write_text("", encoding="utf-8")
+        _commit_everything_in(checkout)
+        return checkout
 
-        assert primary_checkout_of(primary / ".claude" / "worktrees" / "some-branch") == primary
+    def test_a_worktree_belongs_to_the_checkout_it_was_made_in(self, primary: Path):
+        worktree = _worktree_of(primary, primary / ".claude" / "worktrees" / "some-branch")
 
-    @pytest.mark.parametrize("checkout", ["someapp", "someapp/worktrees/some-branch",
-                                          "someapp/.claude/some-branch"])
-    def test_any_other_checkout_is_its_own(self, tmp_path: Path, checkout: str):
-        assert primary_checkout_of(tmp_path / checkout) == tmp_path / checkout
+        assert primary_checkout_of(worktree) == primary
+
+    def test_a_worktree_made_anywhere_else_belongs_to_the_checkout_it_was_made_in(
+            self, primary: Path, tmp_path: Path):
+        worktree = _worktree_of(primary, tmp_path / "scratch" / "some-branch")
+
+        assert primary_checkout_of(worktree) == primary
+
+    def test_a_checkout_is_its_own(self, primary: Path):
+        assert primary_checkout_of(primary) == primary
+
+    def test_a_folder_inside_a_checkout_belongs_to_that_checkout(self, primary: Path):
+        assert primary_checkout_of(primary / "pkg") == primary
+
+    @pytest.mark.parametrize("folder", ["someapp", "someapp/.claude/worktrees/some-branch"])
+    def test_a_folder_git_does_not_know_is_its_own(self, tmp_path: Path, folder: str):
+        (tmp_path / folder).mkdir(parents=True)
+
+        assert primary_checkout_of(tmp_path / folder) == tmp_path / folder
 
 
 class TestTheCheckoutsThatImportAPackage:
@@ -241,6 +276,8 @@ class TestTheCheckoutsThatImportAPackage:
                    "tests/test_hinges.py": "from widgetlib import hinges\n"}
         primary = checkout_tracking("widgetlib", package)
         checkout_tracking("widgetlib_before_the_rename", package)
-        worktree = primary / ".claude" / "worktrees" / "some-branch"
+        subprocess.run(["git", "-C", str(primary), "-c", "user.email=someone@example.com", "-c",
+                        "user.name=Someone", "commit", "-q", "-m", "the base"], check=True, capture_output=True)
+        worktree = _worktree_of(primary, primary / ".claude" / "worktrees" / "some-branch")
 
         assert checkouts_that_import("widgetlib", near=worktree / "tests" / "test_dead_code.py") == []

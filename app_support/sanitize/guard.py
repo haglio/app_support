@@ -26,6 +26,8 @@ from dataclasses import dataclass, field
 from functools import cache
 from pathlib import Path
 
+from app_support.siblings import primary_checkout_of
+
 _MAX_EXCERPT = 160
 _BLOCKLIST = Path(".sanitize") / "blocklist.txt"
 # What may stand between the words of a multi-word term: any run of spacing or
@@ -196,10 +198,8 @@ def blocklist_path(repo: Path) -> Path:
     keeps it one list, and sitting outside every repository is what makes it
     uncommittable.
 
-    ``git rev-parse --git-common-dir`` names the primary checkout's git
-    directory, which every worktree shares, so two levels up from it is the
-    directory the checkouts sit in. Resolving from the worktree's own path
-    instead lands two levels too deep.
+    The directory the checkouts sit in is the one holding the checkout a
+    worktree was made in, wherever the worktree itself is.
 
     The leading dot says what the directory is: everything else beside it is a
     checkout, and this one is not.
@@ -208,14 +208,7 @@ def blocklist_path(repo: Path) -> Path:
     blocklist, and so does a source tree with no git at all. Callers check
     ``.exists()`` and treat absence as nothing to enforce.
     """
-    try:
-        common_dir = subprocess.run(
-            ["git", "-C", str(repo), "rev-parse", "--git-common-dir"],
-            capture_output=True, text=True, check=True,
-        ).stdout.strip()
-    except (OSError, subprocess.SubprocessError):
-        return repo.resolve().parent / _BLOCKLIST
-    return (repo / common_dir).resolve().parent.parent / _BLOCKLIST
+    return primary_checkout_of(repo).resolve().parent / _BLOCKLIST
 
 
 def load_blocklist(path: Path) -> list[str]:
