@@ -343,10 +343,16 @@ to the repo's `[dev]` extra; another version finds other things and is refused
 rather than trusted.
 
 **One config, eleven copies that cannot differ.** The first test renders the
-family's config around the repo's own ratchet -- the rules the config found
-there on the day it was adopted, listed at the end of `ignore` -- and refuses a
-file that differs anywhere else. Work a ratchet off by deleting its code from
-the list and fixing what ruff then reports; change the family's numbers here.
+family's config around the repo's own ratchet -- each rule the config still
+finds there, listed at the end of `ignore` beside the places it has today -- and
+refuses a file that differs anywhere else; change the family's numbers here.
+The family's config also lets a `vulture_whitelist.py` name what it names
+(`B018`, `F821`) and a test assert its literal expected values (`PLR2004`).
+
+**A ratchet only comes down.** The second test counts each ratcheted rule's
+places and fails when a count rises, naming every place of that rule, and when
+one falls, until the lower number is written beside the rule; a rule with no
+places left comes off the list, after which ruff reports it like any other.
 A `# noqa` for a ratcheted rule, or for a rule another gate runs with a select
 of its own (`ARG`, `N`, `S`), is dormant rather than unused: the config lists
 those as `external`, and RUF100 leaves the marker for the gate that reads it.
