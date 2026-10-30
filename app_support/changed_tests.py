@@ -6,6 +6,9 @@ import subprocess
 from pathlib import Path
 from typing import NamedTuple
 
+from app_support.git_files import git
+from app_support.python_source import without_docstrings
+
 __all__ = ["changed_test_ids"]
 
 _MODULE_LEVEL = ""
@@ -47,7 +50,7 @@ def _definitions_that_moved(before: _Module, after: _Module) -> set[str]:
 
 
 def _changed_test_files(root: Path, base: str) -> list[str]:
-    out = _git(root, "diff", "--name-only", f"{base}...HEAD")
+    out = git(root, "diff", "--name-only", f"{base}...HEAD")
     return [n for n in out.splitlines() if Path(n).name.startswith("test_") and n.endswith(".py")]
 
 
@@ -59,7 +62,7 @@ def _read(root: Path, revision_and_path: str) -> _Module:
     unfollowed: list[str] = []
     in_class: dict[str, list[str]] = {}
     imports: set[str] = set()
-    for node in _without_docstrings(ast.parse(_source(root, revision_and_path))).body:
+    for node in without_docstrings(ast.parse(_source(root, revision_and_path))).body:
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             imports |= _bound_by(node)
         elif _is_test(node):
@@ -150,42 +153,14 @@ def _bound_by(node: ast.Import | ast.ImportFrom) -> set[str]:
             else alias.asname or alias.name for alias in node.names}
 
 
-_SCOPES = (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
-
-
-def _without_docstrings(tree: ast.Module) -> ast.Module:
-    """Every scope's, not only the file's: nothing runs a docstring, so no
-    rewrite of one can turn a test flaky."""
-    for node in ast.walk(tree):
-        if isinstance(node, _SCOPES):
-            node.body = _past_the_docstring(node.body)
-    return tree
-
-
-def _past_the_docstring(body: list[ast.stmt]) -> list[ast.stmt]:
-    first = body[0] if body else None
-    if (isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant)
-            and isinstance(first.value.value, str)):
-        return body[1:]
-    return body
-
-
 def _source(root: Path, revision_and_path: str) -> str:
     """Empty where the file is not in that revision at all -- a file the branch
     adds has no earlier self, and every test in it is new."""
     try:
-        return _git(root, "show", revision_and_path)
+        return git(root, "show", revision_and_path)
     except subprocess.CalledProcessError:
         return ""
 
 
 def _is_test(node: ast.AST) -> bool:
     return isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_")
-
-
-def _git(root: Path, *args: str) -> str:
-    """Named encoding, not the machine's: a source file is UTF-8 wherever it is
-    read, and Windows' own code page cannot decode five of its bytes."""
-    done = subprocess.run(["git", "-C", str(root), *args], check=True,
-                          capture_output=True, encoding="utf-8")
-    return done.stdout
