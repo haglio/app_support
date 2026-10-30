@@ -42,6 +42,7 @@ from app_support.win32 import (
     mutex_name,
     process_started,
     read_shortcut,
+    release_mutex,
     seconds_since_input,
     set_app_user_model_id,
     set_shortcut_app_user_model_id,
@@ -728,6 +729,16 @@ class TestTryAcquireMutex:
         assert kernel32.CloseHandle.calls == []
 
 
+class TestReleaseMutex:
+    def test_letting_go_closes_the_handle_that_held_it(self):
+        kernel32 = _FakeKernel32()
+
+        release_mutex(WIDE_HANDLE, kernel32=lambda: kernel32)
+
+        assert kernel32.CloseHandle.calls == [(WIDE_HANDLE,)]
+        assert kernel32.CloseHandle.argtypes == [ctypes.c_void_p]
+
+
 class TestIsMutexHeld:
     def test_a_held_mutex_is_opened_and_let_go_again(self):
         # Opening rather than creating is the point: a created-then-closed
@@ -764,11 +775,6 @@ class TestANamedMutexOnWindows:
     Windows itself whether the two calls agree about one real mutex, under a
     name nothing else on the machine could be holding."""
 
-    def _close(self, handle: int) -> None:
-        kernel32 = ctypes.WinDLL("kernel32")
-        kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
-        kernel32.CloseHandle(handle)
-
     def test_a_name_nobody_holds_reads_as_free(self):
         assert not is_mutex_held(f"Local\\app-support-test-{uuid.uuid4().hex}")
 
@@ -780,7 +786,7 @@ class TestANamedMutexOnWindows:
             assert is_mutex_held(name)
             assert try_acquire_mutex(name) is None
         finally:
-            self._close(handle)
+            release_mutex(handle)
         assert not is_mutex_held(name)
 
     def test_probing_a_free_name_does_not_claim_it(self):
@@ -792,7 +798,7 @@ class TestANamedMutexOnWindows:
 
         handle = try_acquire_mutex(name)
         assert handle is not None
-        self._close(handle)
+        release_mutex(handle)
 
 
 def _opened(pid: int) -> int:
