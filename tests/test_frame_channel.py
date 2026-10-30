@@ -77,6 +77,15 @@ def test_a_frame_bigger_than_the_channel_is_refused(channel):
         writer.write(1, 10, 10, _pixels(10, 10, 1))
 
 
+def test_a_writer_counts_the_frames_it_has_written(channel):
+    writer, _reader = channel
+
+    writer.write(1, 2, 2, _pixels(2, 2, 5))
+    writer.write(1, 2, 2, _pixels(2, 2, 6))
+
+    assert writer.written == 2
+
+
 def test_a_new_writer_starts_the_channel_empty(tmp_path):
     first = FrameWriter(tmp_path / "frame.bin", max_pixels=64)
     first.write(1, 2, 2, _pixels(2, 2, 5))
