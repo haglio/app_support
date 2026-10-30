@@ -76,3 +76,22 @@ def test_an_excuse_for_a_file_that_has_gone_is_refused(tmp_path):
     (tmp_path / "pkg" / "shell.py").unlink()
     with pytest.raises(AssertionError, match=r"pkg/shell\.py"):
         coverage_gate.assert_config_is_the_familys(written, (shell,))
+
+
+class TestTheFloorAWholeRunEarns:
+    def test_a_total_within_a_point_of_the_floor_leaves_it_where_it_is(self):
+        assert coverage_gate.risen_floor(95.99, 95.0) is None
+
+    def test_a_total_exactly_a_point_over_the_floor_earns_half_a_point_under_itself(self):
+        assert coverage_gate.risen_floor(96.0, 95.0) == 95.5
+
+    def test_the_floor_earned_is_cut_down_to_tenths(self):
+        assert coverage_gate.risen_floor(96.47, 95.0) == 95.9
+
+    def test_a_total_a_hair_under_its_tenth_in_floating_point_still_counts_that_tenth(self):
+        assert coverage_gate.risen_floor(96.29999999999999, 95.0) == 95.8
+
+    def test_a_floor_raised_from_one_run_holds_the_next_run_that_measures_a_little_less(self):
+        """The same code measured 94.75% here in one whole run and 94.48% in the
+        next: what a test reaches can depend on how long the machine took."""
+        assert coverage_gate.risen_floor(94.75, 91.0) <= 94.48

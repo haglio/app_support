@@ -106,17 +106,42 @@ class TestTheFloorAgainstARealRun:
             coverage_gate.render_config((), floor), encoding="utf-8")
         return tmp_path
 
-    def test_a_suite_over_its_floor_passes_and_says_the_number(self, tmp_path):
-        done = run_pytest_in(self._repo(tmp_path, 50.0))
+    def test_a_suite_within_a_point_over_its_floor_passes_and_says_the_number(self, tmp_path):
+        done = run_pytest_in(self._repo(tmp_path, 74.5))
 
         assert done.returncode == 0, done.stdout + done.stderr
         assert "Total coverage: 75.00%" in done.stdout
+
+    def test_a_suite_a_point_over_its_floor_fails_and_names_the_floor_to_set(self, tmp_path):
+        """A floor left under what the suite reaches lets that much coverage go
+        with nothing turning red, which is how every floor in the family sat
+        where it was set for a month while the suites climbed past it."""
+        done = run_pytest_in(self._repo(tmp_path, 74.0))
+
+        assert done.returncode != 0, done.stdout + done.stderr
+        assert "raise fail_under in .coveragerc to 74.5" in done.stdout
 
     def test_a_suite_under_its_floor_fails_the_run(self, tmp_path):
         done = run_pytest_in(self._repo(tmp_path, 90.0))
 
         assert done.returncode != 0, done.stdout + done.stderr
         assert "Required test coverage of 90.0% not reached" in done.stdout
+
+    def test_a_run_that_only_collects_is_not_asked_to_raise_the_floor(self, tmp_path):
+        """What it measures is what importing the tests ran, and a run of
+        `--collect-only` is how an agent shows which checks a run gathers."""
+        done = run_pytest_in(self._repo(tmp_path, 10.0), "--collect-only")
+
+        assert done.returncode == 0, done.stdout + done.stderr
+        assert "raise fail_under" not in done.stdout
+
+    def test_a_run_told_to_hold_no_floor_is_not_asked_to_raise_one(self, tmp_path):
+        """Each part of a suite run in parts is told `--cov-fail-under=0`: it
+        measures only its share, and the floor is held over the parts together."""
+        done = run_pytest_in(self._repo(tmp_path, 10.0), "--cov-fail-under=0", "--cov-report=term")
+
+        assert done.returncode == 0, done.stdout + done.stderr
+        assert "raise fail_under" not in done.stdout
 
     def test_a_run_set_to_stop_at_its_first_failure_is_held_to_the_floor_when_every_test_passes(self, tmp_path):
         done = run_pytest_in(self._repo(tmp_path, 90.0), "-x")
@@ -132,6 +157,13 @@ class TestTheFloorAgainstARealRun:
         assert done.returncode != 0, done.stdout + done.stderr
         assert "test_it_fails" in done.stdout
         assert "Required test coverage" not in done.stdout
+
+    def test_a_run_with_a_failing_test_reports_the_failure_and_not_the_floor(self, tmp_path):
+        done = run_pytest_in(self._repo(tmp_path, 10.0, failing=True))
+
+        assert done.returncode != 0, done.stdout + done.stderr
+        assert "test_it_fails" in done.stdout
+        assert "raise fail_under" not in done.stdout
 
     def test_a_narrowed_run_is_not_held_to_the_floor_and_says_so(self, tmp_path):
         done = run_pytest_in(self._repo(tmp_path, 90.0), "tests/test_mod.py")
