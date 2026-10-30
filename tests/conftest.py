@@ -64,15 +64,24 @@ class Branch:
 
 
 @pytest.fixture
-def branch_from(tmp_path):
+def repository_named(tmp_path):
+    """Make a repository named *name* whose ``main`` holds *files*."""
+    def make(name: str, files: dict[str, str]) -> Branch:
+        repository = Branch(tmp_path / name)
+        repository.path.mkdir()
+        repository.git("init", "-q", "-b", "main")
+        repository.git("config", "user.email", "someone@example.com")
+        repository.git("config", "user.name", "Someone")
+        repository.commit(files, "the base")
+        return repository
+    return make
+
+
+@pytest.fixture
+def branch_from(repository_named):
     """Make a repository whose ``main`` holds *files*, on a branch just made from it."""
     def make(files: dict[str, str]) -> Branch:
-        branch = Branch(tmp_path / "repo")
-        branch.path.mkdir()
-        branch.git("init", "-q", "-b", "main")
-        branch.git("config", "user.email", "someone@example.com")
-        branch.git("config", "user.name", "Someone")
-        branch.commit(files, "the base")
+        branch = repository_named("repo", files)
         branch.git("checkout", "-q", "-b", "branch")
         return branch
     return make
