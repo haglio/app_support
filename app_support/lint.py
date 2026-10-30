@@ -14,9 +14,9 @@ A repo adopts both in a few lines::
         assert_lint_is_clean(ROOT, ROOT / "the_package", ROOT / "tests")
 
 and commits the `ruff.toml` that `render_config` writes: the family's numbers, plus
-the repo's own ratchet -- the rules the config found there on the day it was adopted,
-to be worked off one at a time. The config test refuses a file that drifted anywhere
-else, so there is one config, held here, and eleven copies of it that cannot differ.
+the repo's own ratchet -- each rule the config still finds there, with the places the
+lint test holds it to. The config test refuses a file that drifted anywhere else, so
+there is one config, held here, and eleven copies of it that cannot differ.
 
 ruff is a dev dependency of the repo asking for the gate, pinned to `RUFF_VERSION`,
 never a dependency of this package.
@@ -28,6 +28,7 @@ import re
 import subprocess
 import sys
 import tomllib
+from collections.abc import Mapping
 from pathlib import Path
 
 RUFF_VERSION = "0.16.6"
@@ -42,41 +43,75 @@ READ_BY_OTHER_GATES = ("ARG", "N", "S")
 _SELECT = ("F", "E", "W", "I", "UP", "B", "C4", "SIM", "RUF", "PL", "PT", "DTZ", "PIE",
            "PERF", "FLY", "ISC", "RET", "FURB", "EXE")
 
-_A_FINDING = re.compile(r"^.+?:\d+:\d+: [A-Z]+\d+ ")
+_PER_FILE_IGNORES = {
+    "**/vulture_whitelist.py": ("B018", "F821"),
+    "**/tests/**": ("PLR2004",),
+    "**/test_*.py": ("PLR2004",),
+}
+
+_A_FINDING = re.compile(r"^.+?:\d+:\d+: ([A-Z]+\d+) ")
+
+_COUNTED_RULE = re.compile(r'^    "([A-Z]+\d+)",  # (\d+)$', re.MULTILINE)
 
 
 def _quoted(codes) -> str:
     return ", ".join(f'"{code}"' for code in codes)
 
 
+def _counted(ratchet) -> str:
+    if not ratchet:
+        return ""
+    return (",\n    # This repo's ratchet: each rule the family config still finds here, "
+            "and its places today.\n"
+            + "".join(f'    "{rule}",  # {places}\n' for rule, places in ratchet.items()))
+
+
+def _listed(ratchet) -> str:
+    if not ratchet:
+        return ""
+    return (",\n    # This repo's ratchet: what the family config found here, "
+            "to be worked off rule by rule.\n    " + _quoted(ratchet))
+
+
+def _per_file_ignores() -> str:
+    return "\n[lint.per-file-ignores]\n" + "".join(
+        f'"{files}" = [{_quoted(rules)}]\n' for files, rules in _PER_FILE_IGNORES.items())
+
+
 def render_config(ratchet=()) -> str:
     """The `ruff.toml` a repo commits: the family's numbers, then *ratchet* --
-    that repo's own rules-to-work-off -- appended to the ignore list."""
-    ignores = _quoted(FAMILY_IGNORES)
-    if ratchet:
-        ignores += (
-            ",\n    # This repo's ratchet: what the family config found here, "
-            "to be worked off rule by rule.\n    " + _quoted(ratchet)
-        )
+    that repo's own rules, each with the places it has today -- appended to the
+    ignore list. A ratchet listed without its places is the form every repo had
+    before the gate counted them."""
+    if isinstance(ratchet, Mapping):
+        ratcheted, exempted = _counted(ratchet), _per_file_ignores()
+    else:
+        ratcheted, exempted = _listed(ratchet), ""
     return (
         "line-length = 100\n"
         'target-version = "py312"\n'
         "\n"
         "[lint]\n"
         f"select = [{_quoted(_SELECT)}]\n"
-        f"ignore = [{ignores}]\n"
+        f"ignore = [{_quoted(FAMILY_IGNORES)}{ratcheted}]\n"
         f"external = [{_quoted((*READ_BY_OTHER_GATES, *FAMILY_IGNORES, *ratchet))}]\n"
+        f"{exempted}"
         "\n"
         "[format]\n"
         'quote-style = "double"\n'
     )
 
 
-def ratchet_of(ruff_toml) -> tuple[str, ...]:
-    """The rules a repo's `ruff.toml` ignores beyond the family's own."""
+def ratchet_of(ruff_toml):
+    """The rules a repo's `ruff.toml` ignores beyond the family's own, each with its
+    places once the file counts them."""
     text = Path(ruff_toml).read_text(encoding="utf-8")
-    ignored = tomllib.loads(text).get("lint", {}).get("ignore", [])
-    return tuple(code for code in ignored if code not in FAMILY_IGNORES)
+    config = tomllib.loads(text).get("lint", {})
+    codes = tuple(code for code in config.get("ignore", []) if code not in FAMILY_IGNORES)
+    if "per-file-ignores" in config:
+        places = dict(_COUNTED_RULE.findall(text))
+        return {code: int(places[code]) for code in codes}
+    return codes
 
 
 def assert_config_is_the_familys(ruff_toml) -> None:
@@ -143,11 +178,6 @@ def _check(root, *args) -> list[str]:
     return [line for line in ran.stdout.splitlines() if _A_FINDING.match(line)]
 
 
-def findings(root, targets) -> list[str]:
-    """ruff's findings in *targets* under *root*, under the repo's own config."""
-    return _check(root, *targets)
-
-
 def findings_for_rules(root, rules, *targets) -> list[str]:
     """ruff's findings for *rules* alone in *targets*, the repo's config set aside:
     what a gate asks when a rule must hold whatever the ratchet says."""
@@ -165,12 +195,37 @@ def _refuse_a_scan_that_skipped(root, trees, targets) -> None:
             raise LintDidNotRun(f"ruff scanned nothing under {wanted}")
 
 
+def _rule_of(finding: str) -> str:
+    return _A_FINDING.match(finding)[1]
+
+
 def assert_lint_is_clean(root, *trees) -> None:
-    """ruff finds nothing in *trees* or in the root's own files, having scanned at
-    least one file under each tree."""
+    """ruff finds nothing in *trees* or in the root's own files beyond the places the
+    repo's ratchet counts, having scanned at least one file under each tree."""
     targets = scan_targets(root, trees)
     _refuse_a_scan_that_skipped(root, trees, targets)
-    found = findings(root, targets)
-    if found:
+    ratchet = ratchet_of(Path(root) / "ruff.toml")
+    counted = ratchet if isinstance(ratchet, Mapping) else {}
+    reporting_the_ratchet = ("--extend-select", ",".join(counted)) if counted else ()
+    found = _check(root, *reporting_the_ratchet, *targets)
+    stray = [finding for finding in found if _rule_of(finding) not in counted]
+    if stray:
         raise AssertionError(
-            f"ruff found {len(found)} thing(s) under {root}:\n" + "\n".join(found))
+            f"ruff found {len(stray)} thing(s) under {root}:\n" + "\n".join(stray))
+    moved = [_how_the_count_moved(rule, count, [f for f in found if _rule_of(f) == rule])
+             for rule, count in counted.items()]
+    if any(moved):
+        raise AssertionError(
+            f"ruff.toml's ratchet does not hold under {root}:\n" + "".join(moved))
+
+
+def _how_the_count_moved(rule, count, places) -> str:
+    if len(places) > count:
+        return (f"{rule} has {len(places)} places, more than the {count} ruff.toml counts; "
+                "every place of it:\n" + "".join(f"  {place}\n" for place in places))
+    if not places:
+        return f"{rule} has no places left: take it off ruff.toml's ratchet\n"
+    if len(places) < count:
+        return (f"{rule} has {len(places)} places, fewer than the {count} ruff.toml counts: "
+                f"write {len(places)} beside it there\n")
+    return ""
