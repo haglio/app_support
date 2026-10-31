@@ -46,7 +46,7 @@ from pathlib import Path, PureWindowsPath
 from typing import NamedTuple
 
 from app_support import json_store, overlay, processes, win32
-from app_support.dependencies import SiblingPin, sibling_pins_in
+from app_support.dependencies import SiblingPin, release_of, sibling_pins_in
 from app_support.file_channel import publish_whole
 from app_support.logging_utils import configure_logging
 from app_support.siblings import workspace_of
@@ -267,11 +267,6 @@ def _distribution(name: str) -> str:
     return re.sub(r"[-_.]+", "_", name).lower()
 
 
-def _release(version: str) -> tuple[int, ...]:
-    found = re.match(r"v?(\d+(?:\.\d+)*)", version.strip())
-    return tuple(int(part) for part in found.group(1).split(".")) if found else ()
-
-
 def installed_versions(venv: Path) -> dict[str, str]:
     try:
         entries = os.listdir(Path(venv) / "Lib" / "site-packages")
@@ -289,7 +284,7 @@ def installed_versions(venv: Path) -> dict[str, str]:
 def libraries_off_their_pins(pyproject_text: str, installed: Mapping[str, str]) -> list[SiblingPin]:
     return [pin for pin in sibling_pins_in(pyproject_text)
             if (have := installed.get(_distribution(pin.package))) is None
-            or _release(have) != _release(pin.tag)]
+            or release_of(have) != release_of(pin.tag)]
 
 
 # --- The turn ------------------------------------------------------------------

@@ -19,6 +19,8 @@ from app_support.dependencies import (
     declared_dependencies,
     inherited_siblings,
     pinned_siblings,
+    release_of,
+    repinned,
     sibling_pins_in,
     third_party_imports,
     unbounded_requirements,
@@ -513,3 +515,26 @@ voice = ["voice-core @ git+https://github.com/haglio/voice_core@v0.1.45"]
         pyproject.write_text(self.PYPROJECT, encoding="utf-8")
 
         assert pinned_siblings(pyproject) == {"app_support": "v0.1.201", "voice_core": "v0.1.45"}
+
+
+class TestReleaseOf:
+    def test_a_tag_and_the_version_it_names_are_one_release_compared_by_number(self):
+        assert release_of("v0.1.10") == release_of("0.1.10") == (0, 1, 10)
+        assert release_of("v0.1.10") > release_of("v0.1.9")
+
+    def test_a_version_carrying_a_suffix_is_the_release_it_starts_with(self):
+        assert release_of("0.1.304.dev2+g1a2b3c") == (0, 1, 304)
+
+
+class TestRepinned:
+    def test_the_pin_moves_to_the_tag_and_a_longer_tag_beginning_the_same_way_stays(self):
+        text = (
+            '[project]\nname = "someapp"\ndependencies = [\n'
+            '    "widgetlib @ git+https://github.com/haglio/widgetlib@v0.1.20",\n'
+            ']\n[project.optional-dependencies]\n'
+            'old = ["widgetlib @ git+https://github.com/haglio/widgetlib@v0.1.201"]\n')
+        [pin, _] = sibling_pins_in(text)
+
+        moved = repinned(text, pin, "v0.1.25")
+
+        assert [found.tag for found in sibling_pins_in(moved)] == ["v0.1.25", "v0.1.201"]
