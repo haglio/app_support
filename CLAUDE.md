@@ -43,9 +43,14 @@ Always `--config-settings editable_mode=compat`; the README says why, and
 
 ## Changing this repo changes every app
 
-A change lands in every consumer the moment it is saved — they install this
-editable, so there is no version to bump and no buffer against a mistake. Run
-the consumers' suites, not just this one.
+A change reaches a consumer when that consumer takes the release it makes:
+each landing tags a version and opens, in every repo pinning this one behind
+it, a pull request taking the newest release (`app_support.newest_pins`),
+which ships once that repo's checks pass. The gate runs broker's, Fun Time's
+and Origenerator's suites against the change first, and refuses one that takes
+out a module or a name another repo's main or open pull request still uses
+(`app_support.taken_out`): keep it until that work has moved off it, then take
+it out.
 
 ## Test fixtures must be fabricated, never copied from the real library
 
