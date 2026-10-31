@@ -20,6 +20,7 @@ _the_updaters_log_is_given_back  # tests/test_production_update.py
 pytest_configure  # app_support/coverage_gate.py, app_support/{sanitize,clocks}/pytest_plugin.py, app_support/repo_checks.py, tests/conftest.py
 pytest_collection_modifyitems  # app_support/coverage_gate.py, app_support/repo_checks.py
 pytest_terminal_summary  # app_support/coverage_gate.py
+pytest_sessionstart  # app_support/stopped_runs.py
 pytest_make_collect_report  # app_support/shipped_tests.py
 pytest_ignore_collect  # app_support/shipped_tests.py
 _getobj  # app_support/shipped_tests.py, how pytest asks a Module it collects for its module

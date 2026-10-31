@@ -29,9 +29,11 @@ def _marker() -> str:
 def sleeper():
     started = []
 
-    def start(*arguments: str, env: dict[str, str] | None = None) -> subprocess.Popen:
-        child = subprocess.Popen([PYTHON, "-c", "import time; time.sleep(120)", *arguments], env=env)
+    def start(*arguments: str, env: dict[str, str] | None = None, creationflags: int = 0) -> subprocess.Popen:
+        child = subprocess.Popen([PYTHON, "-c", "print(flush=True); import time; time.sleep(120)", *arguments],
+                                 env=env, creationflags=creationflags, stdout=subprocess.PIPE)
         started.append(child)
+        child.stdout.readline()
         return child
 
     yield start
@@ -128,6 +130,17 @@ class TestTheMarksOnAProcess:
         desktop, pid = child_on_its_own_desktop
 
         assert processes.desktop_of(pid) == desktop
+
+
+@windows_only
+class TestTheConsoleAProcessRunsIn:
+    def test_a_child_given_a_console_of_its_own_is_served_by_a_console_host_of_its_own(self, sleeper):
+        child = sleeper(_marker(), creationflags=subprocess.CREATE_NO_WINDOW)
+
+        host = processes.console_host_of(child.pid)
+
+        assert host != processes.console_host_of(os.getpid())
+        assert {process.pid: process for process in processes.running()}[host].name.lower() == "conhost.exe"
 
 
 class TestWhoseItIs:
