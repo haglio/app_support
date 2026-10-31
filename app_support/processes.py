@@ -34,7 +34,22 @@ _PEB_PROCESS_PARAMETERS = 0x20
 _PARAMETERS_ENVIRONMENT = 0x80
 _PARAMETERS_DESKTOP_INFO = 0xC0
 _PARAMETERS_ENVIRONMENT_SIZE = 0x3F0
-_LONGEST_ENVIRONMENT = 1 << 20
+_LARGEST_READ = 1 << 20
+# Git Bash runs its programs on a POSIX runtime, which hands a program it starts the
+# environment through the runtime's exported `environ` and gives Windows only the few
+# names a process needs to start.
+_POSIX_RUNTIMES = frozenset({"msys-2.0.dll", "cygwin1.dll"})
+_LIST_ALL_MODULES = 0x3
+_MOST_MODULES = 1024
+_MOST_NAMES = 4096
+_NAME_READ = 256
+_PAGE = 0x1000
+# A PE image: where its PE header is, and from that header the optional header, whose
+# magic marks a PE32+ image and whose first data directory is the exports.
+_PE_HEADER_AT = 0x3C
+_OPTIONAL_HEADER_AT = 24
+_PE32_PLUS = 0x20B
+_EXPORTS_AT = _OPTIONAL_HEADER_AT + 112
 
 
 @dataclasses.dataclass(frozen=True)
@@ -88,6 +103,11 @@ def _api():
     kernel32.ReadProcessMemory.restype = wintypes.BOOL
     kernel32.ReadProcessMemory.argtypes = [wintypes.HANDLE, ctypes.c_void_p, ctypes.c_void_p,
                                            ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)]
+    kernel32.K32EnumProcessModulesEx.restype = wintypes.BOOL
+    kernel32.K32EnumProcessModulesEx.argtypes = [wintypes.HANDLE, ctypes.POINTER(ctypes.c_void_p), wintypes.DWORD,
+                                                 ctypes.POINTER(wintypes.DWORD), wintypes.DWORD]
+    kernel32.K32GetModuleBaseNameW.restype = wintypes.DWORD
+    kernel32.K32GetModuleBaseNameW.argtypes = [wintypes.HANDLE, ctypes.c_void_p, wintypes.LPWSTR, wintypes.DWORD]
     ntdll.NtQueryInformationProcess.restype = wintypes.LONG
     ntdll.NtQueryInformationProcess.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p,
                                                 wintypes.ULONG, ctypes.POINTER(wintypes.ULONG)]
@@ -207,7 +227,11 @@ def _read(handle, address: int, size: int) -> bytes:
 
 
 def _pointer(handle, address: int) -> int:
-    return int.from_bytes(_read(handle, address, 8), "little")
+    return _number(_read(handle, address, 8))
+
+
+def _number(data: bytes) -> int:
+    return int.from_bytes(data, "little")
 
 
 def _parameters(handle) -> int:
@@ -233,8 +257,8 @@ def _from_its_memory(pid: int, read):
 def desktop_of(pid: int) -> str | None:
     def read(handle, parameters: int) -> str:
         desktop_info = _read(handle, parameters + _PARAMETERS_DESKTOP_INFO, 16)
-        length = int.from_bytes(desktop_info[0:2], "little")
-        text_at = int.from_bytes(desktop_info[8:16], "little")
+        length = _number(desktop_info[0:2])
+        text_at = _number(desktop_info[8:16])
         return _read(handle, text_at, length).decode("utf-16-le", "replace") if length and text_at else ""
 
     return _from_its_memory(pid, read)
@@ -243,11 +267,73 @@ def desktop_of(pid: int) -> str | None:
 def environment_names(pid: int) -> frozenset[str]:
     def read(handle, parameters: int) -> frozenset[str]:
         block_at = _pointer(handle, parameters + _PARAMETERS_ENVIRONMENT)
-        size = min(_pointer(handle, parameters + _PARAMETERS_ENVIRONMENT_SIZE), _LONGEST_ENVIRONMENT)
+        size = min(_pointer(handle, parameters + _PARAMETERS_ENVIRONMENT_SIZE), _LARGEST_READ)
         text = _read(handle, block_at, size).decode("utf-16-le", "replace")
-        return frozenset(entry.partition("=")[0] for entry in text.split("\0") if entry and entry[0] != "=")
+        windows = frozenset(entry.partition("=")[0] for entry in text.split("\0") if entry and entry[0] != "=")
+        return windows | _posix_environment_names(handle)
 
     return _from_its_memory(pid, read) or frozenset()
+
+
+def _posix_environment_names(handle) -> frozenset[str]:
+    try:
+        runtime = _posix_runtime(handle)
+        environ = runtime and _exported(handle, runtime, b"environ")
+        return frozenset(_names_listed_at(handle, _pointer(handle, environ))) if environ else frozenset()
+    except (OSError, ValueError):
+        return frozenset()
+
+
+def _posix_runtime(handle) -> int | None:
+    modules = (ctypes.c_void_p * _MOST_MODULES)()
+    needed = wintypes.DWORD()
+    if not _kernel32.K32EnumProcessModulesEx(handle, modules, ctypes.sizeof(modules), ctypes.byref(needed),
+                                             _LIST_ALL_MODULES):
+        return None
+    name = ctypes.create_unicode_buffer(260)
+    for module in modules[:needed.value // ctypes.sizeof(ctypes.c_void_p)]:
+        named = module and _kernel32.K32GetModuleBaseNameW(handle, module, name, len(name))
+        if named and name.value.lower() in _POSIX_RUNTIMES:
+            return module
+    return None
+
+
+def _exported(handle, base: int, wanted: bytes) -> int | None:
+    header = base + _number(_read(handle, base + _PE_HEADER_AT, 4))
+    if _number(_read(handle, header + _OPTIONAL_HEADER_AT, 2)) != _PE32_PLUS:
+        return None
+    directory = _read(handle, header + _EXPORTS_AT, 8)
+    at = _number(directory[:4])
+    exports = _read(handle, base + at, min(_number(directory[4:]), _LARGEST_READ))
+
+    def field(rva: int, size: int = 4) -> int:
+        return _number(exports[rva - at:rva - at + size])
+
+    names, functions, name_list, ordinals = field(at + 24), field(at + 28), field(at + 32), field(at + 36)
+    for index in range(names):
+        name = field(name_list + 4 * index) - at
+        if exports[name:exports.index(b"\0", name)] == wanted:
+            return base + field(functions + 4 * field(ordinals + 2 * index, 2))
+    return None
+
+
+def _names_listed_at(handle, entries: int) -> list[str]:
+    found = []
+    while entries and len(found) < _MOST_NAMES and (entry := _pointer(handle, entries + 8 * len(found))):
+        found.append(_name_at(handle, entry))
+    return found
+
+
+def _name_at(handle, address: int) -> str:
+    found = b""
+    while len(found) < _LARGEST_READ:
+        chunk = _read(handle, address, min(_NAME_READ, _PAGE - address % _PAGE))
+        name = chunk.split(b"\0", 1)[0].split(b"=", 1)[0]
+        if len(name) < len(chunk):
+            return (found + name).decode("utf-8", "replace")
+        found += chunk
+        address += len(chunk)
+    return found.decode("utf-8", "replace")
 
 
 def _is_claude_code(exe: str) -> bool:

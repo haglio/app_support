@@ -19,6 +19,7 @@ from unittest.mock import patch
 
 import pytest
 from desktop_of_its_own import DesktopOfItsOwn
+from git_bash_programs import GitBashPrograms
 
 import app_support
 from app_support.siblings import assert_imported_from_checkout
@@ -143,6 +144,15 @@ def child_on_its_own_desktop(desktop_of_its_own):
     It never runs a line, and its parameters name the desktop from the moment it exists."""
     pid = desktop_of_its_own.start([sys._base_executable, "-c", "import time; time.sleep(120)"], suspended=True)
     return desktop_of_its_own.name, pid
+
+
+@pytest.fixture
+def started_by_git_bash():
+    programs = GitBashPrograms()
+    try:
+        yield programs.start
+    finally:
+        programs.close()
 
 
 @pytest.fixture

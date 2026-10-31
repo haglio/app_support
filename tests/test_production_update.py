@@ -1096,6 +1096,16 @@ class TestFindingWhatRunsFromAVenv:
 
         assert agents.pid not in {process.pid for process in production_update.running_from([venv])}
 
+    @pytest.mark.skipif(sys.platform != "win32", reason="Git Bash's programs")
+    def test_what_an_agents_git_bash_left_running_never_holds_an_update_back(self, started_by_git_bash, tmp_path):
+        venv = tmp_path / "app" / ".venv"
+        shell, left = started_by_git_bash({**os.environ, processes.SESSION_MARK: "1"},
+                                          naming=str(venv / "Scripts" / "python.exe"))
+        shell.kill()
+        shell.wait()
+
+        assert left.pid not in {process.pid for process in production_update.running_from([venv])}
+
 
 class TestAFailedStep:
     def test_says_the_line_that_names_why_beside_the_last_one(self):
