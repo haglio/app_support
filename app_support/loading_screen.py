@@ -496,5 +496,5 @@ def main(argv: Sequence[str] | None = None) -> int:  # pragma: no cover -- a win
     return 0
 
 
-if __name__ == "__main__":  # pragma: no cover
+if __name__ == "__main__":
     sys.exit(main())

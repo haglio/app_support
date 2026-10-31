@@ -76,3 +76,63 @@ def test_an_excuse_for_a_file_that_has_gone_is_refused(tmp_path):
     (tmp_path / "pkg" / "shell.py").unlink()
     with pytest.raises(AssertionError, match=r"pkg/shell\.py"):
         coverage_gate.assert_config_is_the_familys(written, (shell,))
+
+
+class TestTheFloorAWholeRunEarns:
+    def test_a_total_within_a_point_of_the_floor_leaves_it_where_it_is(self):
+        assert coverage_gate.risen_floor(95.99, 95.0) is None
+
+    def test_a_total_exactly_a_point_over_the_floor_earns_half_a_point_under_itself(self):
+        assert coverage_gate.risen_floor(96.0, 95.0) == 95.5
+
+    def test_the_floor_earned_is_cut_down_to_tenths(self):
+        assert coverage_gate.risen_floor(96.47, 95.0) == 95.9
+
+    def test_a_total_a_hair_under_its_tenth_in_floating_point_still_counts_that_tenth(self):
+        assert coverage_gate.risen_floor(96.29999999999999, 95.0) == 95.8
+
+    def test_a_floor_raised_from_one_run_holds_the_next_run_that_measures_a_little_less(self):
+        """The same code measured 94.75% here in one whole run and 94.48% in the
+        next: what a test reaches can depend on how long the machine took."""
+        assert coverage_gate.risen_floor(94.75, 91.0) <= 94.48
+
+
+class TestThePragmasARepoCarries:
+    def test_a_line_excused_where_it_stands_is_refused_and_named(self, tmp_path):
+        """What a repo does not unit-test is one list with its reasons, in the
+        config, never a pragma scattered through the tree where no one counts
+        them."""
+        written = _repo(tmp_path)
+        (tmp_path / "pkg" / "shell.py").write_text(
+            "def shown():  # pragma: no cover\n    return 1\n", encoding="utf-8")
+
+        with pytest.raises(AssertionError, match=r"pkg/shell\.py:1"):
+            coverage_gate.assert_config_is_the_familys(written)
+
+    def test_a_repo_still_carrying_some_passes_while_it_stays_under_its_ceiling(self, tmp_path):
+        written = _repo(tmp_path)
+        (tmp_path / "pkg" / "shell.py").write_text(
+            "def shown():  # pragma: no cover\n    return 1\n", encoding="utf-8")
+
+        coverage_gate.assert_config_is_the_familys(written, max_pragmas=1)
+
+    def test_what_the_config_leaves_unmeasured_is_not_counted(self, tmp_path):
+        """A pragma in a file coverage never measures excuses nothing: the tests,
+        and a shell the repo names with its reason."""
+        shell = coverage_gate.NotUnitTested("pkg/shell.py", "needs a headset")
+        written = _repo(tmp_path, not_unit_tested=(shell,))
+        (tmp_path / "pkg" / "shell.py").write_text("x = 1  # pragma: no cover\n", encoding="utf-8")
+        (tmp_path / "tests").mkdir()
+        (tmp_path / "tests" / "test_pkg.py").write_text("y = 2  # pragma: no cover\n", encoding="utf-8")
+
+        coverage_gate.assert_config_is_the_familys(written, (shell,))
+
+    def test_nothing_under_a_dot_directory_is_counted(self, tmp_path):
+        """Coverage walks past them, and they hold whole trees of somebody
+        else's code: the venv, and every agent's worktree under `.claude`."""
+        written = _repo(tmp_path)
+        for under in (".venv/Lib/site-packages/lib.py", ".claude/worktrees/one/pkg/mod.py"):
+            (tmp_path / under).parent.mkdir(parents=True)
+            (tmp_path / under).write_text("z = 3  # pragma: no cover\n", encoding="utf-8")
+
+        coverage_gate.assert_config_is_the_familys(written)
