@@ -100,6 +100,12 @@ def _normalized(name: str) -> str:
     return name.lower().replace("_", "-")
 
 
+def is_a_family_sibling(pyproject: Path) -> bool:
+    with Path(pyproject).open("rb") as handle:
+        name = tomllib.load(handle).get("project", {}).get("name", "")
+    return _normalized(name) in {_normalized(sibling) for sibling in FAMILY_SIBLINGS}
+
+
 def declared_dependencies(pyproject: Path) -> set[str]:
     """The distributions ``[project.dependencies]`` and every optional extra name, normalized.
 
@@ -468,10 +474,13 @@ def release_of(version: str) -> tuple[int, ...]:
     return tuple(int(part) for part in found.group(1).split(".")) if found else ()
 
 
+def _pin_in(requirement: str) -> SiblingPin | None:
+    match = _SIBLING_PIN.match(requirement.strip())
+    return SiblingPin(match["package"], match["repo"], match["tag"], requirement.strip()) if match else None
+
+
 def sibling_pins_in(pyproject_text: str) -> list[SiblingPin]:
-    return [SiblingPin(match["package"], match["repo"], match["tag"], requirement.strip())
-            for _group, requirement in _requirements_in(pyproject_text)
-            if (match := _SIBLING_PIN.match(requirement.strip()))]
+    return [pin for _group, requirement in _requirements_in(pyproject_text) if (pin := _pin_in(requirement))]
 
 
 def repinned(pyproject_text: str, pin: SiblingPin, tag: str) -> str:
@@ -500,6 +509,14 @@ def assert_every_sibling_is_pinned(pyproject: Path) -> None:
     assert set(pinned) <= siblings, (
         "a pinned family repo that is not a declared sibling is one nobody counted: "
         + ", ".join(sorted(set(pinned) - siblings)))
+    if is_a_family_sibling(pyproject):
+        asked_for = sorted({pin.repo for group, requirement in _requirements(pyproject)
+                            if group == "dependencies" and (pin := _pin_in(requirement))})
+        assert not asked_for, (
+            "a library that pins a sibling where installing it asks for one holds every app that pins that "
+            "sibling too to this library's copy, since pip refuses two pins of one repo that differ; pin it in "
+            "the dev extra, which this library's own suite installs and an app's install never reads: "
+            + ", ".join(asked_for))
 
 
 def assert_the_version_comes_from_the_tag(pyproject: Path) -> None:
