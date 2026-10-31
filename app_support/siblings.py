@@ -73,7 +73,7 @@ def checkouts_that_import(*packages: str, near: Path) -> list[Path]:
         and not any((checkout / package / "__init__.py").is_file() for package in packages)
         and subprocess.run(
             ["git", "-C", str(checkout), "grep", "-q", "-E", "-e", an_import, "--", "*.py"],
-            capture_output=True).returncode == 0
+            capture_output=True, check=False).returncode == 0
     ]
 
 

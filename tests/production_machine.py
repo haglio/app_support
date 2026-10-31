@@ -112,7 +112,8 @@ class Machine:
     @staticmethod
     def hotfix_asked_for(checkout: Path) -> str | None:
         asked = subprocess.run(["git", "rev-parse", "--verify", "--quiet", production_update.HOTFIX_REF],
-                               cwd=str(checkout), capture_output=True, text=True)
+                               cwd=str(checkout), capture_output=True, text=True,
+                               check=False)
         return asked.stdout.strip() or None
 
     @staticmethod

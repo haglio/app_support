@@ -377,7 +377,7 @@ class TestMeasuringTheScreens:
         environment = {**os.environ, "PYTHONPATH": str(Path(loading_screen.__file__).parents[1])}
 
         imported = subprocess.run([sys._base_executable, "-c", stripped], env=environment, capture_output=True, text=True,
-                                  timeout=60)
+                                  timeout=60, check=False)
 
         assert imported.returncode == 0, imported.stderr
 

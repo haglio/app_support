@@ -45,7 +45,7 @@ def test_a_document_that_will_not_parse_raises_rather_than_reading_as_empty(tmp_
 def test_a_document_that_is_not_an_object_raises_rather_than_reading_as_empty(tmp_path):
     path = tmp_path / "list.json"
     _write(path, ["alpha", "beta"])
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="holds list, not a JSON object"):
         read_json(path)
 
 

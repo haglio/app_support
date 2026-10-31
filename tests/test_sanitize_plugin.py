@@ -396,7 +396,7 @@ class TestTheGuardPlugin:
         done = subprocess.run(
             [sys.executable, "-c", probe],
             cwd=APP_SUPPORT, env={**os.environ, "PYTHONPATH": str(APP_SUPPORT)},
-            capture_output=True, text=True,
+            capture_output=True, text=True, check=False,
         )
 
         assert done.returncode == 0, done.stderr

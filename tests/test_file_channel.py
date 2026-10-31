@@ -228,7 +228,7 @@ def test_a_write_that_could_not_land_raises_rather_than_reporting_it(tmp_path: P
 
     with (
         patch("app_support.file_channel.os.replace", side_effect=OSError("held")),
-        pytest.raises(OSError),
+        pytest.raises(OSError, match="could not replace"),
     ):
         write_whole(path, "{}", attempts=1)
 
@@ -299,7 +299,7 @@ def test_a_write_that_dies_part_way_leaves_the_old_file_whole(tmp_path: Path):
 
     with (
         patch("app_support.file_channel.os.replace", side_effect=OSError("interrupted")),
-        pytest.raises(OSError),
+        pytest.raises(OSError, match="could not replace"),
     ):
         write_whole(path, "the new one", attempts=1)
 

@@ -121,7 +121,7 @@ def take_the_takeover(place: Path) -> Takeover | None:
     try:
         asked = json.loads(takeover.read_text(encoding="utf-8"))
         return Takeover(asked[_PID], asked[_ARGS])
-    except (TypeError, KeyError) as not_one:
+    except (ValueError, TypeError, KeyError) as not_one:
         raise ValueError(f"{takeover} holds no takeover: {not_one!r}") from not_one
     finally:
         takeover.unlink(missing_ok=True)
