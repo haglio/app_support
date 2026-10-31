@@ -22,9 +22,11 @@ _QUALITY_TOKENS_HOLDING_A_SEPARATOR = tuple(token for token in QUALITY_TOKENS if
 
 _HASH_TOKEN = re.compile(r"[a-z0-9]{6,12}")
 
+UPSCALE_SUFFIX = "_topaz"
+
 PROCESSING_SUFFIXES = (
-    "_topaz_cfr",
-    "_topaz",
+    f"{UPSCALE_SUFFIX}_cfr",
+    UPSCALE_SUFFIX,
     "_gcg5",
     "_prob4",
     "_ghq5",
