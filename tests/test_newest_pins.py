@@ -86,8 +86,8 @@ class FakeGitHub:
         assert sha == f"{repo}-head"
         self.branches[repo, branch] = self.mains[repo]
 
-    def write(self, repo, branch, path, text, *, blob, message):
-        assert (path, blob) == ("pyproject.toml", f"blob-of-{repo}-head")
+    def write_pyproject(self, repo, branch, text, *, blob, message):
+        assert blob == f"blob-of-{repo}-head"
         self.branches[repo, branch] = text
 
     def open_pull(self, repo, branch):
@@ -259,7 +259,7 @@ class TestGhGitHub:
     def test_a_file_is_written_onto_the_branch_over_the_copy_it_replaces(self):
         github, asked = self._github({})
 
-        github.write("someapp", BRANCH, "pyproject.toml", "GRAY = 2\n", blob="b1", message="Take widgetlib v0.1.10")
+        github.write_pyproject("someapp", BRANCH, "GRAY = 2\n", blob="b1", message="Take widgetlib v0.1.10")
 
         assert asked == [("gh", "api", "-X", "PUT", "repos/someorg/someapp/contents/pyproject.toml",
                           "-f", "message=Take widgetlib v0.1.10",

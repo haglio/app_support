@@ -52,7 +52,7 @@ class GitHub(Protocol):
     def file_at(self, repo: str, ref: str, path: str) -> tuple[str, str] | None: ...
     def tags(self, repo: str) -> list[str]: ...
     def point(self, repo: str, branch: str, sha: str) -> None: ...
-    def write(self, repo: str, branch: str, path: str, text: str, *, blob: str, message: str) -> None: ...
+    def write_pyproject(self, repo: str, branch: str, text: str, *, blob: str, message: str) -> None: ...
     def open_pull(self, repo: str, branch: str) -> int | None: ...
     def offer(self, repo: str, branch: str, base: str, title: str, body: str) -> int: ...
     def retitle(self, repo: str, number: int, title: str, body: str) -> None: ...
@@ -106,7 +106,7 @@ def _bring_up_one(github: GitHub, project: _Project, newest: Mapping[str, str]) 
     if offered is not None and offered[0] == taken:
         return f"{project.repo}: #{pull} already takes {_releases(moved)}"
     github.point(project.repo, BRANCH, project.head)
-    github.write(project.repo, BRANCH, PYPROJECT, taken, blob=project.blob, message=_subject(moved))
+    github.write_pyproject(project.repo, BRANCH, taken, blob=project.blob, message=_subject(moved))
     if pull is None:
         pull = github.offer(project.repo, BRANCH, project.main, _subject(moved), _body(moved))
     else:
@@ -182,8 +182,8 @@ class GhGitHub:
         self._api("-X", "PATCH", f"repos/{self.org}/{repo}/git/refs/heads/{branch}", "-f", f"sha={sha}",
                   "-F", "force=true")
 
-    def write(self, repo: str, branch: str, path: str, text: str, *, blob: str, message: str) -> None:
-        self._api("-X", "PUT", f"repos/{self.org}/{repo}/contents/{path}", "-f", f"message={message}",
+    def write_pyproject(self, repo: str, branch: str, text: str, *, blob: str, message: str) -> None:
+        self._api("-X", "PUT", f"repos/{self.org}/{repo}/contents/{PYPROJECT}", "-f", f"message={message}",
                   "-f", f"content={base64.b64encode(text.encode('utf-8')).decode('ascii')}",
                   "-f", f"sha={blob}", "-f", f"branch={branch}")
 
