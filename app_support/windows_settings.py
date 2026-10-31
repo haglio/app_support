@@ -34,6 +34,7 @@ from pathlib import Path, PureWindowsPath
 
 from app_support import launcher, scheduled_tasks, win32
 from app_support.siblings import workspace_of
+from app_support.wording import listed
 
 PLACES = ("taskbar", "start-menu", "startup", "checkout")
 TASK_FOLDER = "\\Haglio"
@@ -283,7 +284,7 @@ def _not_there(shortcut: win32.Shortcut, within: Path | None) -> list[str]:
 
 
 def _dead(lnk: Path, place: str, gone: list[str]) -> Change:
-    named = gone[0] if len(gone) == 1 else ", ".join(gone[:-1]) + f" and {gone[-1]}"
+    named = listed(gone)
     where = f"unpin {lnk.stem} from the taskbar" if place == "taskbar" else f"remove {lnk}"
     return Change(f"{where}: it starts {named}, which {'is' if len(gone) == 1 else 'are'} not there")
 

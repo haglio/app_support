@@ -16,6 +16,7 @@ from pathlib import Path, PurePosixPath
 
 from app_support.git_files import files_at, git
 from app_support.python_source import names_defined, references, spelled_out, top_of
+from app_support.wording import listed
 
 _PYTHON = (".py", ".pyw")
 _SPELLED_OUT_IN = (".toml", ".cfg", ".ini", ".yml", ".yaml", ".json", ".vbs", ".cmd", ".bat", ".ps1", ".sh")
@@ -189,12 +190,8 @@ def _refusal(still: list[StillUsed]) -> str:
 
 def _clearance(taken: set[str], branches: list[OpenBranch]) -> str:
     repos = _counted(len({branch.repo for branch in branches}), "other repo", "other repos")
-    return (f"This change takes out {_listed(sorted(taken))}; read {_counted(len(branches), 'branch', 'branches')} "
+    return (f"This change takes out {listed(sorted(taken))}; read {_counted(len(branches), 'branch', 'branches')} "
             f"of {repos}, and none uses any of it.")
-
-
-def _listed(names: list[str]) -> str:
-    return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
 
 
 def _counted(count: int, one: str, many: str) -> str:
