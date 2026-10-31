@@ -288,6 +288,29 @@ class TestGhGitHub:
         assert asked[-1] == ("gh", "api", "-X", "PATCH", "repos/someorg/someapp/pulls/13",
                              "-f", "title=Take widgetlib v0.1.11", "-f", "body=Moves it again.")
 
+    def test_a_pull_request_another_landing_opened_a_moment_before_is_the_one_used(self):
+        taken = subprocess.CalledProcessError(1, "gh", stderr="gh: A pull request already exists (HTTP 422)")
+        github, _ = self._github({
+            ("gh", "api", "-X", "POST", "repos/someorg/someapp/pulls", "-f", "title=Take widgetlib v0.1.10",
+             "-f", f"head={BRANCH}", "-f", "base=main", "-f", "body=Moves it."): taken,
+            ("gh", "api", f"repos/someorg/someapp/pulls?head=someorg:{BRANCH}&state=open"):
+                json.dumps([{"number": 14}])})
+
+        assert github.offer("someapp", BRANCH, "main", "Take widgetlib v0.1.10", "Moves it.") == 14
+
+    def test_a_branch_another_landing_made_a_moment_before_is_moved_instead(self):
+        missing = subprocess.CalledProcessError(1, "gh", stderr="gh: Not Found (HTTP 404)")
+        taken = subprocess.CalledProcessError(1, "gh", stderr="gh: Reference already exists (HTTP 422)")
+        github, asked = self._github({
+            ("gh", "api", f"repos/someorg/someapp/git/ref/heads/{BRANCH}"): missing,
+            ("gh", "api", "-X", "POST", "repos/someorg/someapp/git/refs", "-f", f"ref=refs/heads/{BRANCH}",
+             "-f", "sha=c1"): taken})
+
+        github.point("someapp", BRANCH, "c1")
+
+        assert asked[-1] == ("gh", "api", "-X", "PATCH", f"repos/someorg/someapp/git/refs/heads/{BRANCH}",
+                             "-f", "sha=c1", "-F", "force=true")
+
     def test_a_pull_request_withdrawn_says_why_closes_and_takes_its_branch_with_it(self):
         github, asked = self._github({})
 
