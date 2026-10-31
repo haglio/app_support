@@ -173,11 +173,14 @@ class GhGitHub:
 
     def point(self, repo: str, branch: str, sha: str) -> None:
         if self._found(f"repos/{self.org}/{repo}/git/ref/heads/{branch}") is None:
-            self._api("-X", "POST", f"repos/{self.org}/{repo}/git/refs", "-f", f"ref=refs/heads/{branch}",
-                      "-f", f"sha={sha}")
-        else:
-            self._api("-X", "PATCH", f"repos/{self.org}/{repo}/git/refs/heads/{branch}", "-f", f"sha={sha}",
-                      "-F", "force=true")
+            try:
+                self._api("-X", "POST", f"repos/{self.org}/{repo}/git/refs", "-f", f"ref=refs/heads/{branch}",
+                          "-f", f"sha={sha}")
+                return
+            except subprocess.CalledProcessError:
+                pass
+        self._api("-X", "PATCH", f"repos/{self.org}/{repo}/git/refs/heads/{branch}", "-f", f"sha={sha}",
+                  "-F", "force=true")
 
     def write(self, repo: str, branch: str, path: str, text: str, *, blob: str, message: str) -> None:
         self._api("-X", "PUT", f"repos/{self.org}/{repo}/contents/{path}", "-f", f"message={message}",
@@ -189,8 +192,14 @@ class GhGitHub:
         return pulls[0]["number"] if pulls else None
 
     def offer(self, repo: str, branch: str, base: str, title: str, body: str) -> int:
-        return self._api("-X", "POST", f"repos/{self.org}/{repo}/pulls", "-f", f"title={title}",
-                         "-f", f"head={branch}", "-f", f"base={base}", "-f", f"body={body}")["number"]
+        try:
+            return self._api("-X", "POST", f"repos/{self.org}/{repo}/pulls", "-f", f"title={title}",
+                             "-f", f"head={branch}", "-f", f"base={base}", "-f", f"body={body}")["number"]
+        except subprocess.CalledProcessError:
+            opened = self.open_pull(repo, branch)
+            if opened is None:
+                raise
+            return opened
 
     def retitle(self, repo: str, number: int, title: str, body: str) -> None:
         self._api("-X", "PATCH", f"repos/{self.org}/{repo}/pulls/{number}", "-f", f"title={title}",
