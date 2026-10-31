@@ -8,6 +8,7 @@ import time
 import uuid
 
 import pytest
+from git_bash_programs import waited_for
 
 from app_support import processes
 
@@ -43,13 +44,7 @@ def sleeper():
 
 
 def _the(child: subprocess.Popen) -> processes.Process:
-    deadline = time.monotonic() + 10
-    while time.monotonic() < deadline:
-        found = {process.pid: process for process in processes.running()}
-        if child.pid in found and found[child.pid].cmdline:
-            return found[child.pid]
-        time.sleep(0.05)
-    raise AssertionError(f"{child.pid} never showed among the running processes")
+    return waited_for(lambda process: process.pid == child.pid and process.cmdline, str(child.pid))
 
 
 @windows_only
@@ -199,3 +194,27 @@ class TestWhoseItIs:
         among = {process.pid: process for process in processes.running()}
 
         assert processes.whose_process(among[pid], among) == processes.OFFSCREEN
+
+
+@windows_only
+class TestWhatGitBashStarts:
+    def test_a_program_it_starts_from_one_of_its_own_carries_the_session_it_came_from(self, started_by_git_bash):
+        _, program = started_by_git_bash({**os.environ, processes.SESSION_MARK: "1"})
+
+        assert processes.SESSION_MARK in processes.environment_names(program.pid)
+
+    def test_one_started_outside_any_session_carries_no_mark_of_one(self, started_by_git_bash):
+        _, program = started_by_git_bash({k: v for k, v in os.environ.items() if k != processes.SESSION_MARK})
+
+        assert "PATH" in processes.environment_names(program.pid)
+        assert processes.SESSION_MARK not in processes.environment_names(program.pid)
+
+    def test_a_program_it_starts_from_one_of_its_own_stays_the_agents_once_that_shell_has_gone(
+            self, started_by_git_bash, monkeypatch):
+        shell, program = started_by_git_bash({**os.environ, processes.SESSION_MARK: "1"})
+        shell.kill()
+        shell.wait()
+        monkeypatch.setattr(processes, "desktop_of", lambda pid: HIS_DESKTOP)
+        among = {process.pid: process for process in processes.running()}
+
+        assert processes.whose_process(among[program.pid], among) == processes.AGENT
