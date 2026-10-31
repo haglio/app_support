@@ -14,4 +14,4 @@ def test_the_ruff_config_is_the_familys(pytestconfig):
 
 def test_ruff_finds_nothing(pytestconfig):
     checkout = Checkout.of(pytestconfig)
-    assert_lint_is_clean(checkout.root, *checkout.packages, *checkout.tools, checkout.tests)
+    assert_lint_is_clean(checkout.root, *checkout.packages, *checkout.tools, *checkout.own_tests)

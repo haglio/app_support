@@ -50,6 +50,10 @@ class Checkout:
         return self.root / "tests"
 
     @property
+    def own_tests(self) -> tuple[Path, ...]:
+        return (self.tests,) if any(self.tests.rglob("*.py")) else ()
+
+    @property
     def ships(self) -> tuple[Path, ...]:
         return (*self.packages, *self.root_modules)
 

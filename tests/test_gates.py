@@ -116,6 +116,16 @@ class TestTheGatesPlugin:
         assert done.returncode == 0, done.stdout
         assert f"{EVERY_REPOSITORYS_GATES + 1} passed" in done.stdout, done.stdout
 
+    def test_a_repo_with_no_tests_of_its_own_passes_every_gate(self, tmp_path: Path):
+        repo = _repo(tmp_path)
+        (repo / "tests" / "test_example.py").unlink()
+        (repo / "tests").rmdir()
+
+        done = run_pytest_in(repo)
+
+        assert done.returncode == 0, done.stdout
+        assert f"{EVERY_REPOSITORYS_GATES} passed" in done.stdout, done.stdout
+
     @pytest.mark.parametrize(("broken", "goes_red"), [
         ({"example/app.py": 'UNREAD = 1\n\n\ndef main():\n    return 1\n\n\nif __name__ == "__main__":\n    main()\n'},
          "test_no_module_level_constant_goes_unread"),
