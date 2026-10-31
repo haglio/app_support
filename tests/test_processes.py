@@ -118,6 +118,29 @@ class TestTheMarksOnAProcess:
 
         assert processes.environment_names(child.pid) == frozenset()
 
+    def test_reads_the_files_a_process_writes_its_output_and_errors_to(self, tmp_path):
+        with (tmp_path / "out.txt").open("w") as out, (tmp_path / "errors.txt").open("w") as errors:
+            child = subprocess.Popen([PYTHON, "-c", "import time; time.sleep(120)"], stdout=out, stderr=errors)
+        try:
+            _the(child)
+
+            assert {os.path.normcase(path) for path in processes.output_files(child.pid)} == {
+                os.path.normcase(str((tmp_path / name).resolve())) for name in ("out.txt", "errors.txt")}
+        finally:
+            child.kill()
+            child.wait()
+
+    def test_a_process_writing_to_a_pipe_writes_to_no_file(self):
+        child = subprocess.Popen([PYTHON, "-c", "import time; time.sleep(120)"],
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            _the(child)
+
+            assert processes.output_files(child.pid) == frozenset()
+        finally:
+            child.kill()
+            child.communicate()
+
     def test_reads_the_desktop_this_very_process_runs_on(self):
         assert processes.desktop_of(os.getpid())
 

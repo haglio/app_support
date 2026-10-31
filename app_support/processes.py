@@ -34,13 +34,19 @@ _SYNCHRONIZE = 0x00100000
 _INFINITE = 0xFFFFFFFF
 _WAIT_OBJECT_0 = 0
 # The x64 layouts psutil reads through as well: PEB.ProcessParameters, and in
-# RTL_USER_PROCESS_PARAMETERS the Environment pointer, DesktopInfo (a UNICODE_STRING:
-# length, maximum, padding, pointer) and EnvironmentSize.
+# RTL_USER_PROCESS_PARAMETERS the StandardOutput and StandardError handles, the
+# Environment pointer, DesktopInfo (a UNICODE_STRING: length, maximum, padding, pointer)
+# and EnvironmentSize.
 _PEB_PROCESS_PARAMETERS = 0x20
 _PARAMETERS_ENVIRONMENT = 0x80
 _PARAMETERS_DESKTOP_INFO = 0xC0
 _PARAMETERS_ENVIRONMENT_SIZE = 0x3F0
+_PARAMETERS_OUTPUT_AND_ERRORS = (0x28, 0x30)
 _LARGEST_READ = 1 << 20
+_DUP_HANDLE = 0x0040
+_DUPLICATE_SAME_ACCESS = 0x2
+_FILE_TYPE_DISK = 1
+_LONGEST_PATH = 32768
 # Git Bash runs its programs on a POSIX runtime, which hands a program it starts the
 # environment through the runtime's exported `environ` and gives Windows only the few
 # names a process needs to start.
@@ -111,6 +117,15 @@ def _api():
     kernel32.ReadProcessMemory.restype = wintypes.BOOL
     kernel32.ReadProcessMemory.argtypes = [wintypes.HANDLE, ctypes.c_void_p, ctypes.c_void_p,
                                            ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)]
+    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel32.DuplicateHandle.restype = wintypes.BOOL
+    kernel32.DuplicateHandle.argtypes = [wintypes.HANDLE, wintypes.HANDLE, wintypes.HANDLE,
+                                         ctypes.POINTER(wintypes.HANDLE), wintypes.DWORD, wintypes.BOOL,
+                                         wintypes.DWORD]
+    kernel32.GetFileType.restype = wintypes.DWORD
+    kernel32.GetFileType.argtypes = [wintypes.HANDLE]
+    kernel32.GetFinalPathNameByHandleW.restype = wintypes.DWORD
+    kernel32.GetFinalPathNameByHandleW.argtypes = [wintypes.HANDLE, wintypes.LPWSTR, wintypes.DWORD, wintypes.DWORD]
     kernel32.K32EnumProcessModulesEx.restype = wintypes.BOOL
     kernel32.K32EnumProcessModulesEx.argtypes = [wintypes.HANDLE, ctypes.POINTER(ctypes.c_void_p), wintypes.DWORD,
                                                  ctypes.POINTER(wintypes.DWORD), wintypes.DWORD]
@@ -250,8 +265,8 @@ def _parameters(handle) -> int:
     return _pointer(handle, basics.PebBaseAddress + _PEB_PROCESS_PARAMETERS)
 
 
-def _from_its_memory(pid: int, read):
-    handle = _kernel32.OpenProcess(_QUERY_INFORMATION | _VM_READ, False, pid)
+def _from_its_memory(pid: int, read, *, access: int = 0):
+    handle = _kernel32.OpenProcess(_QUERY_INFORMATION | _VM_READ | access, False, pid)
     if not handle:
         return None
     try:
@@ -294,6 +309,29 @@ def desktop_of(pid: int) -> str | None:
         return _read(handle, text_at, length).decode("utf-16-le", "replace") if length and text_at else ""
 
     return _from_its_memory(pid, read)
+
+
+def output_files(pid: int) -> frozenset[str]:
+    def read(handle, parameters: int) -> frozenset[str]:
+        handed = (_pointer(handle, parameters + offset) for offset in _PARAMETERS_OUTPUT_AND_ERRORS)
+        return frozenset(path for value in handed if (path := _file_behind(handle, value)))
+
+    return _from_its_memory(pid, read, access=_DUP_HANDLE) or frozenset()
+
+
+def _file_behind(owner, value: int) -> str:
+    copy = wintypes.HANDLE()
+    if not value or not _kernel32.DuplicateHandle(owner, value, _kernel32.GetCurrentProcess(), ctypes.byref(copy),
+                                                  0, False, _DUPLICATE_SAME_ACCESS):
+        return ""
+    try:
+        if _kernel32.GetFileType(copy) != _FILE_TYPE_DISK:
+            return ""
+        path = ctypes.create_unicode_buffer(_LONGEST_PATH)
+        length = _kernel32.GetFinalPathNameByHandleW(copy, path, len(path), 0)
+        return path.value.removeprefix("\\\\?\\") if 0 < length < len(path) else ""
+    finally:
+        _kernel32.CloseHandle(copy)
 
 
 def environment_names(pid: int) -> frozenset[str]:
