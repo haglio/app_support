@@ -22,6 +22,7 @@ pytest_collection_modifyitems  # app_support/coverage_gate.py, app_support/repo_
 pytest_terminal_summary  # app_support/coverage_gate.py
 pytest_make_collect_report  # app_support/shipped_tests.py
 pytest_ignore_collect  # app_support/shipped_tests.py
+_getobj  # app_support/shipped_tests.py, how pytest asks a Module it collects for its module
 pytest_plugins  # app_support/{sanitize,clocks}/pytest_plugin.py, read off the module as it is registered
 pytestmark  # every check of a repository, shipped or this repo's own, read off its module at collection
 cov_fail_under  # app_support/coverage_gate.py, set on pytest-cov's own namespace
