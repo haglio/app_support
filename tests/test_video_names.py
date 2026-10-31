@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from app_support.video_names import (
+    UPSCALE_SUFFIX,
     clip_title,
     normalize_title,
     stable_title,
@@ -49,6 +50,10 @@ class TestStripProcessingSuffixes:
 
     def test_a_cfr_suffix_is_stripped_only_after_topaz(self):
         assert strip_processing_suffixes("clip_cfr") == "clip_cfr"
+
+    def test_the_upscale_stages_suffix_is_one_of_the_suffixes_stripped(self):
+        assert strip_processing_suffixes(f"clip{UPSCALE_SUFFIX}") == "clip"
+        assert strip_processing_suffixes(f"clip{UPSCALE_SUFFIX}_cfr") == "clip"
 
 
 class TestStableTitle:
