@@ -89,7 +89,7 @@ class TestExePrefix:
         assert exe_prefix("Highdeas") == "Highdeas-"
 
     def test_refuses_a_name_with_nothing_usable_in_it(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="app name has nothing to make a file name from"):
             exe_prefix("   ")
 
     @pytest.mark.parametrize("app_name", ["Fun Time", "Highdeas", "OSR2 Broker!", "a.b*c"])
@@ -115,7 +115,7 @@ class TestNaming:
     def test_refuses_a_role_that_is_not_plain_letters(self, role: str):
         # The role becomes a file name beside the interpreter, so anything with
         # a separator in it is a write somewhere nobody asked for.
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="role must be plain letters"):
             ProcessNamer("Fun Time").exe_name("pythonw.exe", role)
 
     def test_the_description_leads_with_the_app(self):
@@ -157,7 +157,7 @@ class TestBuildIconResources:
         assert ids == [1, 2]
 
     def test_refuses_something_that_is_not_an_icon(self):
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="not an icon file"):
             build_icon_resources(b"\x89PNG\r\n\x1a\n" + b"\x00" * 32)
 
 

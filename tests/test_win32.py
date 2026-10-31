@@ -112,7 +112,7 @@ class TestSetAppUserModelId:
         shell32 = _FakeDll(
             SetCurrentProcessExplicitAppUserModelID=_FakeFunction(E_INVALIDARG))
 
-        with pytest.raises(OSError):
+        with pytest.raises(OSError, match="SetCurrentProcessExplicitAppUserModelID failed"):
             set_app_user_model_id("Example.App", shell32=lambda: shell32)
 
     def test_the_refusal_names_the_call_and_a_number_that_can_be_looked_up(self):
@@ -121,11 +121,9 @@ class TestSetAppUserModelId:
         shell32 = _FakeDll(
             SetCurrentProcessExplicitAppUserModelID=_FakeFunction(E_INVALIDARG))
 
-        with pytest.raises(OSError) as raised:
+        with pytest.raises(OSError,
+                           match="SetCurrentProcessExplicitAppUserModelID failed: HRESULT 0x80070057"):
             set_app_user_model_id("Example.App", shell32=lambda: shell32)
-
-        assert "SetCurrentProcessExplicitAppUserModelID" in str(raised.value)
-        assert "0x80070057" in str(raised.value)
 
 
 def _guid_to_uuid(guid) -> uuid.UUID:
@@ -175,31 +173,28 @@ class TestSetShortcutAppUserModelId:
         # decrements their count and can close the apartment under them.
         ole32 = _FakeOle32(init=RPC_E_CHANGED_MODE)
 
-        with pytest.raises(OSError) as raised:
+        with pytest.raises(OSError, match="CoInitializeEx failed: HRESULT 0x80010106"):
             set_shortcut_app_user_model_id("C:/pins/Example.lnk", "Example.App",
                                            ole32=lambda: ole32)
 
         assert ole32.CoUninitialize.calls == []
         assert ole32.CoCreateInstance.calls == []
-        assert "CoInitializeEx" in str(raised.value)
-        assert "0x80010106" in str(raised.value)
 
     def test_an_apartment_it_opened_is_given_back_even_when_the_stamp_fails(self):
         ole32 = _FakeOle32(init=0, create=E_INVALIDARG)
 
-        with pytest.raises(OSError) as raised:
+        with pytest.raises(OSError, match=r"CoCreateInstance\(ShellLink\) failed"):
             set_shortcut_app_user_model_id("C:/pins/Example.lnk", "Example.App",
                                            ole32=lambda: ole32)
 
         assert len(ole32.CoUninitialize.calls) == 1
-        assert "CoCreateInstance" in str(raised.value)
 
     def test_an_apartment_the_thread_already_had_is_still_given_back(self):
         # S_FALSE: this thread was already initialized in the same model. It is
         # a success, and it still took a reference this thread owes back.
         ole32 = _FakeOle32(init=S_FALSE, create=E_INVALIDARG)
 
-        with pytest.raises(OSError):
+        with pytest.raises(OSError, match=r"CoCreateInstance\(ShellLink\) failed"):
             set_shortcut_app_user_model_id("C:/pins/Example.lnk", "Example.App",
                                            ole32=lambda: ole32)
 
@@ -212,21 +207,19 @@ class TestReadShortcut:
         # The reader's bracket is the stamper's, for the stamper's reason.
         ole32 = _FakeOle32(init=RPC_E_CHANGED_MODE)
 
-        with pytest.raises(OSError) as raised:
+        with pytest.raises(OSError, match="CoInitializeEx failed"):
             read_shortcut("C:/pins/Example.lnk", ole32=lambda: ole32)
 
         assert ole32.CoUninitialize.calls == []
         assert ole32.CoCreateInstance.calls == []
-        assert "CoInitializeEx" in str(raised.value)
 
     def test_an_apartment_it_opened_is_given_back_even_when_the_read_fails(self):
         ole32 = _FakeOle32(init=0, create=E_INVALIDARG)
 
-        with pytest.raises(OSError) as raised:
+        with pytest.raises(OSError, match=r"CoCreateInstance\(ShellLink\) failed"):
             read_shortcut("C:/pins/Example.lnk", ole32=lambda: ole32)
 
         assert len(ole32.CoUninitialize.calls) == 1
-        assert "CoCreateInstance" in str(raised.value)
 
 
 def _through_the_script_host(tmp_path: pathlib.Path, script: str, **env: str) -> str:
@@ -358,23 +351,21 @@ class TestWriteShortcut:
     def test_an_apartment_it_never_opened_is_not_given_back(self):
         ole32 = _FakeOle32(init=RPC_E_CHANGED_MODE)
 
-        with pytest.raises(OSError) as raised:
+        with pytest.raises(OSError, match="CoInitializeEx failed"):
             write_shortcut("C:/example/Example.lnk", target="C:/example/pythonw.exe",
                            ole32=lambda: ole32)
 
         assert ole32.CoUninitialize.calls == []
         assert ole32.CoCreateInstance.calls == []
-        assert "CoInitializeEx" in str(raised.value)
 
     def test_an_apartment_it_opened_is_given_back_even_when_the_write_fails(self):
         ole32 = _FakeOle32(init=0, create=E_INVALIDARG)
 
-        with pytest.raises(OSError) as raised:
+        with pytest.raises(OSError, match=r"CoCreateInstance\(ShellLink\) failed"):
             write_shortcut("C:/example/Example.lnk", target="C:/example/pythonw.exe",
                            ole32=lambda: ole32)
 
         assert len(ole32.CoUninitialize.calls) == 1
-        assert "CoCreateInstance" in str(raised.value)
 
 
 @pytest.mark.skipif(not hasattr(ctypes, "windll"), reason="COM: only Windows can say")
@@ -517,11 +508,8 @@ class TestDressWindow:
     def test_a_window_the_shell_will_not_open_is_named_in_the_refusal(self):
         shell32 = _FakeDll(SHGetPropertyStoreForWindow=_FakeFunction(E_INVALIDARG))
 
-        with pytest.raises(OSError) as raised:
+        with pytest.raises(OSError, match="SHGetPropertyStoreForWindow failed: HRESULT 0x80070057"):
             dress_window(0x1234, "Example.App", _EXAMPLE_APP, shell32=lambda: shell32)
-
-        assert "SHGetPropertyStoreForWindow" in str(raised.value)
-        assert "0x80070057" in str(raised.value)
 
 
 class _FakeRegistry:
@@ -1256,7 +1244,7 @@ class TestForceForegroundWindow:
 
         user32.SetForegroundWindow = _Refused()
 
-        with pytest.raises(OSError):
+        with pytest.raises(OSError, match="refused"):
             force_foreground_window(111, user32=lambda: user32, kernel32=lambda: kernel32)
 
         assert user32.AttachThreadInput.calls[-1] == (FOREGROUND_THREAD, THIS_THREAD, False)

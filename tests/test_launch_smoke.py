@@ -160,7 +160,7 @@ class TestAgainstARealInterpreter:
             env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
             return subprocess.run(
                 [sys.executable, "-c", "\n".join(statements)],
-                cwd=root, env=env, capture_output=True, text=True,
+                cwd=root, env=env, capture_output=True, text=True, check=False,
             )
         return run
 

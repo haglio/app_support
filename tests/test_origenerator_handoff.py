@@ -160,7 +160,7 @@ class TestTheTakeover:
     def test_a_takeover_that_does_not_read_as_one_is_refused_and_gone(self, tmp_path: Path, written: str):
         _write(tmp_path, handoff.TAKEOVER, written)
 
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="holds no takeover"):
             handoff.take_the_takeover(tmp_path)
 
         assert not handoff.a_takeover_waits_in(tmp_path)

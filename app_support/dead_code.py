@@ -139,7 +139,7 @@ def scan(
         config.write_text(_vulture_config_reading(*targets, *callers), encoding="utf-8")
         command = [sys.executable, "-m", "vulture", "--config", str(config),
                    "--min-confidence", str(min_confidence)]
-        result = subprocess.run(command, capture_output=True, text=True)
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
     if result.returncode == _REPORT_IS_NOT_EMPTY:
         return _without_what_is_inside(callers, result.stdout)
     if result.returncode != _NOTHING_TO_REPORT:
@@ -175,7 +175,7 @@ def _without_what_is_inside(callers: tuple[Path, ...], report: str) -> str:
 
 def tracked_python(checkout: Path | str) -> list[Path]:
     listed = subprocess.run(["git", "-C", str(checkout), "ls-files", "-z", "--", "*.py"],
-                            capture_output=True, text=True, encoding="utf-8")
+                            capture_output=True, text=True, encoding="utf-8", check=False)
     files = [Path(checkout) / name for name in listed.stdout.split("\0") if name]
     if not files:
         raise ScanDidNotRun(f"nothing to read: {checkout} tracks no Python\n{listed.stderr}")

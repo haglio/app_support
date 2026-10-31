@@ -35,7 +35,7 @@ def _resolve_from_outside_any_repo() -> tuple[str, str]:
     with tempfile.TemporaryDirectory() as neutral_cwd:
         result = subprocess.run(
             [sys.executable, "-c", _PROBE],
-            cwd=neutral_cwd, capture_output=True, text=True,
+            cwd=neutral_cwd, capture_output=True, text=True, check=False,
         )
     assert result.returncode == 0, (
         f"app_support is not importable from this interpreter:\n{result.stderr}"

@@ -373,7 +373,7 @@ class TestHookEntryPoint:
         env = {**os.environ, "PYTHONPATH": str(pythonpath or here)}
         return subprocess.run(
             ["git", "-C", str(repo), "commit", "-m", message],
-            capture_output=True, text=True, env=env,
+            capture_output=True, text=True, env=env, check=False,
         )
 
     def test_the_hook_refuses_a_staged_banned_term(self, tmp_path: Path):
