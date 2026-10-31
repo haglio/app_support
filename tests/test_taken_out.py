@@ -197,3 +197,14 @@ class TestMain:
         assert passed == 0
         assert "takes out widgetlib.parts and widgetlib.parts.Lever" in said
         assert "read 1 branch of 1 other repo, and none uses any of it" in said
+
+    def test_a_change_that_takes_something_out_when_github_lists_no_other_repo_is_refused(
+            self, repository_named, capsys):
+        library = self._library(repository_named)
+        library.git("rm", "-q", "widgetlib/parts.py")
+        library.git("commit", "-q", "-m", "take out the parts")
+
+        refused = main(["--base", "main", "--checkout", str(library.path)], ask=lambda query: self._on_github())
+
+        assert refused == 2
+        assert "listed no repo but this one" in capsys.readouterr().out

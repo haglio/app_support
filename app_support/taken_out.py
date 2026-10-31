@@ -171,6 +171,10 @@ def main(argv: list[str] | None = None, *, ask: Callable[[str], str] = _ask_gith
         print("This change takes out no module or name.")
         return 0
     found = open_on_github(arguments.org, but=arguments.repo or arguments.checkout.name, ask=ask)
+    if not found:
+        print(f"This change takes out {listed(sorted(taken))}, and GitHub listed no repo but this one in "
+              f"{arguments.org}, so nothing could be read for a use of it.")
+        return 2
     with tempfile.TemporaryDirectory() as into:
         branches = fetched(found, Path(into), url_of=url_of or (
             lambda repo: f"https://github.com/{arguments.org}/{repo}.git"))
