@@ -26,6 +26,7 @@ import os
 from pathlib import Path
 
 _NOT_THE_REPOS = frozenset({".venv", "__pycache__", ".claude", ".git", "state"})
+_GETATTRS_NAME = 1
 
 
 def python_files(root) -> list[Path]:
@@ -255,9 +256,9 @@ def _attributes_read_or_named_in(packages) -> set[str]:
             if isinstance(node, ast.Attribute):
                 read.add(node.attr)
             elif (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-                    and node.func.id == "getattr" and len(node.args) >= 2
-                    and isinstance(node.args[1], ast.Constant)):
-                read.add(node.args[1].value)
+                    and node.func.id == "getattr" and len(node.args) > _GETATTRS_NAME
+                    and isinstance(node.args[_GETATTRS_NAME], ast.Constant)):
+                read.add(node.args[_GETATTRS_NAME].value)
     return read
 
 

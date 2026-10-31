@@ -172,7 +172,7 @@ def _refuse_unreadable_text(refuse, value, key: str = "") -> None:
     elif isinstance(value, str):
         if not value.isascii():
             raise refuse(f"{key or 'a key'} is not ASCII: {value!r}")
-        if any(ord(character) < 32 and character != "\n" for character in value):
+        if any(ord(character) < ord(" ") and character != "\n" for character in value):
             raise refuse(f"{key or 'a key'} holds a control character: {value!r}")
 
 
