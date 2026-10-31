@@ -29,6 +29,8 @@ from pathlib import Path
 from app_support.siblings import primary_checkout_of
 
 _MAX_EXCERPT = 160
+_MOST_LISTED = 20
+_LONGEST_WORD_KEPT_WHOLE = 3
 _BLOCKLIST = Path(".sanitize") / "blocklist.txt"
 # What may stand between the words of a multi-word term: any run of spacing or
 # joining punctuation, or nothing — the shapes a filename uses.
@@ -55,7 +57,8 @@ def _stem(word: str) -> str:
     still matches exactly what it matched before.
     """
     lower = word.lower()
-    if len(lower) <= 3 or not lower.endswith("s") or lower.endswith(("ss", "us", "is")):
+    if (len(lower) <= _LONGEST_WORD_KEPT_WHOLE or not lower.endswith("s")
+            or lower.endswith(("ss", "us", "is"))):
         return word
     if lower.endswith("es") and lower[:-2].endswith(_SIBILANT_ENDINGS):
         return word[:-2]
@@ -380,10 +383,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Report the redacted excerpt only; naming the term would print the content
     # this guard exists to keep out of the terminal as well as the repo.
     print(f"blocked term in {what}:", file=sys.stderr)
-    for v in violations[:20]:
+    for v in violations[:_MOST_LISTED]:
         print(f"  {v.path}:{v.line}  {v.excerpt}", file=sys.stderr)
-    if len(violations) > 20:
-        print(f"  ... {len(violations) - 20} more", file=sys.stderr)
+    if len(violations) > _MOST_LISTED:
+        print(f"  ... {len(violations) - _MOST_LISTED} more", file=sys.stderr)
     print(
         "\nFabricate the value instead -- invent it from scratch rather than\n"
         "editing a real one, which leaves the same thing named. `--no-verify`\n"
