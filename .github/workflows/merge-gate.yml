@@ -27,6 +27,7 @@ jobs:
       siblings: ""
       python-version: "3.14"
       timeout-minutes: 15
+      keeps-what-others-use: true
 
   # A consumer built against the candidate. This package installs editable into
   # every app's venv, so a change here lands in ten repos the moment it merges --
@@ -46,11 +47,13 @@ jobs:
     uses: haglio/.github/.github/workflows/apps-import.yml@main
 
   # A version for each landing, so a consumer can pin the copy it was built
-  # against instead of running whatever checkout sits beside it. The tag is the
-  # version: pyproject reads it with setuptools-scm.
+  # against instead of running whatever checkout sits beside it, and a pull request
+  # in each consumer taking it. The tag is the version: pyproject reads it with
+  # setuptools-scm.
   tag:
     if: github.event_name == 'push'
     needs: full-suite
     uses: haglio/.github/.github/workflows/tag-the-landing.yml@main
     permissions:
       contents: write
+    secrets: inherit
