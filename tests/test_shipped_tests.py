@@ -50,6 +50,12 @@ def pytest_collection_modifyitems(items):
     items[:] = items[{part} - 1::2]
     items.sort(key=collected.index)
 """
+A_TEST_OF_WHICH_COPY_OF_THE_REPOS_PACKAGE_IT_IMPORTS = """\
+def test_the_checkouts_own_copy():
+    import example_app
+
+    assert example_app.COPY == "the checkout's"
+"""
 
 
 def a_consumer(tmp_path: Path) -> Path:
@@ -138,9 +144,8 @@ class TestWhichRunsAreEnforced:
 
 class TestWhatShippingReachesInAConsumer:
     def test_this_repo_root_offers_a_consumer_only_the_one_name(self):
-        """Collecting a shipped file puts this repo's root on the consumer's
-        `sys.path` -- measured, under an editable install; under a wheel it is
-        site-packages instead -- and a real package anywhere on the path beats a
+        """An editable install puts this repo's root on the `sys.path` of every
+        venv holding it, and a real package anywhere on the path beats a
         namespace portion of the same name wherever that sits. So every package
         that directory publishes can stand in for a directory of ten other
         suites, and `tools` and `tests` are names every one of them uses.
@@ -187,6 +192,21 @@ class TestWhatShippingReachesInAConsumer:
 
         assert done.returncode == pytest.ExitCode.OK, done.stdout + done.stderr
         assert THE_BLOCKED_WORD_CHECK in done.stdout, done.stdout
+
+    def test_a_whole_run_imports_the_checkouts_package_over_a_copy_installed_beside_this_one(
+        self, tmp_path: Path,
+    ):
+        repo = a_consumer(tmp_path)
+        site = installed_at(tmp_path / "venv" / "Lib" / "site-packages")
+        for folder, copy in ((repo, "the checkout's"), (site, "the installed")):
+            (folder / "example_app").mkdir()
+            (folder / "example_app" / "__init__.py").write_text(f'COPY = "{copy}"\n', encoding="utf-8")
+        (repo / "tests" / "test_code.py").write_text(A_TEST_OF_WHICH_COPY_OF_THE_REPOS_PACKAGE_IT_IMPORTS,
+                                                     encoding="utf-8")
+
+        done = run_pytest_in(repo, "-k", "the_checkouts_own_copy", app_support_from=site)
+
+        assert done.returncode == pytest.ExitCode.OK, done.stdout + done.stderr
 
     @pytest.mark.parametrize(("site", "passing_over"), [
         pytest.param("vendor", [], id="a folder the run walks"),

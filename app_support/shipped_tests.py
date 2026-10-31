@@ -15,6 +15,7 @@ repo at a time.
 """
 from __future__ import annotations
 
+import importlib
 from pathlib import Path
 
 import pytest
@@ -43,6 +44,7 @@ def is_a_full_run(config) -> bool:
 
 
 _SHIPPED = pytest.StashKey[dict[Path, None]]()
+_FOLDER_HOLDING_THIS_PACKAGE = Path(__file__).resolve().parents[1]
 
 
 def ship(config, shipped: Path) -> None:
@@ -61,9 +63,15 @@ class _CollectingBesideTheTrees:
     def pytest_make_collect_report(self, collector):
         report = yield
         if isinstance(collector, pytest.Session) and report.passed:
-            report.result[:0] = [pytest.Module.from_parent(collector, path=shipped)
+            report.result[:0] = [_ImportedByName.from_parent(collector, path=shipped)
                                  for shipped in collected_beside_the_trees(collector.config)]
         return report
 
     def pytest_ignore_collect(self, collection_path, config) -> bool | None:
         return collection_path in config.stash[_SHIPPED] or None
+
+
+class _ImportedByName(pytest.Module):
+    def _getobj(self):
+        name = self.path.relative_to(_FOLDER_HOLDING_THIS_PACKAGE).with_suffix("")
+        return importlib.import_module(".".join(name.parts))
