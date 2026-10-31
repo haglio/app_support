@@ -23,7 +23,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path, PurePosixPath
 
 from app_support import import_sweep, production_update
-from app_support.dependencies import SiblingPin, sibling_pins_in
+from app_support.dependencies import SiblingPin, repinned, sibling_pins_in
 from app_support.logging_utils import configure_logging
 from app_support.production_update import (
     HOTFIX_REF,
@@ -307,9 +307,7 @@ def _tag(shared_hotfix: _SharedHotfix, *, run: Run) -> None:
 
 
 def _repin(pyproject: Path, pin: SiblingPin, tag: str) -> None:
-    text = pyproject.read_bytes().decode("utf-8")
-    pyproject.write_bytes(re.sub(re.escape(pin.spec) + r"(?![\w.])", lambda _: pin.spec[: -len(pin.tag)] + tag,
-                                 text).encode("utf-8"))
+    pyproject.write_bytes(repinned(pyproject.read_bytes().decode("utf-8"), pin, tag).encode("utf-8"))
 
 
 def _commit(place: Path, app_fix: _Fix | None, hotfixes: list[_SharedHotfix], *, run: Run) -> str:

@@ -463,10 +463,19 @@ class SiblingPin:
         return FAMILY_ON_GITHUB + self.repo
 
 
+def release_of(version: str) -> tuple[int, ...]:
+    found = re.match(r"v?(\d+(?:\.\d+)*)", version.strip())
+    return tuple(int(part) for part in found.group(1).split(".")) if found else ()
+
+
 def sibling_pins_in(pyproject_text: str) -> list[SiblingPin]:
     return [SiblingPin(match["package"], match["repo"], match["tag"], requirement.strip())
             for _group, requirement in _requirements_in(pyproject_text)
             if (match := _SIBLING_PIN.match(requirement.strip()))]
+
+
+def repinned(pyproject_text: str, pin: SiblingPin, tag: str) -> str:
+    return re.sub(re.escape(pin.spec) + r"(?![\w.])", lambda _: pin.spec[: -len(pin.tag)] + tag, pyproject_text)
 
 
 def pinned_siblings(pyproject: Path) -> dict[str, str]:
