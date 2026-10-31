@@ -486,6 +486,26 @@ class TestEverySiblingIsPinned:
     def test_a_repo_with_no_siblings_at_all_passes(self, tmp_path: Path):
         assert_every_sibling_is_pinned(self._pyproject(tmp_path, "", ""))
 
+    def _library(self, tmp_path: Path, *, dependencies: str, dev: str) -> Path:
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text(
+            f'[project]\nname = "shared-ui"\ndependencies = [{dependencies}]\n'
+            f"[project.optional-dependencies]\ndev = [{dev}]\n"
+            '[tool.haglio]\nsiblings = ["app_support"]\n',
+            encoding="utf-8")
+        return pyproject
+
+    def test_a_library_pinning_a_sibling_where_installing_it_asks_for_one_is_refused(self, tmp_path: Path):
+        pyproject = self._library(
+            tmp_path, dependencies='"app-support @ git+https://github.com/haglio/app_support@v0.1.139"', dev="")
+
+        with pytest.raises(AssertionError, match=r"dev extra[^\n]*app_support"):
+            assert_every_sibling_is_pinned(pyproject)
+
+    def test_a_library_pinning_its_siblings_for_its_own_suite_alone_passes(self, tmp_path: Path):
+        assert_every_sibling_is_pinned(self._library(
+            tmp_path, dependencies="", dev='"app-support @ git+https://github.com/haglio/app_support@v0.1.139"'))
+
 
 class TestTheSiblingPins:
     """What a pyproject pins, read from its text: a commit's, as git shows it."""
