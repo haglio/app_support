@@ -24,9 +24,15 @@ _VM_READ = 0x0010
 _SNAPSHOT_PROCESSES = 0x2
 _COMMAND_LINE_INFORMATION = 60
 _BASIC_INFORMATION = 0
+# Windows' undocumented query for the console host serving a process; the answer's two low bits are flags.
+_CONSOLE_HOST_INFORMATION = 49
+_CONSOLE_HOST_FLAGS = 3
 _INFO_LENGTH_MISMATCH = 0xC0000004
 _UNIX_EPOCH_AS_FILETIME = 116444736000000000
 _STILL_ACTIVE = 259
+_SYNCHRONIZE = 0x00100000
+_INFINITE = 0xFFFFFFFF
+_WAIT_OBJECT_0 = 0
 # The x64 layouts psutil reads through as well: PEB.ProcessParameters, and in
 # RTL_USER_PROCESS_PARAMETERS the Environment pointer, DesktopInfo (a UNICODE_STRING:
 # length, maximum, padding, pointer) and EnvironmentSize.
@@ -85,6 +91,8 @@ def _api():
     kernel32.GetProcessTimes.argtypes = [wintypes.HANDLE, *[ctypes.POINTER(ctypes.c_ulonglong)] * 4]
     kernel32.GetExitCodeProcess.restype = wintypes.BOOL
     kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+    kernel32.WaitForSingleObject.restype = wintypes.DWORD
+    kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
     kernel32.ReadProcessMemory.restype = wintypes.BOOL
     kernel32.ReadProcessMemory.argtypes = [wintypes.HANDLE, ctypes.c_void_p, ctypes.c_void_p,
                                            ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)]
@@ -226,6 +234,30 @@ def _from_its_memory(pid: int, read):
         return read(handle, _parameters(handle))
     except (OSError, TypeError, ValueError):
         return None
+    finally:
+        _kernel32.CloseHandle(handle)
+
+
+def wait_for_end(pid: int) -> bool:
+    handle = _kernel32.OpenProcess(_SYNCHRONIZE, False, pid)
+    if not handle:
+        return False
+    try:
+        return _kernel32.WaitForSingleObject(handle, _INFINITE) == _WAIT_OBJECT_0
+    finally:
+        _kernel32.CloseHandle(handle)
+
+
+def console_host_of(pid: int) -> int | None:
+    handle = _kernel32.OpenProcess(_QUERY_LIMITED_INFORMATION, False, pid)
+    if not handle:
+        return None
+    try:
+        host = ctypes.c_size_t()
+        if _ntdll.NtQueryInformationProcess(handle, _CONSOLE_HOST_INFORMATION, ctypes.byref(host),
+                                            ctypes.sizeof(host), None):
+            return None
+        return (host.value & ~_CONSOLE_HOST_FLAGS) or None
     finally:
         _kernel32.CloseHandle(handle)
 
