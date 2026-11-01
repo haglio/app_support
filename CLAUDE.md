@@ -48,9 +48,10 @@ each landing tags a version and opens, in every repo pinning this one behind
 it, a pull request taking the newest release (`app_support.newest_pins`),
 which ships once that repo's checks pass. The gate runs broker's, Fun Time's
 and Origenerator's suites against the change first, and refuses one that takes
-out a module or a name another repo's main or open pull request still uses
-(`app_support.taken_out`): keep it until that work has moved off it, then take
-it out.
+out a module or a name another repo's main uses, or an open pull request's own
+changes use (`app_support.taken_out`): keep it until that work has moved off
+it, then take it out. A use a pull request only has from the older main it was
+cut from holds nothing up, since its next rebase takes main's.
 
 ## Test fixtures must be fabricated, never copied from the real library
 

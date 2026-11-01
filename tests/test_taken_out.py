@@ -87,10 +87,31 @@ class TestStillUsed:
         consumer = branch_from({"someapp/hud.py": "from widgetlib.colors import GRAY\n"})
         consumer.commit({"someapp/levers.py": "from widgetlib.parts import Lever\n"})
         on_main = OpenBranch("someapp", "main", "main", consumer.path)
-        on_branch = OpenBranch("someapp", "claude/levers", "branch", consumer.path)
+        on_branch = OpenBranch("someapp", "claude/levers", "branch", consumer.path, cut_from="main")
 
         assert still_used(self.TAKEN_OUT, [on_main, on_branch], ("widgetlib",)) == [
             StillUsed("widgetlib.parts", on_branch, ("someapp/levers.py",))]
+
+    def test_a_use_a_branch_has_only_from_the_older_main_it_was_cut_from_holds_nothing_up(self, branch_from):
+        consumer = branch_from({"someapp/levers.py": "from widgetlib.parts import Lever\n"})
+        consumer.commit({"someapp/hud.py": "SHADE = 1\n"})
+        consumer.git("checkout", "-q", "main")
+        consumer.commit({"someapp/levers.py": "from widgetlib.gears import Lever\n"}, "main moves off the parts")
+        on_main = OpenBranch("someapp", "main", "main", consumer.path)
+        on_branch = OpenBranch("someapp", "claude/hud", "branch", consumer.path, cut_from="main")
+
+        assert still_used(self.TAKEN_OUT, [on_main, on_branch], ("widgetlib",)) == []
+
+    def test_a_use_a_branch_wrote_itself_is_still_used_there_though_it_inherited_another(self, branch_from):
+        consumer = branch_from({"someapp/levers.py": "from widgetlib.parts import Lever\n",
+                                "someapp/hud.py": "SHADE = 1\n"})
+        consumer.commit({"someapp/hud.py": "from widgetlib.parts import Lever\n"})
+        consumer.git("checkout", "-q", "main")
+        consumer.commit({"someapp/levers.py": "from widgetlib.gears import Lever\n"}, "main moves off the parts")
+        on_branch = OpenBranch("someapp", "claude/hud", "branch", consumer.path, cut_from="main")
+
+        assert still_used(self.TAKEN_OUT, [on_branch], ("widgetlib",)) == [
+            StillUsed("widgetlib.parts", on_branch, ("someapp/hud.py",))]
 
     def test_a_module_named_in_a_settings_file_or_a_launcher_is_still_used_there(self, branch_from):
         consumer = branch_from({
@@ -128,7 +149,8 @@ class TestOpenOnGitHub:
             asked.append(query)
             return json.dumps(answer)
 
-        assert open_on_github("someorg", but="widgetlib", ask=ask) == [("someapp", "main"), ("someapp", "claude/levers")]
+        assert open_on_github("someorg", but="widgetlib", ask=ask) == [
+            ("someapp", "main", "main"), ("someapp", "claude/levers", "main")]
         assert 'organization(login: "someorg")' in asked[0]
 
 
@@ -139,10 +161,11 @@ class TestFetched:
         into = tmp_path / "fetched"
         into.mkdir()
 
-        branches = fetched([("someapp", "main"), ("someapp", "branch")], into,
+        branches = fetched([("someapp", "main", "main"), ("someapp", "branch", "main")], into,
                            url_of=lambda repo: str(consumer.path))
 
-        assert [(branch.repo, branch.branch) for branch in branches] == [("someapp", "main"), ("someapp", "branch")]
+        assert [(branch.repo, branch.branch, branch.cut_from) for branch in branches] == [
+            ("someapp", "main", None), ("someapp", "branch", "refs/heads/main")]
         assert files_at(branches[1].git_dir, branches[1].commit, lambda path: True) == {
             "someapp/hud.py": "SHADE = 1\n", "someapp/levers.py": "PULL = 2\n"}
 
@@ -196,7 +219,26 @@ class TestMain:
         said = capsys.readouterr().out
         assert passed == 0
         assert "takes out widgetlib.parts and widgetlib.parts.Lever" in said
-        assert "read 1 branch of 1 other repo, and none uses any of it" in said
+        assert "read 1 branch of 1 other repo, and no main or pull request's own changes use any of it" in said
+
+    def test_a_pull_request_that_only_inherited_a_use_lets_the_change_through(self, repository_named, capsys):
+        library = self._library(repository_named)
+        library.git("rm", "-q", "widgetlib/parts.py")
+        library.git("commit", "-q", "-m", "take out the parts")
+        consumer = repository_named("someapp", {"someapp/levers.py": "from widgetlib.parts import Lever\n"})
+        consumer.git("checkout", "-q", "-b", "claude/hud")
+        consumer.commit({"someapp/hud.py": "SHADE = 1\n"})
+        consumer.git("checkout", "-q", "main")
+        consumer.commit({"someapp/levers.py": "from widgetlib.gears import Lever\n"}, "main moves off the parts")
+        on_github = json.dumps({"data": {"organization": {"repositories": {"nodes": [
+            {"name": "someapp", "defaultBranchRef": {"name": "main"},
+             "pullRequests": {"nodes": [{"headRefName": "claude/hud", "isCrossRepository": False}]}}]}}}})
+
+        passed = main(["--base", "main", "--checkout", str(library.path)],
+                      ask=lambda query: on_github, url_of=lambda repo: str(consumer.path))
+
+        assert passed == 0
+        assert "read 2 branches of 1 other repo" in capsys.readouterr().out
 
     def test_a_change_that_takes_something_out_when_github_lists_no_other_repo_is_refused(
             self, repository_named, capsys):
