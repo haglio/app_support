@@ -71,6 +71,7 @@ class OpenBranch:
     branch: str
     commit: str
     git_dir: Path
+    cut_from: str | None = None
 
 
 @dataclass(frozen=True)
@@ -93,17 +94,28 @@ def _uses_in(path: str, text: str, packages: Iterable[str]) -> set[str]:
     return spelled_out(text, packages)
 
 
+def _uses_at(git_dir: Path, revision: str, packages: tuple[str, ...]) -> dict[str, set[str]]:
+    return {path: _uses_in(path, text, packages) for path, text in files_at(git_dir, revision, _is_read).items()
+            if any(package in text for package in packages)}
+
+
+def _inherited_by(branch: OpenBranch, packages: tuple[str, ...]) -> dict[str, set[str]]:
+    if branch.cut_from is None:
+        return {}
+    return _uses_at(branch.git_dir, git(branch.git_dir, "merge-base", branch.cut_from, branch.commit).strip(), packages)
+
+
 def still_used(taken_out: set[str] | frozenset[str], branches: Iterable[OpenBranch],
                packages: Iterable[str]) -> list[StillUsed]:
     packages = tuple(packages)
     found = []
     for branch in branches:
         where: dict[str, set[str]] = {}
-        for path, text in files_at(branch.git_dir, branch.commit, _is_read).items():
-            if any(package in text for package in packages):
-                for reference in _uses_in(path, text, packages):
-                    if name := broken_by(reference, taken_out):
-                        where.setdefault(name, set()).add(path)
+        inherited = _inherited_by(branch, packages)
+        for path, uses in _uses_at(branch.git_dir, branch.commit, packages).items():
+            for reference in uses - inherited.get(path, set()):
+                if name := broken_by(reference, taken_out):
+                    where.setdefault(name, set()).add(path)
         found += [StillUsed(name, branch, tuple(sorted(paths))) for name, paths in sorted(where.items())]
     return found
 
@@ -126,30 +138,32 @@ def _ask_github(query: str) -> str:
                           encoding="utf-8").stdout
 
 
-def open_on_github(org: str, *, but: str, ask: Callable[[str], str] = _ask_github) -> list[tuple[str, str]]:
+def open_on_github(org: str, *, but: str, ask: Callable[[str], str] = _ask_github) -> list[tuple[str, str, str]]:
     repositories = json.loads(ask(_OPEN_WORK % org))["data"]["organization"]["repositories"]["nodes"]
     found = []
     for repository in repositories:
         main = repository["defaultBranchRef"]
         if repository["name"] == but or main is None:
             continue
-        found.append((repository["name"], main["name"]))
-        found += [(repository["name"], pull["headRefName"])
+        found.append((repository["name"], main["name"], main["name"]))
+        found += [(repository["name"], pull["headRefName"], main["name"])
                   for pull in repository["pullRequests"]["nodes"] if not pull["isCrossRepository"]]
     return found
 
 
-def fetched(found: Iterable[tuple[str, str]], into: Path, *, url_of: Callable[[str], str]) -> list[OpenBranch]:
-    by_repo: dict[str, list[str]] = {}
-    for repo, branch in found:
-        by_repo.setdefault(repo, []).append(branch)
+def fetched(found: Iterable[tuple[str, str, str]], into: Path, *, url_of: Callable[[str], str]) -> list[OpenBranch]:
+    by_repo: dict[str, list[tuple[str, str]]] = {}
+    for repo, branch, main_branch in found:
+        by_repo.setdefault(repo, []).append((branch, main_branch))
     branches = []
     for repo, names in by_repo.items():
         git_dir = into / f"{repo}.git"
         git(into, "init", "-q", "--bare", str(git_dir))
-        git(git_dir, "fetch", "-q", "--depth=1", "--no-tags", url_of(repo),
-            *(f"+refs/heads/{name}:refs/heads/{name}" for name in names))
-        branches += [OpenBranch(repo, name, f"refs/heads/{name}", git_dir) for name in names]
+        git(git_dir, "fetch", "-q", "--no-tags", url_of(repo),
+            *(f"+refs/heads/{name}:refs/heads/{name}" for name, _ in names))
+        branches += [OpenBranch(repo, name, f"refs/heads/{name}", git_dir,
+                                cut_from=None if name == main_branch else f"refs/heads/{main_branch}")
+                     for name, main_branch in names]
     return branches
 
 
@@ -188,14 +202,15 @@ def _refusal(still: list[StillUsed]) -> str:
         ("This change takes out what other work still uses, which would stop that work at its first import once it "
          "takes this release:"),
         *(f"  {each.name}: {each.branch.repo} {each.branch.branch} ({', '.join(each.files)})" for each in still),
-        ("Keep each of these until nothing listed here uses it: move that work off it first, then take it out in a "
-         "later change.")])
+        ("A use a pull request only has from the older main it was cut from is not listed, since its next rebase takes "
+         "main's. Keep each of these until nothing listed here uses it: move that work off it first, then take it out "
+         "in a later change.")])
 
 
 def _clearance(taken: set[str], branches: list[OpenBranch]) -> str:
     repos = _counted(len({branch.repo for branch in branches}), "other repo", "other repos")
     return (f"This change takes out {listed(sorted(taken))}; read {_counted(len(branches), 'branch', 'branches')} "
-            f"of {repos}, and none uses any of it.")
+            f"of {repos}, and no main or pull request's own changes use any of it.")
 
 
 def _counted(count: int, one: str, many: str) -> str:
