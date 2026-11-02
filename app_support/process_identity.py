@@ -183,7 +183,7 @@ class ProcessNamer:
     def description(self, role: str) -> str:
         if _squash(role) == _squash(self.app_name):
             return self.app_name
-        return f"{self.app_name} – {_WORD_BREAK_RE.sub(' ', role)}"
+        return f"{self.app_name} \u2013 {_WORD_BREAK_RE.sub(' ', role)}"
 
     @property
     def _copy_name_pattern(self) -> str:

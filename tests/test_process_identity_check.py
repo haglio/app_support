@@ -34,7 +34,7 @@ class TestAnAppThatNamesItself:
             ProcessNamer("Broker").name_this_process("Tray")
 
         assert_the_app_names_its_process(
-            names_its_tray, tmp_path, app_name="Broker", role="Tray", row="Broker – Tray")
+            names_its_tray, tmp_path, app_name="Broker", role="Tray", row="Broker \u2013 Tray")
 
 
 class TestWhatItRefuses:
@@ -68,7 +68,7 @@ class TestWhatItRefuses:
         with pytest.raises(AssertionError, match="the row would read 'Highdeas'"):
             assert_the_app_names_its_process(
                 _an_app_that_names_itself(), tmp_path, app_name="Highdeas",
-                role="Highdeas", interpreter="python.exe", row="Highdeas – Highdeas")
+                role="Highdeas", interpreter="python.exe", row="Highdeas \u2013 Highdeas")
 
     def test_a_copy_without_the_apps_mark(self, tmp_path: Path):
         with pytest.raises(AssertionError, match=r"does not carry app\.ico"):
