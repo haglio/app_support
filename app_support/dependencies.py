@@ -414,30 +414,7 @@ def assert_every_dependency_is_bounded(pyproject: Path, *, allowing: Iterable[st
         + "\n  ".join(unbounded))
 
 
-_FLOOR_AND_CEILING = re.compile(r">=(\d+)\.(\d+)(?:\.\d+)?\s*,\s*<(\d+)\.(\d+)")
-
-
-def _the_one_minor_admitted(requirement: str) -> str | None:
-    found = _FLOOR_AND_CEILING.search(requirement)
-    if not found:
-        return None
-    major, minor, ceiling_major, ceiling_minor = map(int, found.groups())
-    return f"{major}.{minor}" if (ceiling_major, ceiling_minor) == (major, minor + 1) else None
-
-
-def assert_pyqt6_and_its_webengine_are_held_to_one_minor(pyproject: Path) -> None:
-    __tracebackhide__ = True
-    held = {_normalized(_DIST_NAME.match(requirement).group(1)): requirement
-            for group, requirement in _requirements(pyproject) if group == "dependencies"}
-    if "pyqt6-webengine" not in held:
-        return
-    minors = {_the_one_minor_admitted(held.get(name, "")) for name in ("pyqt6", "pyqt6-webengine")}
-    assert len(minors - {None}) == len(minors) == 1, (
-        f"PyQt6 and PyQt6-WebEngine must each admit one minor, the same one: "
-        f"{held.get('pyqt6')!r} and {held['pyqt6-webengine']!r}")
-
-
-_FLOOR =re.compile(r"^>=(\d+)\.(\d+)$")
+_FLOOR = re.compile(r"^>=(\d+)\.(\d+)$")
 _GATE_VERSION = re.compile(r'python-version:\s*"(\d+)\.(\d+)"')
 
 

@@ -7,10 +7,10 @@ from app_support.dependencies import (
     assert_every_import_is_declared,
     assert_every_sibling_is_declared,
     assert_every_sibling_is_pinned,
-    assert_pyqt6_and_its_webengine_are_held_to_one_minor,
     assert_the_declared_floor_is_the_one_the_gate_runs,
 )
 from app_support.gates import Checkout
+from app_support.pyqt_pair import assert_pyqt6_and_its_webengine_are_held_to_one_minor
 
 pytestmark = pytest.mark.repo_check
 

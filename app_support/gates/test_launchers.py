@@ -36,5 +36,4 @@ def test_what_a_shortcut_or_a_task_starts_runs_on_its_own_venv(pytestconfig):
 
 def test_a_branch_can_be_tried_out_of_its_own_checkout(pytestconfig):
     checkout = Checkout.of(pytestconfig)
-    if not checkout.is_a_library:
-        launcher_contract.assert_a_branch_can_be_tried(checkout.root)
+    launcher_contract.assert_a_branch_can_be_tried(checkout.root, is_a_library=checkout.is_a_library)

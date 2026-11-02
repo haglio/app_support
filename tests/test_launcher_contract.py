@@ -98,6 +98,14 @@ class TestWhatALauncherReports:
         with pytest.raises(AssertionError, match=f"{file}: {named}"):
             assert_every_launcher_reports_its_spec(checkout)
 
+    def test_a_checkout_the_updater_keeps_out_of_has_no_update_to_wait_for(self, tmp_path: Path):
+        checkout = _checkout(tmp_path, NO_LOG)
+        without = (checkout / "pyproject.toml").read_text(encoding="utf-8").replace("[tool.haglio.production]" + chr(10), "")
+        (checkout / "pyproject.toml").write_text(without, encoding="utf-8")
+        launcher.write(checkout)
+
+        assert_every_launcher_reports_its_spec(checkout)
+
     def test_a_launcher_that_takes_a_checkout_is_asked_with_this_one(self, tmp_path: Path):
         assert_every_launcher_reports_its_spec(_checkout(tmp_path, TAKES_A_CHECKOUT))
 
@@ -173,6 +181,9 @@ class TestTryingABranch:
     def test_a_repo_with_launchers_and_no_preview_is_refused(self, tmp_path: Path):
         with pytest.raises(AssertionError, match="preview"):
             assert_a_branch_can_be_tried(_checkout(tmp_path, EVERYDAY))
+
+    def test_a_library_has_no_app_to_try(self, tmp_path: Path):
+        assert_a_branch_can_be_tried(_checkout(tmp_path, EVERYDAY), is_a_library=True)
 
     def test_a_repo_with_no_launchers_has_nothing_to_try(self, tmp_path: Path):
         assert_a_branch_can_be_tried(_checkout(tmp_path, ""))
