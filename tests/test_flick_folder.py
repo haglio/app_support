@@ -7,6 +7,8 @@ from app_support.flick_folder import (
     trash_folder_beside,
     trash_folder_in,
     vr_flicks_in,
+    weird_dir_for_flicks_folder,
+    weird_pile_in,
 )
 
 
@@ -58,3 +60,9 @@ def test_the_trash_folder_is_never_taken_for_the_flicks(tmp_path):
     flat_flicks_in(trash).mkdir(parents=True)
 
     assert flicks_folder_in(tmp_path / "genau") is None
+
+
+def test_the_old_names_answer_until_the_apps_have_moved():
+    flicks = Path("C:/videos/genau/flicks")
+    assert weird_pile_in(flicks.parent) == trash_folder_in(flicks.parent)
+    assert weird_dir_for_flicks_folder(flicks) == trash_folder_beside(flicks)
