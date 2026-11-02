@@ -1,4 +1,3 @@
-"""Tests for how a check this package ships reaches a consumer's session."""
 from __future__ import annotations
 
 import argparse
@@ -76,13 +75,6 @@ def installed_at(site: Path) -> Path:
 
 
 class TestWhichRunsAreEnforced:
-    """The rule itself, without a subprocess in the way.
-
-    The end-to-end cases beside each plugin prove the rule reaches a real
-    session; these prove which way each shape of argument is decided, including
-    the ones a real session cannot easily be talked into producing.
-    """
-
     class _Config:
         def __init__(self, args, *, started_with=()):
             self.args = list(args)
@@ -108,9 +100,6 @@ class TestWhichRunsAreEnforced:
         assert not self._is_a_full_run(f"{Path('tests') / 'test_cli.py'}::test_one")
 
     def test_a_test_file_other_code_has_already_named_in_the_run_leaves_it_full(self):
-        """The list of what a run will collect is anyone's to add to: the clock
-        checks once named their file there first, and the blocked-word check,
-        reading the list, took every run for a narrowed one and left itself out."""
         config = self._Config([str(APP_SUPPORT / "tests"), str(SHIPPED[1])])
 
         shipped_tests.ship(config, SHIPPED[0])
@@ -225,19 +214,6 @@ class TestWhatShippingReachesInAConsumer:
         assert done.stdout.count(THE_BLOCKED_WORD_CHECK) == 1, done.stdout
 
     def test_this_package_declares_no_pytest_entry_point(self):
-        """What makes naming the plugin the *only* way in.
-
-        A `pytest11` entry point would load a plugin in every venv holding this
-        package, which is most of them — so a check would arrive in ten repos at
-        once, whether or not they asked, and its rollout would be unmeasurable.
-        Reproduced while reviewing the content guard: with a fabricated
-        dist-info declaring `[pytest11]`, a repo naming no plugin loads it anyway
-        and goes red on a planted term.
-
-        Nothing else can catch this. A repo that does not name a plugin is green
-        either way today, because without an entry point there is no code path
-        to run — so the declaration itself is the thing to watch.
-        """
         pyproject = (APP_SUPPORT / "pyproject.toml").read_text(encoding="utf-8")
 
         assert "pytest11" not in pyproject

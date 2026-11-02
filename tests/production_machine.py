@@ -1,4 +1,3 @@
-"""Production checkouts on a workspace of their own, for the tests of the updater and the hotfix route."""
 from __future__ import annotations
 
 import json
@@ -28,9 +27,6 @@ def spec(name: str, version: str) -> str:
 
 
 class Machine:
-    """A workspace of production checkouts, each cloned from a bare origin of its own,
-    and the commands an update runs: git for real, pip only written down."""
-
     def __init__(self, base: Path):
         self.base = base
         self.workspace = base / "workspace"

@@ -1,9 +1,3 @@
-"""The children the family starts: kept invisible, and ended whole when their time runs out.
-
-The invisible half runs against the real ``STARTUPINFO`` and the real flag
-constants, with only the platform patched, so a wrong constant fails and a
-refactor of the import does not.
-"""
 from __future__ import annotations
 
 import ast
@@ -67,9 +61,6 @@ def test_both_suppressions_are_applied_not_just_one():
 
 @_windows_half
 def test_a_flag_the_caller_adds_rides_with_the_hiding_one():
-    # A child that also has to be detached, or run at a lower priority: OR-ed
-    # here, so the caller never again spells the console flag by hand and
-    # forgets the STARTUPINFO half.
     with _platform("win32"):
         result = hidden_subprocess_kwargs(creationflags=8)
 

@@ -1,4 +1,3 @@
-"""The family's coverage settings and floor, `app_support.coverage_gate`."""
 from __future__ import annotations
 
 import configparser
@@ -16,8 +15,6 @@ def _read(text: str) -> configparser.ConfigParser:
 
 
 def test_what_is_measured_is_the_repo_itself_less_its_tests():
-    """A list of package names drops a root module silently -- coverage takes a
-    package or a directory, and an entry point beside them is neither."""
     config = _read(coverage_gate.render_config((), 54.3))
     assert config["run"]["source"].split() == ["."]
     assert "tests/*" in config["run"]["omit"].split()
@@ -68,9 +65,6 @@ def test_a_config_that_drifted_anywhere_but_its_floor_is_refused(tmp_path):
 
 
 def test_an_excuse_for_a_file_that_has_gone_is_refused(tmp_path):
-    """An omit for a file nobody has any more stops excluding anything, and its reason
-    outlives the code it was about -- which is how a repo comes to excuse a shell it
-    has since split into tested pieces."""
     shell = coverage_gate.NotUnitTested("pkg/shell.py", "needs a headset")
     written = _repo(tmp_path, not_unit_tested=(shell,))
     (tmp_path / "pkg" / "shell.py").unlink()
@@ -92,16 +86,11 @@ class TestTheFloorAWholeRunEarns:
         assert coverage_gate.risen_floor(96.29999999999999, 95.0) == 95.8
 
     def test_a_floor_raised_from_one_run_holds_the_next_run_that_measures_a_little_less(self):
-        """The same code measured 94.75% here in one whole run and 94.48% in the
-        next: what a test reaches can depend on how long the machine took."""
         assert coverage_gate.risen_floor(94.75, 91.0) <= 94.48
 
 
 class TestThePragmasARepoCarries:
     def test_a_line_excused_where_it_stands_is_refused_and_named(self, tmp_path):
-        """What a repo does not unit-test is one list with its reasons, in the
-        config, never a pragma scattered through the tree where no one counts
-        them."""
         written = _repo(tmp_path)
         (tmp_path / "pkg" / "shell.py").write_text(
             "def shown():  # pragma: no cover\n    return 1\n", encoding="utf-8")
@@ -117,8 +106,6 @@ class TestThePragmasARepoCarries:
         coverage_gate.assert_config_is_the_familys(written, max_pragmas=1)
 
     def test_what_the_config_leaves_unmeasured_is_not_counted(self, tmp_path):
-        """A pragma in a file coverage never measures excuses nothing: the tests,
-        and a shell the repo names with its reason."""
         shell = coverage_gate.NotUnitTested("pkg/shell.py", "needs a headset")
         written = _repo(tmp_path, not_unit_tested=(shell,))
         (tmp_path / "pkg" / "shell.py").write_text("x = 1  # pragma: no cover\n", encoding="utf-8")
@@ -128,8 +115,6 @@ class TestThePragmasARepoCarries:
         coverage_gate.assert_config_is_the_familys(written, (shell,))
 
     def test_nothing_under_a_dot_directory_is_counted(self, tmp_path):
-        """Coverage walks past them, and they hold whole trees of somebody
-        else's code: the venv, and every agent's worktree under `.claude`."""
         written = _repo(tmp_path)
         for under in (".venv/Lib/site-packages/lib.py", ".claude/worktrees/one/pkg/mod.py"):
             (tmp_path / under).parent.mkdir(parents=True)
@@ -138,9 +123,6 @@ class TestThePragmasARepoCarries:
         coverage_gate.assert_config_is_the_familys(written)
 
     def test_nothing_in_a_python_environment_is_counted_wherever_it_sits(self, tmp_path):
-        """A repo's tool can install one in a plain folder, as Fun Time's flake gate
-        does under `state`: coverage takes a folder holding a `pyvenv.cfg` for
-        somebody else's code, and its pip carries pragmas this repo never wrote."""
         written = _repo(tmp_path)
         environment = tmp_path / "state" / "tool_venv"
         library = environment / "Lib" / "site-packages" / "lib.py"

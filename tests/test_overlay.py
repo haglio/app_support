@@ -1,6 +1,3 @@
-"""The content overlay: which file answers, what a partial one is short of, and
-the three answers a repo can give for a missing key.  Every value here is
-fabricated."""
 from __future__ import annotations
 
 import json
@@ -36,7 +33,6 @@ class TestReadOverlay:
         example = _json(tmp_path / "content.example.json", {"library_root": "C:/example", "acts": ["a"]})
         local = _json(tmp_path / "content.local.json", {"library_root": "D:/mine"})
 
-        # Instead of, not on top of: what a missing key means is the repo's to say.
         assert read_overlay(local, example) == {"library_root": "D:/mine"}
         assert overlay_path(local, example) == local
 
@@ -57,8 +53,6 @@ class TestBackfilled:
         assert data["phrases"] == ["rewind that"]
 
     def test_a_key_named_empty_when_absent_takes_that_value_not_the_placeholder(self):
-        # Gallery URLs the example fills with markers, which written verbatim
-        # onto a favorite's record would be worse than nothing.
         data = backfilled({"acts": {}}, _EXAMPLE, empty_when_absent={"web_providers": []})
 
         assert data["web_providers"] == []
@@ -87,15 +81,12 @@ class TestMissingKeys:
         assert missing_keys(local, example) == ()
 
     def test_a_key_present_but_empty_is_not_missing(self, tmp_path: Path):
-        """How you switch a feature off: the key is there with nothing in it."""
         example = _json(tmp_path / "content.example.json", {"library_root": "C:/x", "synonyms": [["a"]]})
         local = _json(tmp_path / "content.local.json", {"library_root": "D:/y", "synonyms": []})
 
         assert missing_keys(local, example) == ()
 
     def test_no_local_overlay_at_all_is_missing_nothing(self, tmp_path: Path):
-        """A fresh or public checkout: the example is not compared against
-        itself, it IS what loads."""
         example = _json(tmp_path / "content.example.json", {"library_root": "C:/x"})
 
         assert missing_keys(tmp_path / "content.local.json", example) == ()

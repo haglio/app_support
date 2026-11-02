@@ -1,9 +1,3 @@
-"""Tests for the clock checks a repo gets by naming ``app_support.clocks.pytest_plugin``.
-
-The cases that matter run a real pytest against a throwaway repo, because a
-plugin that quietly contributed nothing would look exactly like a repo whose
-clocks are all in place.
-"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -45,8 +39,6 @@ class TestReadingTheClocks:
         assert jobs_without_a_clock(workflow) == ["suite"]
 
     def test_a_comment_at_the_margin_between_two_jobs_does_not_end_them(self):
-        """A full-line separator between two jobs is legal YAML; read as the end
-        of the block, it would wave through every job below it."""
         workflow = A_CLOCKED_JOB + "# the second job\n  lint:\n    runs-on: windows-latest\n"
 
         assert jobs_without_a_clock(workflow) == ["lint"]

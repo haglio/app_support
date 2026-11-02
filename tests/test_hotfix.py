@@ -1,4 +1,3 @@
-"""A fix on an agent's branch put into its app's production checkout now, ahead of shipping it the usual way."""
 from __future__ import annotations
 
 import dataclasses

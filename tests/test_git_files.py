@@ -1,4 +1,3 @@
-"""Reading what a repository holds at a revision.  Every file here is invented."""
 from __future__ import annotations
 
 from app_support.git_files import files_at

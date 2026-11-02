@@ -1,4 +1,3 @@
-"""What a video's name and its record say it is, read the same by every app."""
 from __future__ import annotations
 
 from app_support.video_names import (

@@ -1,4 +1,3 @@
-"""Waiting for what another process does, as long as it may take and no longer."""
 from __future__ import annotations
 
 import time

@@ -1,4 +1,3 @@
-"""Pointing a checkout's git hooks at the ones its tree defines."""
 from __future__ import annotations
 
 import subprocess

@@ -1,4 +1,3 @@
-"""What is running on this machine and whose it is, read through Win32 alone."""
 from __future__ import annotations
 
 import os

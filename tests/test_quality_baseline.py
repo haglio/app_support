@@ -1,4 +1,3 @@
-"""The numbers a repo keeps per file, which only ever move the right way. Every file here is invented."""
 from __future__ import annotations
 
 import json

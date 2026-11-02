@@ -1,4 +1,3 @@
-"""Where a test that starts real programs starts them: out of his sight."""
 from __future__ import annotations
 
 import ctypes
@@ -9,8 +8,6 @@ from app_support import processes
 
 
 class DesktopOfItsOwn:
-    """A desktop made for one test, which nothing started on it can reach his screen from."""
-
     _SUSPENDED, _NO_WINDOW, _UNICODE_ENVIRONMENT = 0x4, 0x08000000, 0x400
     _EXTENDED_STYLE, _TOPMOST = -20, 0x8
     _TERMINATE, _SYNCHRONIZE = 0x0001, 0x00100000

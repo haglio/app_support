@@ -1,4 +1,3 @@
-"""The named interpreters an app's processes are started through."""
 from __future__ import annotations
 
 import ctypes
@@ -27,15 +26,6 @@ REAL_INTERPRETER = Path(sys.executable)
 
 
 class _FakeResources:
-    """The two Win32 resource calls as a recording fake.
-
-    What ``stamp`` wrote is what ``read_field`` answers, which is exactly the
-    contract the real pair keeps -- so the keep/refresh/discard decisions can be
-    pinned on any platform, with the Windows tier left to prove the real pair
-    honours it. ``fails`` stands in for a source that cannot carry a
-    description: a shim, a shell wrapper, anything that is not a PE.
-    """
-
     def __init__(self, *, fails: bool = False, raising: Exception | None = None) -> None:
         self.stamped: dict[Path, dict[str, str]] = {}
         self.stamp_calls = 0
@@ -56,8 +46,6 @@ class _FakeResources:
 
 
 def _stub_interpreter(tmp_path: Path, name: str = "pythonw.exe") -> Path:
-    """A stand-in interpreter for decision tests: the fake never inspects it,
-    so a few bytes in the right place beat copying a real one."""
     exe = tmp_path / ".venv" / "Scripts" / name
     exe.parent.mkdir(parents=True, exist_ok=True)
     exe.write_bytes(b"MZ stub interpreter")
@@ -72,7 +60,6 @@ def _interpreter(tmp_path: Path, name: str = "pythonw.exe") -> Path:
 
 
 def _icon(tmp_path: Path) -> Path:
-    """A minimal two-frame .ico -- enough to index, not a real image."""
     first, second = b"\x01" * 40, b"\x02" * 60
     header = struct.pack("<HHH", 0, 1, 2)
     offset = len(header) + 32
@@ -94,9 +81,6 @@ class TestExePrefix:
 
     @pytest.mark.parametrize("app_name", ["Fun Time", "Highdeas", "OSR2 Broker!", "a.b*c"])
     def test_never_holds_a_character_a_regex_would_read(self, app_name: str):
-        # Which is what lets process_name_pattern put the prefix in as it
-        # stands: everything but letters and digits comes out, and the one
-        # hyphen appended after them is literal outside a character class.
         assert re.fullmatch(r"[A-Za-z0-9]+-", exe_prefix(app_name)), app_name
 
 
@@ -106,49 +90,33 @@ class TestNaming:
         assert namer.exe_name("pythonw.exe", "AudioCompanion") == "FunTime-AudioCompanion.exe"
 
     def test_keeps_the_interpreter_suffix_rather_than_assuming_one(self):
-        # Taking the suffix from the source keeps a console interpreter and a
-        # windowed one from being told apart by anything but which was copied.
-        # A suffix that is not .exe, so an assumed .exe cannot pass this.
         assert ProcessNamer("Genau").exe_name("python.com", "Genau").endswith(".com")
 
     @pytest.mark.parametrize("role", ["Audio Companion", "audio-companion", "../evil", "", "MainFunestra2"])
     def test_refuses_a_role_that_is_not_plain_letters(self, role: str):
-        # The role becomes a file name beside the interpreter, so anything with
-        # a separator in it is a write somewhere nobody asked for.
         with pytest.raises(ValueError, match="role must be plain letters"):
             ProcessNamer("Fun Time").exe_name("pythonw.exe", role)
 
     def test_the_description_leads_with_the_app(self):
-        # This string, not the file name, is what the Processes tab displays.
         assert ProcessNamer("Fun Time").description("MainFunestra") == "Fun Time – Main Funestra"
 
     def test_the_description_splits_the_role_back_into_words(self):
         assert ProcessNamer("Fun Time").description("AudioCompanion") == "Fun Time – Audio Companion"
 
     def test_a_lone_app_does_not_say_its_name_twice(self):
-        # Most apps have one window and one role, named after themselves.
         assert ProcessNamer("Highdeas").description("Highdeas") == "Highdeas"
 
     def test_a_lone_app_whose_name_is_two_words_run_together(self):
-        # The role has to be one word to be a file name; the app name does not.
-        # Comparing the split role against the app name made PromptCrafter's own
-        # role a different thing from PromptCrafter: "PromptCrafter - Prompt
-        # Crafter".
         assert ProcessNamer("PromptCrafter").description("PromptCrafter") == "PromptCrafter"
         assert ProcessNamer("Genau VR").description("GenauVR") == "Genau VR"
 
     def test_an_acronym_in_a_role_stays_whole(self):
-        # Breaking at every capital spelled "GenauVR" out as "Genau V R", which
-        # then no longer matched the app's own name -- so the row read
-        # "Genau VR - Genau V R" instead of just "Genau VR".
         assert ProcessNamer("Genau VR").description("GenauVR") == "Genau VR"
         assert ProcessNamer("Fun Time").description("RFBWindow") == "Fun Time – RFB Window"
 
 
 class TestBuildIconResources:
     def test_reindexes_the_directory_onto_resource_ids(self, tmp_path: Path):
-        """An .ico indexes its images by byte offset and a PE indexes them by
-        resource id, so only the directory is rebuilt."""
         images, directory = build_icon_resources(_icon(tmp_path).read_bytes())
 
         assert len(images) == 2
@@ -177,8 +145,6 @@ class TestNamedExe:
         assert result.read_bytes() == source.read_bytes()
 
     def test_the_copy_describes_itself(self, tmp_path: Path):
-        """The whole point: the Processes tab reads the file description, so a
-        copy that is merely renamed still shows up as one more "Python"."""
         source = _interpreter(tmp_path)
 
         result = Path(ProcessNamer("Highdeas").named_exe(source, "Highdeas"))
@@ -188,9 +154,6 @@ class TestNamedExe:
         assert read_version_field(result, STAMP_FIELD)
 
     def test_keeps_the_interpreters_own_application_manifest(self, tmp_path: Path):
-        """Rewriting resources must not cost the manifest that comes with them:
-        it carries the DPI awareness every window the app opens inherits, so
-        losing it would rescale the app to make a task list readable."""
         source = _interpreter(tmp_path)
 
         result = Path(ProcessNamer("Evolver").named_exe(source, "Evolver"))
@@ -213,9 +176,6 @@ class TestNamedExe:
         assert read_version_field(result, "FileDescription") == "Scripture"
 
     def test_reuses_a_copy_that_is_already_current(self, tmp_path: Path):
-        # Asked on every launch, and the answer has to be "already there" -- a
-        # copy judged stale on its own would rewrite a running image every run
-        # and be refused for it.
         source = _stub_interpreter(tmp_path)
         resources = _FakeResources()
         namer = ProcessNamer("Genau", stamp=resources.stamp,
@@ -226,8 +186,6 @@ class TestNamedExe:
         assert resources.stamp_calls == 1
 
     def test_refreshes_a_copy_made_from_an_older_interpreter(self, tmp_path: Path):
-        # A Python upgrade replaces the launcher underneath.  A copy that keeps
-        # running the old one is an app on an interpreter nobody installed.
         source = _stub_interpreter(tmp_path)
         resources = _FakeResources()
         namer = ProcessNamer("Genau", stamp=resources.stamp,
@@ -241,15 +199,10 @@ class TestNamedExe:
         assert resources.stamped[stale]["FileDescription"] == "Genau – Landscape"
 
     def test_refreshes_a_copy_whose_label_this_version_no_longer_writes(self, tmp_path: Path):
-        """The stamp records the label as well as the interpreter, because a
-        copy relabelled in code but not on disk would keep the old row heading
-        for good -- the file is still current by every other measure."""
         source = _stub_interpreter(tmp_path)
         resources = _FakeResources()
         ProcessNamer("Old Name", stamp=resources.stamp,
                      read_field=resources.read_field).named_exe(source, "Dashboard")
-        # The same prefix with a different label: the file name cannot tell them
-        # apart, so only the recorded stamp can.
         result = Path(ProcessNamer("OldName", stamp=resources.stamp,
                                    read_field=resources.read_field)
                       .named_exe(source, "Dashboard"))
@@ -257,10 +210,8 @@ class TestNamedExe:
         assert resources.stamped[result]["FileDescription"] == "OldName – Dashboard"
 
     def test_falls_back_to_the_interpreter_when_the_copy_cannot_be_made(self, tmp_path: Path):
-        # A read-only venv, an antivirus hold, a full disk.  Naming a process is
-        # never worth failing a launch over: the app comes up anonymous.
         source = _stub_interpreter(tmp_path)
-        source.with_name("Broker-Broker.exe").mkdir()  # the copy cannot land there
+        source.with_name("Broker-Broker.exe").mkdir()
         resources = _FakeResources()
 
         assert ProcessNamer("Broker", stamp=resources.stamp,
@@ -268,9 +219,6 @@ class TestNamedExe:
             .named_exe(source, "Broker") == str(source)
 
     def test_falls_back_when_the_interpreter_cannot_carry_a_description(self, tmp_path: Path):
-        """Stamping needs a real executable.  Anything else -- a shim, a shell
-        wrapper -- loses only its name, and a launch that would have worked
-        still works."""
         source = _stub_interpreter(tmp_path)
         resources = _FakeResources(fails=True)
 
@@ -279,8 +227,6 @@ class TestNamedExe:
             .named_exe(source, "Broker") == str(source)
 
     def test_leaves_no_copy_when_it_cannot_describe_one(self, tmp_path: Path):
-        # A copy that names nothing is a file added to the venv for no benefit,
-        # and a launcher pointed at it would report a process it cannot identify.
         source = _stub_interpreter(tmp_path)
         resources = _FakeResources(fails=True)
 
@@ -306,8 +252,6 @@ class TestNamedExe:
             lambda *a, **k: (_ for _ in ()).throw(PermissionError("in use")),
         )
 
-        # The refresh cannot happen, and what is there is one of ours -- so it
-        # is kept rather than leaving the process anonymous.
         assert ProcessNamer("Clipper", stamp=resources.stamp,
                             read_field=resources.read_field) \
             .named_exe(source, "Clipper") == str(existing)
@@ -319,10 +263,6 @@ class TestNamedExe:
         RuntimeError("anything else the resource API can say"),
     ], ids=["a truncated icon", "no Win32 resource API", "anything else"])
     def test_never_raises_however_the_stamp_fails(self, tmp_path: Path, failure):
-        """Two docstrings promise a launch never fails over its name, and the
-        catch was narrower than the promise: a truncated .ico raised
-        struct.error through it, and off Windows the resource API is not
-        there at all (bug 21).  Whatever the stamp raises, the app comes up."""
         source = _stub_interpreter(tmp_path)
         resources = _FakeResources(raising=failure)
 
@@ -332,8 +272,6 @@ class TestNamedExe:
         assert not source.with_name("Broker-Broker.exe").exists()
 
     def test_falls_back_rather_than_raising_on_a_role_it_cannot_name(self, tmp_path: Path):
-        # A launch site is not a validation site: a bad role loses the name, not
-        # the window.
         source = _stub_interpreter(tmp_path)
         resources = _FakeResources()
 
@@ -343,10 +281,6 @@ class TestNamedExe:
 
 
 class TestNameThisProcess:
-    """The call at the top of an app's ``main()``: the copy for next time, made
-    from the launcher named and never from whatever is running, and never worth
-    the window."""
-
     def _launchers(self, tmp_path: Path) -> tuple[Path, Path]:
         console = _stub_interpreter(tmp_path, "python.exe")
         windowed = _stub_interpreter(tmp_path, "pythonw.exe")
@@ -356,9 +290,6 @@ class TestNameThisProcess:
     def test_copies_the_windowed_launcher_beside_the_running_one_by_default(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ):
-        # By name, from the running interpreter's directory: on every run after
-        # the first, sys.executable IS the copy, and copying it would name a
-        # copy after a copy.
         console, windowed = self._launchers(tmp_path)
         monkeypatch.setattr(sys, "executable", str(console))
         resources = _FakeResources()
@@ -371,8 +302,6 @@ class TestNameThisProcess:
     def test_copies_the_console_launcher_when_that_is_what_starts_the_app(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ):
-        # A .vbs that redirects the app's output into a log runs python.exe, so
-        # naming pythonw would leave a copy nothing ever starts.
         console, windowed = self._launchers(tmp_path)
         monkeypatch.setattr(sys, "executable", str(windowed))
         resources = _FakeResources()
@@ -385,9 +314,6 @@ class TestNameThisProcess:
     def test_never_raises_when_python_cannot_say_what_it_is_running_under(
         self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
     ):
-        """sys.executable is documented to be empty then, which is the one
-        failure named_exe cannot foresee -- it never gets a path.  It costs the
-        name, never the window, and it logs why."""
         monkeypatch.setattr(sys, "executable", "")
         resources = _FakeResources()
 
@@ -402,10 +328,6 @@ class TestNameThisProcess:
 
 class TestProcessNamePattern:
     def test_carries_the_prefix_the_way_the_copies_spell_it(self):
-        # This string is read and debugged inside a PowerShell sweep, beside
-        # the image names it matches.  A prefix respelled on the way in --
-        # "FunTime\-" for "FunTime-" -- means the same thing to a regex engine
-        # and costs the reader the one check they can make by eye.
         namer = ProcessNamer("Fun Time")
         assert namer.prefix in namer.process_name_pattern
 
@@ -415,15 +337,10 @@ class TestProcessNamePattern:
         assert re.match(pattern, "FunTime-AudioCompanion.exe")
 
     def test_still_matches_a_plain_interpreter(self):
-        # The copy is best-effort, so a process can still arrive under the plain
-        # interpreter and must stay reachable.
         pattern = ProcessNamer("Fun Time").process_name_pattern
         assert all(re.match(pattern, name) for name in ("pythonw.exe", "python.exe", "py.exe"))
 
     def test_leaves_everything_else_alone(self):
-        # Sweeps force-kill what they match, so a pattern that reaches one of
-        # the user's own apps -- or another of his -- is the worst failure this
-        # module can have.
         pattern = ProcessNamer("Fun Time").process_name_pattern
         for name in ("notepad.exe", "mypythonw.exe", "FunTimeOther.exe", "Genau-MainFunestra.exe"):
             assert not re.match(pattern, name), name
@@ -437,17 +354,11 @@ class TestOwnsExeName:
         assert self.NAMER.owns_exe_name("funtime-dashboard.exe")
 
     def test_answers_for_exactly_the_names_it_gives_its_copies(self):
-        # One rule, two answers: a name this namer hands out has to be a name
-        # it owns, or a sweep and the launcher disagree about which processes
-        # belong to the app.
         for role in ("Dashboard", "AudioCompanion", "MainFunestra"):
             name = self.NAMER.exe_name("pythonw.exe", role)
             assert self.NAMER.owns_exe_name(name), name
 
     def test_does_not_claim_the_interpreters_a_copy_falls_back_to(self):
-        # The whole difference from process_name_pattern, and why both exist:
-        # a caller bounded by nothing but the image name (a shared desktop, not
-        # a command line) would be sweeping somebody else's Python.
         for name in ("pythonw.exe", "python.exe", "py.exe"):
             assert not self.NAMER.owns_exe_name(name), name
 

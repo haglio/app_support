@@ -1,5 +1,3 @@
-"""What a change takes out of a library, and which open branch of another repo
-still uses it.  Every package, module and name here is invented."""
 from __future__ import annotations
 
 import json

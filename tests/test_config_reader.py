@@ -1,5 +1,3 @@
-"""Reading a JSON config: paths hang off the file's own directory, and every
-refusal names the dotted key and the file."""
 from __future__ import annotations
 
 import json

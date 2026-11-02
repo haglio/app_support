@@ -1,7 +1,3 @@
-"""Tests for the family's gates, which a repo gets by naming ``app_support.gates.pytest_plugin``.
-
-Every package, project and finding here is invented.
-"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -91,7 +87,6 @@ class TestWhatACheckoutHolds:
 
 def _repo(root: Path, *, options: str = GATED, numbers: str = "", name: str = "example",
           files: dict[str, str] | None = None) -> Path:
-    """A repository that keeps every rule the family's gates hold it to."""
     every = {
         "pyproject.toml": (A_PROJECT.format(name=name) + numbers
                            + f'[tool.pytest.ini_options]\naddopts = "{options}"\n'),

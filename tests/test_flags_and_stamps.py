@@ -1,5 +1,3 @@
-"""The flag, the stamp and the key=value record: what app_support.file_channel
-added when the broker's and Fun Time's readers of the same files became one."""
 from __future__ import annotations
 
 import logging
@@ -32,9 +30,6 @@ class TestReadFlag:
         assert read_flag(tmp_path / "flag.txt", default=False) is False
 
     def test_anything_that_is_neither_character_is_the_default(self, tmp_path: Path):
-        """The test is for the character that means the switch was thrown: a
-        file left half-written, or holding something nobody here recognises,
-        is not a decision."""
         path = tmp_path / "flag.txt"
         for text in ("", "   ", "yes please", "true"):
             path.write_text(text, encoding="utf-8")
@@ -59,7 +54,7 @@ class TestReadFlag:
     def test_an_unreadable_path_is_the_default_and_says_so(self, tmp_path: Path):
         logger = MagicMock(spec=logging.Logger)
 
-        assert read_flag(tmp_path, default=True, logger=logger) is True  # a directory
+        assert read_flag(tmp_path, default=True, logger=logger) is True
 
         logger.exception.assert_called_once()
 
@@ -80,10 +75,7 @@ class TestWriteFlag:
         assert write_flag(path, False)
         assert path.read_text(encoding="utf-8") == "0"
 
-    def test_it_is_published_whole(self, tmp_path: Path):
-        # The one-character file has the same blank window as any other on a
-        # truncate-and-write, and blank reads as the default -- enabled, for
-        # the flag being turned off.
+    def test_it_is_published_by_replacing_the_file_so_no_reader_meets_it_blank(self, tmp_path: Path):
         path = tmp_path / "flag.txt"
         with patch("app_support.file_channel.os.replace") as replace:
             write_flag(path, False)
@@ -107,8 +99,6 @@ class TestStamps:
         assert stamp_age(path, now=102.5) == 2.5
 
     def test_never_stamped_and_torn_both_read_as_none(self, tmp_path: Path):
-        # None rather than infinity, so "stale" and "never" stay apart; and a
-        # stamp read mid-publish is not an old one.
         assert stamp_age(tmp_path / "missing.txt", now=100.0) is None
         torn = tmp_path / "torn.txt"
         torn.write_text("not-a-float", encoding="utf-8")

@@ -1,5 +1,3 @@
-"""The scans of what is written and never read, `app_support.unread`: the blind
-spots vulture has, ported from the genau and fun_time gates that found them."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -122,9 +120,6 @@ def test_a_dataclass_field_nothing_reads_is_reported(tmp_path):
 
 
 def test_a_name_the_repo_allows_is_left_out_of_the_report(tmp_path):
-    """A field read only by `dataclasses.asdict`, a constant read by a sibling
-    repo: the repo names them, with the reason beside each, and the scan holds
-    everything else."""
     root = _tree(tmp_path, {
         "pkg/__init__.py": "",
         "pkg/a.py": "SERIALIZED = 1\nUNREAD = 2\n",

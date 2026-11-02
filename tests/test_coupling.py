@@ -1,4 +1,3 @@
-"""Tests for the family's coupling counter. Every class, module and name here is invented."""
 from __future__ import annotations
 
 from pathlib import Path

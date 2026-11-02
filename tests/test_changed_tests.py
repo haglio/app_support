@@ -24,8 +24,6 @@ def test_a_test_the_branch_edited_is_named_and_its_neighbor_is_not(branch_from):
 
 
 def test_an_edited_helper_names_the_tests_that_call_it_and_no_others(branch_from):
-    """One line of one helper picked all 744 tests of a file that way, and the
-    session landing it had to leave the helper alone to get its work through."""
     branch = branch_from({"tests/test_things.py": BASE})
     branch.commit({"tests/test_things.py": BASE.replace("return 1", "return 2 - 1")})
 
@@ -63,7 +61,6 @@ def test_an_edited_fixture_names_only_the_tests_that_ask_for_it(branch_from):
 
 
 def test_a_fixture_asked_for_by_name_in_a_mark_is_still_reached(branch_from):
-    """`usefixtures` names it in a string, where no walk of the code finds it."""
     marked = WITH_A_FIXTURE.replace(
         "def test_one(thing):\n    assert thing == 1",
         '@pytest.mark.usefixtures("thing")\ndef test_one():\n    assert True')
@@ -77,7 +74,6 @@ AUTOUSE = WITH_A_FIXTURE.replace("@pytest.fixture\n", "@pytest.fixture(autouse=T
 
 
 def test_an_edited_autouse_fixture_names_every_test_in_its_file(branch_from):
-    """It runs for tests that never name it, so no walk can tell which are its."""
     branch = branch_from({"tests/test_things.py": AUTOUSE})
     branch.commit({"tests/test_things.py": AUTOUSE.replace("return 1", "return 2 - 1")})
 
@@ -175,9 +171,6 @@ def test_an_import_that_loses_a_name_names_every_test_in_its_file(branch_from):
 
 
 def test_an_import_repointed_at_a_module_that_moved_names_nothing(branch_from):
-    """The same names from a new path is where a test's subject moved to, not
-    what the test itself does -- and a branch that edits only what a test calls
-    already names nothing."""
     branch = branch_from({"tests/test_things.py": "from os.path import sep\n\n\n" + BASE})
     branch.commit({"tests/test_things.py": "from os import sep\n\n\n" + BASE})
 
@@ -206,9 +199,6 @@ WITH_A_DESCRIBED_HELPER = (
 
 
 def test_a_rewritten_helper_docstring_names_nothing(branch_from):
-    """Nothing runs a docstring, so rewriting one cannot turn a test flaky. A
-    module that moves takes with it every helper docstring that named it, which
-    is how one branch's rename reached 744 tests in a single file."""
     branch = branch_from({"tests/test_things.py": WITH_A_DESCRIBED_HELPER})
     branch.commit({"tests/test_things.py":
                    WITH_A_DESCRIBED_HELPER.replace("What this stands in for.", "Said better.")})

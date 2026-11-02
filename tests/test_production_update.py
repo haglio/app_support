@@ -1,4 +1,3 @@
-"""Each production checkout kept at what has shipped, never while something of his runs from it."""
 from __future__ import annotations
 
 import json
@@ -41,8 +40,6 @@ class TestBringingOneCheckoutUp:
         assert [step for step in machine.ran if step[0] == "pip"] == []
 
     def test_a_shipped_change_that_moves_a_pin_installs_the_library_before_the_code(self, machine):
-        # Moved first, the new code meets the old libraries until the install ends, and
-        # an app started in between dies at startup (Genau, 2026-10-07).
         checkout = machine.checkout(files={"pyproject.toml": pins(app_support="0.1.375")})
         machine.install(checkout, "app_support", "0.1.375")
         machine.ship(checkout, {"pyproject.toml": pins(app_support="0.1.376")})
@@ -69,8 +66,6 @@ class TestBringingOneCheckoutUp:
         assert "shared-ui v0.1.200" in outcome.said
 
     def test_a_library_newer_than_its_pin_is_put_back_to_the_pin_that_shipped(self, machine):
-        # A taken-back change once left its newer funestra under older code that the
-        # newer copy no longer answered, and production Fun Time would not start.
         checkout = machine.checkout(files={"pyproject.toml": pins(funestra="0.1.498")})
         machine.install(checkout, "funestra", "0.1.507")
 
@@ -221,8 +216,6 @@ class TestBringingOneCheckoutUp:
         assert machine.ran == []
 
     def test_code_that_ran_ahead_of_its_libraries_gets_them_even_right_after_a_failure(self, machine):
-        # Production Origenerator's code was moved past its libraries by another hand, and its
-        # launch, ten minutes after a failed install, left them missing and the app dead (2026-10-17).
         checkout = machine.checkout(files={"pyproject.toml": pins(app_support="0.1.376")})
         machine.install(checkout, "app_support", "0.1.375")
         failed = Outcome("failed: pip install said: no", at=1000.0, failed=True, target=machine.head(checkout))
@@ -797,8 +790,6 @@ class TestTheLibraries:
         assert production_update.installed_versions(tmp_path / ".venv") == {}
 
     def test_a_library_whose_checkout_here_holds_its_pinned_tag_is_installed_from_that_checkout(self, machine):
-        # GitHub dropped every clone for an hour on 2026-10-17 while each library's checkout beside
-        # production Origenerator already held the tag its code pinned.
         library = machine.checkout("example_library", venv=False)
         git("tag", "v0.1.376", cwd=library)
         checkout = machine.checkout(files={"pyproject.toml": pins(example_library="0.1.376")})
@@ -1109,8 +1100,6 @@ class TestFindingWhatRunsFromAVenv:
 
 class TestAFailedStep:
     def test_says_the_line_that_names_why_beside_the_last_one(self):
-        # pip ends a failed clone with three lines of its own; the record of 2026-10-17's
-        # failures kept only those, and the dropped connection that caused them went unsaid.
         printed = ("Cloning https://github.com/haglio/example_library\n"
                    "  error: RPC failed; curl 56 Recv failure: Connection was reset\n"
                    "  fatal: early EOF\n"
@@ -1252,8 +1241,6 @@ class TestAnAppThatIsNeverClosed:
         assert started == []
 
     def test_an_app_just_started_stays_up_a_while_before_it_starts_again(self, checkout, clock):
-        """A launch that could not make the update -- something else of his still
-        ran from the venv -- leaves it waiting, so the new copy would start again at once."""
         watch, started = self.watching(checkout, clock)
         self.an_update_waits(checkout)
         clock.now += production_update.UP_BEFORE_AN_UPDATE_S - 1

@@ -1,4 +1,3 @@
-"""Binding a Win32 DLL in a process whose ctypes may have no Windows half."""
 from __future__ import annotations
 
 import ctypes

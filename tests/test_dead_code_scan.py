@@ -1,8 +1,3 @@
-"""Unit tests for the shared dead-code scan.
-
-The scan itself is the subject here. The gate whose subject is a repo's own
-tree is `app_support.gates`, which every repo names once.
-"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -80,8 +75,6 @@ def test_what_is_dead_inside_a_caller_is_left_to_its_own_gate(tmp_path):
 
 
 def test_more_callers_than_a_command_line_holds_are_all_read(tmp_path):
-    """A library's callers are a thousand files across the apps, and Windows
-    holds a command line to 32767 characters."""
     package = _tree(tmp_path, widgets="def polish_the_brass():\n    pass\n")
     callers = [tmp_path / f"a_caller_named_at_the_length_an_app_names_its_modules_{n:04}.py"
                for n in range(400)]
@@ -117,8 +110,6 @@ def test_a_whitelist_entry_for_a_name_a_caller_uses_suppresses_nothing(tmp_path)
 
 
 def test_a_checkouts_python_is_what_it_tracks(checkout_tracking):
-    """Beside its own code a checkout holds a venv, worktrees and caches, none of
-    them a caller: read whole, fun_time's came to 27,000 files."""
     app = checkout_tracking("an_app", {"parlour.py": "", "drawing_room.py": ""})
     installed = app / ".venv" / "Lib" / "site-packages" / "example_package"
     installed.mkdir(parents=True)
@@ -139,11 +130,6 @@ def test_a_folder_that_tracks_no_python_is_refused_rather_than_read_as_no_caller
 
 
 def test_a_whitelist_entry_takes_a_name_out_of_the_report(tmp_path):
-    """How a repo records a name vulture cannot see the caller of -- a Qt event
-    handler, a pytest fixture, an attribute the framework reads. The file is
-    handed to vulture as one more thing to scan, so mentioning the name there
-    counts as using it.
-    """
     package = _tree(tmp_path, widgets="def polish_the_brass():\n    pass\n")
     whitelist = tmp_path / "vulture_whitelist.py"
     whitelist.write_text("polish_the_brass\n", encoding="utf-8")
@@ -152,10 +138,6 @@ def test_a_whitelist_entry_takes_a_name_out_of_the_report(tmp_path):
 
 
 def test_a_whitelist_that_suppresses_what_the_scan_reports_is_live(tmp_path):
-    """Spelled the way ``vulture --make-whitelist`` writes it: ``_.name`` for an
-    attribute or method, with ``_`` standing in for "some object" rather than
-    naming an entry of its own.
-    """
     package = _tree(
         tmp_path,
         widgets="class Sideboard:\n    def polish(self):\n        self.drawer = 1\n",
@@ -167,11 +149,6 @@ def test_a_whitelist_that_suppresses_what_the_scan_reports_is_live(tmp_path):
 
 
 def test_a_whitelist_entry_that_suppresses_nothing_fails(tmp_path):
-    """The exception file is the record of what a repo decided to allow, and an
-    entry whose subject was deleted long ago is only there to hide the next name
-    that happens to match it. One repo here reached 31 dead entries out of 45,
-    23 of them naming symbols the family no longer contains.
-    """
     package = _tree(tmp_path, widgets="def polish_the_brass():\n    pass\n")
     whitelist = tmp_path / "vulture_whitelist.py"
     whitelist.write_text(
@@ -202,12 +179,6 @@ def test_a_stale_entry_is_caught_in_the_attribute_spelling_too(tmp_path):
 
 
 def test_a_whitelist_kept_inside_a_scanned_tree_is_refused(tmp_path):
-    """Where a whitelist may not live. vulture reads the file by unioning the
-    names it uses with the names the tree uses, so one kept *inside* a scanned
-    directory is read twice -- and every name in it counts as used whether or
-    not it was handed over. The gate then reports nothing whatever the tree
-    holds, and `assert_whitelist_is_live` calls every entry stale.
-    """
     package = _tree(tmp_path, widgets="def polish_the_brass():\n    pass\n")
     whitelist = package / "vulture_whitelist.py"
     whitelist.write_text("polish_the_brass\n", encoding="utf-8")
@@ -220,22 +191,11 @@ def test_a_whitelist_kept_inside_a_scanned_tree_is_refused(tmp_path):
 
 
 def test_a_target_that_is_not_there_is_refused_rather_than_called_clean(tmp_path):
-    """The gate a repo renamed a directory out from under reports nothing, and
-    nothing is what a clean tree reports too. vulture leaves them
-    distinguishable -- it exits 1 for input it could not read and 3 for a report
-    -- so the two must never arrive at the same answer here.
-    """
     with pytest.raises(ScanDidNotRun):
         scan(tmp_path / "a_package_that_was_renamed")
 
 
 def test_a_target_holding_no_python_is_refused_rather_than_called_clean(tmp_path):
-    """The failure the exit code cannot catch. vulture is content to be handed a
-    directory with nothing in it to read and exits 0, which is the same answer a
-    scanned-and-clean tree gets -- so a gate aimed at a directory that no longer
-    holds the source (an `--exclude` that swallowed the tree, a package that
-    moved) keeps passing and says nothing.
-    """
     empty = tmp_path / "no_python_here"
     empty.mkdir()
     (empty / "README.md").write_text("prose only\n", encoding="utf-8")
@@ -245,9 +205,6 @@ def test_a_target_holding_no_python_is_refused_rather_than_called_clean(tmp_path
 
 
 def test_a_file_vulture_cannot_parse_is_refused_rather_than_called_clean(tmp_path):
-    """vulture stops at the first file it cannot read and exits 1 having
-    reported nothing about the rest of the tree.
-    """
     package = _tree(tmp_path, widgets="def polish_the_brass(:\n")
 
     with pytest.raises(ScanDidNotRun):
@@ -255,8 +212,6 @@ def test_a_file_vulture_cannot_parse_is_refused_rather_than_called_clean(tmp_pat
 
 
 def test_a_package_the_gate_does_not_name_is_reported(tmp_path):
-    """A fourth package added beside the named ones would otherwise get no
-    dead-code gate at all, which is how genau's tools/ came to have none."""
     for name in ("app", "tools", "tests"):
         (tmp_path / name).mkdir()
         (tmp_path / name / "__init__.py").write_text("", encoding="utf-8")
@@ -269,9 +224,6 @@ def test_a_package_the_gate_does_not_name_is_reported(tmp_path):
 
 
 def test_an_import_unused_in_its_own_file_is_reported_even_if_a_sibling_uses_the_name(tmp_path):
-    """The blind spot vulture has: it resolves names across the whole tree, so an
-    import unused HERE but live in a sibling module never reports. ruff answers
-    per file."""
     (tmp_path / "pkg").mkdir()
     (tmp_path / "pkg" / "__init__.py").write_text("", encoding="utf-8")
     (tmp_path / "pkg" / "a.py").write_text("import os\n\n\ndef a():\n    return os.sep\n", encoding="utf-8")
@@ -302,8 +254,6 @@ def test_an_unread_argument_the_repo_allows_is_named_by_its_file_and_left_out(tm
 
 
 def _two_packages_sharing_a_name(tmp_path):
-    """`helper` is dead in `a` and alive in `b`: scanned together they hide each
-    other's corpses, since vulture matches by bare name across all it is handed."""
     for name in ("a", "b"):
         (tmp_path / name).mkdir()
         (tmp_path / name / "__init__.py").write_text("", encoding="utf-8")

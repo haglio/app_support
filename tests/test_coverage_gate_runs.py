@@ -1,9 +1,3 @@
-"""Which runs the coverage floor is enforced against, and that it can actually fail.
-
-The rule cases below decide each shape of argument without a subprocess in the way;
-the end-to-end cases run a real pytest against a throwaway package, because a floor
-that never fails and a repo whose coverage is fine look exactly alike from here.
-"""
 from __future__ import annotations
 
 from argparse import Namespace
@@ -62,8 +56,6 @@ class TestWhichRunsTheFloorApplies:
         assert "tests/test_a.py" in why
 
     def test_naming_a_directory_narrows_it_too(self):
-        """Even one holding every test: a repo with two testpaths would measure one
-        of them and call the other's code uncovered."""
         assert coverage_gate.why_this_is_not_the_whole_suite(_config(file_or_dir=["tests"]))
 
     def test_choosing_by_name_narrows_it(self):
@@ -85,8 +77,6 @@ class TestWhichRunsTheFloorApplies:
         assert coverage_gate.why_this_is_not_the_whole_suite(_config(lf=True))
 
     def test_an_option_the_cache_plugin_brings_is_not_missed_when_it_is_off(self):
-        """Every repo here runs `-p no:cacheprovider`, so `--lf` and its siblings are
-        not options at all and reading them off the run would raise."""
         assert coverage_gate.why_this_is_not_the_whole_suite(_config()) is None
 
 
@@ -113,9 +103,6 @@ class TestTheFloorAgainstARealRun:
         assert "Total coverage: 75.00%" in done.stdout
 
     def test_a_suite_a_point_over_its_floor_fails_and_names_the_floor_to_set(self, tmp_path):
-        """A floor left under what the suite reaches lets that much coverage go
-        with nothing turning red, which is how every floor in the family sat
-        where it was set for a month while the suites climbed past it."""
         done = run_pytest_in(self._repo(tmp_path, 74.0))
 
         assert done.returncode != 0, done.stdout + done.stderr
@@ -128,16 +115,12 @@ class TestTheFloorAgainstARealRun:
         assert "Required test coverage of 90.0% not reached" in done.stdout
 
     def test_a_run_that_only_collects_is_not_asked_to_raise_the_floor(self, tmp_path):
-        """What it measures is what importing the tests ran, and a run of
-        `--collect-only` is how an agent shows which checks a run gathers."""
         done = run_pytest_in(self._repo(tmp_path, 10.0), "--collect-only")
 
         assert done.returncode == 0, done.stdout + done.stderr
         assert "raise fail_under" not in done.stdout
 
     def test_a_run_told_to_hold_no_floor_is_not_asked_to_raise_one(self, tmp_path):
-        """Each part of a suite run in parts is told `--cov-fail-under=0`: it
-        measures only its share, and the floor is held over the parts together."""
         done = run_pytest_in(self._repo(tmp_path, 10.0), "--cov-fail-under=0", "--cov-report=term")
 
         assert done.returncode == 0, done.stdout + done.stderr
@@ -150,8 +133,6 @@ class TestTheFloorAgainstARealRun:
         assert "Required test coverage of 90.0% not reached" in done.stdout
 
     def test_a_run_stopped_by_a_failure_reports_the_failure_alone(self, tmp_path):
-        """What was measured is whatever ran before the failure, and the run is red
-        already: a coverage failure beside it would send the reader after the wrong one."""
         done = run_pytest_in(self._repo(tmp_path, 90.0, failing=True), "-x")
 
         assert done.returncode != 0, done.stdout + done.stderr
@@ -172,8 +153,6 @@ class TestTheFloorAgainstARealRun:
         assert "coverage floor not checked" in done.stdout
 
     def test_a_repo_asking_for_the_floor_without_measuring_is_refused(self, tmp_path):
-        """A gate reading a number nobody collected passes forever, and a repo whose
-        coverage is fine looks the same from the outside."""
         done = run_pytest_in(self._repo(tmp_path, 90.0, NOT_MEASURING))
 
         assert done.returncode != 0, done.stdout + done.stderr

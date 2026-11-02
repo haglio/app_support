@@ -1,5 +1,3 @@
-"""Programs Git Bash starts from one of its own, which Windows sees with no parent and almost
-no environment once the runtime's handover is done."""
 from __future__ import annotations
 
 import contextlib
@@ -33,10 +31,6 @@ def waited_for(fits: Callable[[processes.Process], object], what: str) -> proces
 
 
 class GitBashPrograms:
-    """Each start is Git Bash's shell, started from here, starting a second program of its own
-    that carries a mark only it has, and *naming* beside it, and is handed back once it says it
-    is running, before which the runtime has not yet set up its environment."""
-
     def __init__(self) -> None:
         self._shells: list[subprocess.Popen] = []
         self._programs: list[processes.Process] = []

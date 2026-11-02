@@ -120,7 +120,6 @@ class TestTheSpec:
             launchers(_checkout(tmp_path, MINIMAL + 'venv = "shared"\n'))
 
     def test_a_placeholder_nothing_fills_is_refused(self, tmp_path: Path):
-        # {checkout} is only known to a launcher a shortcut hands a checkout to.
         spec = MINIMAL.replace('"-m example"', '"-m example {checkout}"')
 
         with pytest.raises(LauncherSpecError, match="checkout"):
@@ -218,8 +217,6 @@ class TestTheFilesOnDisk:
         assert "launch_example.vbs" in problem
 
     def test_a_launcher_with_no_spec_is_named(self, tmp_path: Path):
-        # A hand-written launcher beside the rendered ones is the fork this
-        # module exists to end.
         checkout = _checkout(tmp_path, MINIMAL)
         launcher.write(checkout)
         (checkout / "launch_other.vbs").write_text("MsgBox 1\n", encoding="utf-8")
@@ -336,7 +333,6 @@ def _venv(folder: Path, *interpreters: str) -> Path:
 
 
 def _worktree(tmp_path: Path, specs: str) -> tuple[Path, Path]:
-    """Where a branch launcher runs from: ``<primary>/.claude/worktrees/<name>``."""
     primary = tmp_path / "primary"
     return primary, _checkout(primary / ".claude" / "worktrees", specs, name="branch")
 
@@ -356,9 +352,6 @@ class TestADryRun:
         assert report.value("command") == f'"{interpreter}" -m example'
 
     def test_a_watched_launch_can_name_a_note_to_show_in_place_of_the_log(self, tmp_path: Path):
-        """A launch that fails for a reason the app itself knows -- a copy older than
-        the code the launcher runs, say -- leaves that reason in a file beside the log,
-        and the dialog is that sentence rather than fifteen lines of traceback."""
         checkout = _checkout(tmp_path, NOTED)
 
         report = dry_run(_rendered(checkout))
@@ -605,9 +598,6 @@ CHILD_DIES_LEAVING_A_NOTE = """\
 
 
 def _rehearsal_of(script: Path, child: str = "", screen: str = "") -> Path:
-    """*script* with the shell it launches through swapped for one that only
-    says what it was asked, and *child* standing in for the app it started and
-    *screen* for the loading screen."""
     text = script.read_text(encoding="utf-8")
     first_statement = 'Set fso = CreateObject("Scripting.FileSystemObject")\n'
     assert text.count(first_statement) == 1
@@ -747,8 +737,6 @@ class TestALaunch:
         assert "dialog:" not in run.output
 
     def test_a_launch_that_takes_a_moment_to_come_up_is_waited_for(self, tmp_path: Path):
-        # The exit stamp an earlier launch left is cleared first, or the wait
-        # would read it as this launch dying before it had a chance.
         checkout = _checkout(tmp_path, WATCHED)
         _venv(checkout, "python.exe")
         (checkout / "state").mkdir()
@@ -802,8 +790,6 @@ class TestALaunch:
         assert "Last lines of the log:" not in run.output
 
     def test_a_launch_that_leaves_a_note_shows_it_in_place_of_the_log_tail(self, tmp_path: Path):
-        """The app knows why it could not start where the log's last lines only show
-        where it gave up, so the note is the whole dialog and the log is a path to read."""
         checkout = _checkout(tmp_path, NOTED)
         _venv(checkout, "python.exe")
 
@@ -987,8 +973,6 @@ class TestTheUpdateBeforeALaunch:
 
 
 def _screened(tmp_path: Path, *, snapshots: bool = True) -> Path:
-    """A checkout whose launcher shows a loading screen, with its venv and the
-    updater beside it, and the snapshots its app left at the last start."""
     checkout = _checkout(tmp_path, SCREENED)
     _venv(checkout, "python.exe")
     _updater_beside(checkout)

@@ -1,5 +1,3 @@
-"""The undeclared-dependency gate: what counts as third-party, what a pyproject
-declares, and what is left over.  Every package and dependency here is invented."""
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -50,8 +48,6 @@ class TestDeclaredDependencies:
         assert declared_dependencies(root / "pyproject.toml") == {"examplelib", "other-thing", "third"}
 
     def test_an_extra_is_a_declaration_too(self, tmp_path: Path):
-        # A feature that needs `pip install repo[voice]` is declared;
-        # installing it is the launcher's business.
         root = _repo(tmp_path, source="")
         pyproject = (
             "[project]\n"
@@ -75,7 +71,6 @@ class TestThirdPartyImports:
 
     def test_a_siblings_package_is_not_third_party_under_a_name_its_repo_does_not_have(
             self, tmp_path: Path):
-        # The funestra sibling still answers as funestra_core and player_core.
         root = _repo(tmp_path, source="from funestra_core.playlist import PlaylistItem\n")
 
         assert third_party_imports(root, [root / "someapp"]) == {}
@@ -154,16 +149,12 @@ class TestUnimportedDependencies:
         assert unimported_dependencies(root, [root / "someapp"], root / "pyproject.toml") == []
 
     def test_an_optional_import_counts_as_an_import(self, tmp_path: Path):
-        # The other direction may ignore a `try`, because an import inside one
-        # is optional by construction. This direction may not: the package is
-        # still fetched by every install, and something still reaches for it.
         root = _repo(tmp_path, source="try:\n    import examplelib\nexcept ImportError:\n    pass\n",
                      dependencies='["examplelib>=1,<2"]')
 
         assert unimported_dependencies(root, [root / "someapp"], root / "pyproject.toml") == []
 
     def test_an_extra_is_not_read(self, tmp_path: Path):
-        # A dev extra's test runner is a dependency nothing imports on purpose.
         root = _repo(tmp_path, source="import examplelib\nimport other_thing\n")
         (root / "pyproject.toml").write_text(
             '[project]\nname = "someapp"\ndependencies = ["examplelib"]\n'
@@ -200,8 +191,6 @@ class TestTheDeclaredPythonFloor:
             root / "pyproject.toml", self._gate(root, "3.12", "3.14"))
 
     def test_a_floor_no_run_proves_is_named_with_both_numbers(self, tmp_path: Path):
-        # >=3.10 while every leg runs 3.12 says the package installs on a
-        # version nothing has ever collected it on.
         root = _repo(tmp_path, source="", requires_python=">=3.10")
 
         with pytest.raises(AssertionError, match=r"3\.10.*3\.12"):
@@ -222,7 +211,6 @@ class TestUpperBounds:
         assert unbounded_requirements(pyproject) == []
 
     def test_a_family_repo_named_at_a_tag_is_bounded(self, tmp_path: Path):
-        """A sibling pin names one commit, which is tighter than any ceiling."""
         pyproject = self._pyproject(
             tmp_path,
             'dependencies = ["app-support @ git+https://github.com/haglio/app_support@v0.1.138"]\n')
@@ -230,7 +218,6 @@ class TestUpperBounds:
         assert unbounded_requirements(pyproject) == []
 
     def test_a_repo_named_at_a_moving_branch_is_not(self, tmp_path: Path):
-        """A branch is whatever it holds this morning, which is what a ceiling is for."""
         requirement = "app-support @ git+https://github.com/haglio/app_support@main"
         pyproject = self._pyproject(tmp_path, f'dependencies = ["{requirement}"]\n')
 
@@ -270,11 +257,6 @@ class TestUpperBounds:
 class TestDeclaredSiblings:
     def _repo(self, tmp_path: Path, *, source: str, siblings: str = "", addopts: str = "",
               beside: Iterable[str] = ()) -> Path:
-        """A checkout under *tmp_path*, with *beside* laid out as its siblings.
-
-        The layout matters: what a declared sibling needs in turn is read off
-        that sibling's own checkout, and one that is not there cannot be asked.
-        """
         checkout = tmp_path / "someapp-checkout"
         package = checkout / "someapp"
         package.mkdir(parents=True)
@@ -329,16 +311,12 @@ class TestDeclaredSiblings:
             "funestra is imported by someapp/app.py and declared nowhere"]
 
     def test_a_declared_sibling_nothing_needs_is_reported_too(self, tmp_path: Path):
-        # It costs a clone and an install on every run of the gate, and it reads
-        # as a dependency to anyone deciding what may safely change.
         root = self._repo(tmp_path, source="", siblings='"funestra"', beside=["funestra"])
 
         assert undeclared_siblings(root, [root / "someapp"], root / "pyproject.toml") == [
             "funestra is declared, imported nowhere, and needed by nothing declared"]
 
     def test_a_sibling_the_pytest_config_loads_as_a_plugin_counts_as_imported(self, tmp_path: Path):
-        # `-p app_support.sanitize.pytest_plugin` is what makes the guard run;
-        # a repo can need the package without a line of its own importing it.
         root = self._repo(tmp_path, source="", siblings='"app_support"',
                           addopts="-p app_support.sanitize.pytest_plugin --timeout=60")
 
@@ -362,9 +340,6 @@ class TestASiblingsOwnSiblings:
         return checkout
 
     def test_what_a_declared_sibling_needs_is_needed_too(self, tmp_path: Path):
-        # genau's shape: it imports no shared_ui module and cannot run a line
-        # without it, because the Funestra HUDs it does import are painted
-        # in the family's colors.
         self._checkout(tmp_path, "shared_ui")
         self._checkout(tmp_path, "funestra", siblings='"shared_ui"')
 
@@ -385,8 +360,6 @@ class TestASiblingsOwnSiblings:
             "shared_ui", "app_support"}
 
     def test_siblings_that_are_not_on_disk_cannot_be_asked(self, tmp_path: Path):
-        # A public clone has none of them beside it. Reading that as "they need
-        # nothing" would call every inherited requirement unused.
         (tmp_path / "somewhere").mkdir()
 
         assert inherited_siblings(["funestra"], tmp_path / "somewhere") is None
@@ -406,8 +379,6 @@ class TestAFamilySibling:
 
 
 class TestTheVersionComesFromTheTag:
-    """A shared package's version is the tag on its landing, so a consumer can pin it."""
-
     def _pyproject(self, tmp_path: Path, body: str) -> Path:
         pyproject = tmp_path / "pyproject.toml"
         pyproject.write_text(body, encoding="utf-8")
@@ -443,8 +414,6 @@ class TestTheVersionComesFromTheTag:
 
 
 class TestEverySiblingIsPinned:
-    """A consumer names the copy of each sibling it was built against."""
-
     def _pyproject(self, tmp_path: Path, dependencies: str, siblings: str) -> Path:
         pyproject = tmp_path / "pyproject.toml"
         pyproject.write_text(
@@ -501,8 +470,6 @@ class TestEverySiblingIsPinned:
 
 
 class TestTheSiblingPins:
-    """What a pyproject pins, read from its text: a commit's, as git shows it."""
-
     PYPROJECT = """\
 [project]
 name = "someapp"
