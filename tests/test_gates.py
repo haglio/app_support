@@ -29,7 +29,7 @@ jobs:
         with:
           python-version: "3.14"
 """
-EVERY_REPOSITORYS_GATES = 39
+EVERY_REPOSITORYS_GATES = 46
 
 
 def _checkout(root: Path, *files: str, project: str = "example") -> Checkout:
@@ -130,6 +130,8 @@ class TestTheGatesPlugin:
         ({"launch_example.vbs": "WScript.Echo 1\n"}, "test_every_launcher_is_what_its_spec_renders"),
         ({".github/workflows/merge-gate.yml": A_GATE.replace("    timeout-minutes: 10\n", "")},
          "test_every_workflow_job_runs_under_its_own_clock"),
+        ({"tests/features.py": "def test_one():\n    assert True\n"},
+         "test_no_file_of_tests_goes_unrun"),
     ])
     def test_a_repo_that_breaks_a_rule_is_named_by_the_gate_that_holds_it(
             self, tmp_path: Path, broken: dict[str, str], goes_red: str):
