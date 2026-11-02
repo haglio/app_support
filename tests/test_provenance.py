@@ -5,19 +5,12 @@ job is reading one, so a fake would test the fake.
 """
 from __future__ import annotations
 
-import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 
+from production_machine import IDENTIFIED, git
+
 from app_support import provenance
-
-_IDENTITY = ("-c", "user.email=test@example.com", "-c", "user.name=Test")
-
-
-def _git(repo: Path, *args: str) -> str:
-    done = subprocess.run(["git", "-C", str(repo), *_IDENTITY, *args],
-                          capture_output=True, text=True, check=True)
-    return done.stdout.strip()
 
 
 def _checkout(tmp_path: Path, name: str = "someapp") -> Path:
@@ -25,9 +18,9 @@ def _checkout(tmp_path: Path, name: str = "someapp") -> Path:
     repo = tmp_path / name
     (repo / name).mkdir(parents=True)
     (repo / name / "app.py").write_text("", encoding="utf-8")
-    _git(repo.parent, "init", "-q", "-b", "main", str(repo))
-    _git(repo, "add", "-A")
-    _git(repo, "commit", "-qm", "first")
+    git(*IDENTIFIED, "init", "-q", "-b", "main", str(repo), cwd=repo.parent)
+    git(*IDENTIFIED, "add", "-A", cwd=repo)
+    git(*IDENTIFIED, "commit", "-qm", "first", cwd=repo)
     return repo
 
 
@@ -42,7 +35,7 @@ class TestStamp:
 
         recorded = provenance.stamp("someapp", anchor=repo / "someapp" / "app.py")
 
-        assert recorded["app_commit"] == _git(repo, "rev-parse", "HEAD")
+        assert recorded["app_commit"] == git(*IDENTIFIED, "rev-parse", "HEAD", cwd=repo)
 
     def test_reads_the_checkout_once_so_a_running_app_keeps_its_commit(self, tmp_path: Path):
         # A tray that has been up for days holds the code it imported at launch;
@@ -52,10 +45,10 @@ class TestStamp:
         first = provenance.stamp("someapp", anchor=anchor)["app_commit"]
 
         (repo / "someapp" / "later.py").write_text("", encoding="utf-8")
-        _git(repo, "add", "-A")
-        _git(repo, "commit", "-qm", "second")
+        git(*IDENTIFIED, "add", "-A", cwd=repo)
+        git(*IDENTIFIED, "commit", "-qm", "second", cwd=repo)
 
-        assert _git(repo, "rev-parse", "HEAD") != first
+        assert git(*IDENTIFIED, "rev-parse", "HEAD", cwd=repo) != first
         assert provenance.stamp("someapp", anchor=anchor)["app_commit"] == first
 
     def test_says_when_the_checkout_carried_edits_the_commit_does_not(self, tmp_path: Path):
@@ -122,6 +115,6 @@ class TestStamp:
         # not a commit anything can be found by.
         package = tmp_path / "someapp" / "someapp"
         package.mkdir(parents=True)
-        _git(tmp_path, "init", "-q", "-b", "main", str(tmp_path / "someapp"))
+        git(*IDENTIFIED, "init", "-q", "-b", "main", str(tmp_path / "someapp"), cwd=tmp_path)
 
         assert provenance.stamp("someapp", anchor=package / "app.py")["app_commit"] is None

@@ -11,7 +11,6 @@ import contextlib
 import ctypes
 import faulthandler
 import logging
-import subprocess
 import sys
 import threading
 from pathlib import Path
@@ -20,6 +19,7 @@ from unittest.mock import patch
 import pytest
 from desktop_of_its_own import DesktopOfItsOwn
 from git_bash_programs import GitBashPrograms
+from production_machine import git
 
 import app_support
 from app_support.siblings import assert_imported_from_checkout
@@ -50,7 +50,7 @@ class Branch:
         self.path = path
 
     def git(self, *args: str) -> None:
-        subprocess.run(["git", "-C", str(self.path), *args], check=True, capture_output=True)
+        git(*args, cwd=self.path)
 
     def track(self, files: dict[str, str]) -> None:
         for name, text in files.items():

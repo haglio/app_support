@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from production_machine import git
 
 from app_support.sanitize import (
     blocklist_path,
@@ -258,10 +259,6 @@ class TestScanFiles:
         assert all("badterm" not in repr(v) for v in found)
 
 
-def _git(cwd: Path, *args: str) -> None:
-    subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True)
-
-
 def _arm(repo: Path, terms: str) -> Path:
     """Put a list where the guard will look for it, by asking the guard.
 
@@ -278,9 +275,9 @@ def _arm(repo: Path, terms: str) -> Path:
 def _checkout(family: Path, name: str) -> Path:
     repo = family / name
     repo.mkdir(parents=True)
-    _git(repo, "init", "-b", "main")
-    _git(repo, "config", "user.email", "guard@example.test")
-    _git(repo, "config", "user.name", "Guard Test")
+    git("init", "-b", "main", cwd=repo)
+    git("config", "user.email", "guard@example.test", cwd=repo)
+    git("config", "user.name", "Guard Test", cwd=repo)
     return repo
 
 
@@ -317,11 +314,11 @@ class TestBlocklistPath:
         shared.parent.mkdir()
         shared.write_text("alpha\n", encoding="utf-8")
         (primary / "README.md").write_text("hi\n", encoding="utf-8")
-        _git(primary, "add", "README.md")
-        _git(primary, "commit", "-m", "seed")
+        git("add", "README.md", cwd=primary)
+        git("commit", "-m", "seed", cwd=primary)
 
         tree = primary / ".claude" / "worktrees" / "side"
-        _git(primary, "worktree", "add", str(tree), "-b", "side")
+        git("worktree", "add", str(tree), "-b", "side", cwd=primary)
         assert blocklist_path(tree) == shared.resolve()
 
     def test_a_machine_with_no_blocklist_still_names_where_one_would_go(self, tmp_path: Path):
@@ -332,7 +329,7 @@ class TestBlocklistPath:
         """
         clone = tmp_path / "clone"
         clone.mkdir()
-        _git(clone, "init", "-b", "main")
+        git("init", "-b", "main", cwd=clone)
         assert not blocklist_path(clone).exists()
 
 
@@ -359,10 +356,10 @@ class TestHookEntryPoint:
             # Windows that silently turned every case below into a test of
             # nothing.
             dest.chmod(0o755)
-        _git(repo, "init", "-b", "main")
-        _git(repo, "config", "user.email", "guard@example.test")
-        _git(repo, "config", "user.name", "Guard Test")
-        _git(repo, "config", "core.hooksPath", "tools/githooks")
+        git("init", "-b", "main", cwd=repo)
+        git("config", "user.email", "guard@example.test", cwd=repo)
+        git("config", "user.name", "Guard Test", cwd=repo)
+        git("config", "core.hooksPath", "tools/githooks", cwd=repo)
         return repo
 
     def _commit(self, repo: Path, message: str = "seed", *, pythonpath: Path | None = None):
@@ -379,7 +376,7 @@ class TestHookEntryPoint:
     def test_the_hook_refuses_a_staged_banned_term(self, tmp_path: Path):
         repo = self._repo(tmp_path, f"{self.TERM}\n")
         (repo / "notes.md").write_text(f"this has {self.TERM} in it\n", encoding="utf-8")
-        _git(repo, "add", ".")
+        git("add", ".", cwd=repo)
         done = self._commit(repo)
         assert done.returncode != 0
         assert "blocked term" in done.stderr
@@ -388,7 +385,7 @@ class TestHookEntryPoint:
     def test_the_hook_refuses_a_file_named_after_a_term(self, tmp_path: Path):
         repo = self._repo(tmp_path, f"{self.TERM}\n")
         (repo / f"play_{self.TERM}.bat").write_text("clean\n", encoding="utf-8")
-        _git(repo, "add", ".")
+        git("add", ".", cwd=repo)
         done = self._commit(repo)
         assert done.returncode != 0
         assert self.TERM not in done.stderr
@@ -396,7 +393,7 @@ class TestHookEntryPoint:
     def test_the_hook_refuses_a_banned_term_in_the_message(self, tmp_path: Path):
         repo = self._repo(tmp_path, f"{self.TERM}\n")
         (repo / "notes.md").write_text("clean\n", encoding="utf-8")
-        _git(repo, "add", ".")
+        git("add", ".", cwd=repo)
         assert self._commit(repo, f"drop the {self.TERM} fixture").returncode != 0
 
     def test_it_judges_the_staged_half_not_the_working_copy(self, tmp_path: Path):
@@ -406,14 +403,14 @@ class TestHookEntryPoint:
         repo = self._repo(tmp_path, f"{self.TERM}\n")
         f = repo / "notes.md"
         f.write_text("clean\n", encoding="utf-8")
-        _git(repo, "add", ".")
+        git("add", ".", cwd=repo)
         f.write_text(f"now with {self.TERM}\n", encoding="utf-8")
         assert self._commit(repo).returncode == 0
 
     def test_a_clean_commit_passes(self, tmp_path: Path):
         repo = self._repo(tmp_path, f"{self.TERM}\n")
         (repo / "notes.md").write_text("perfectly clean\n", encoding="utf-8")
-        _git(repo, "add", ".")
+        git("add", ".", cwd=repo)
         assert self._commit(repo).returncode == 0
 
     def test_no_blocklist_means_no_enforcement(self, tmp_path: Path):
@@ -424,7 +421,7 @@ class TestHookEntryPoint:
         """
         repo = self._repo(tmp_path, None)
         (repo / "notes.md").write_text(f"this has {self.TERM} in it\n", encoding="utf-8")
-        _git(repo, "add", ".")
+        git("add", ".", cwd=repo)
         done = self._commit(repo)
         assert done.returncode == 0
         assert "no blocklist" in done.stderr
@@ -455,7 +452,7 @@ class TestHookEntryPoint:
         hook = alone / hook_name
         hook.write_bytes((repo / "tools" / "githooks" / hook_name).read_bytes())
         hook.chmod(0o755)
-        _git(repo, "config", "core.hooksPath", str(alone.relative_to(repo)))
+        git("config", "core.hooksPath", str(alone.relative_to(repo)), cwd=repo)
 
     def test_a_guard_it_cannot_import_refuses_the_commit(self, tmp_path: Path):
         """The contract the move to an installed package created. A hook that
@@ -465,7 +462,7 @@ class TestHookEntryPoint:
         """
         repo = self._repo(tmp_path, f"{self.TERM}\n")
         (repo / "notes.md").write_text("perfectly clean\n", encoding="utf-8")
-        _git(repo, "add", ".")
+        git("add", ".", cwd=repo)
         self._only(repo, "pre-commit")
 
         done = self._commit(repo, pythonpath=self._shadow(tmp_path))
@@ -479,7 +476,7 @@ class TestHookEntryPoint:
         """
         repo = self._repo(tmp_path, f"{self.TERM}\n")
         (repo / "notes.md").write_text("perfectly clean\n", encoding="utf-8")
-        _git(repo, "add", ".")
+        git("add", ".", cwd=repo)
         self._only(repo, "commit-msg")
 
         done = self._commit(repo, pythonpath=self._shadow(tmp_path))

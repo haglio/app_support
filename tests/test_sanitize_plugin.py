@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pytest
 from consumer_runs import run_pytest_in
+from production_machine import git
 
 from app_support.sanitize import blocklist_path, test_tracked_tree
 
@@ -54,10 +55,6 @@ import pytest
 def pytest_configure(config):
     config.args.append(str(Path(__file__).with_name("test_local.py")))
 """
-
-
-def _git(cwd: Path, *args: str) -> None:
-    subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True)
 
 
 def _arm(repo: Path, terms: str) -> Path:
@@ -134,11 +131,11 @@ class TestTheGuardPlugin:
         if blocklist is not None:
             _arm(repo, blocklist)
         (repo / "notes.md").write_text(tracked, encoding="utf-8")
-        _git(repo, "init", "-b", "main")
-        _git(repo, "config", "user.email", "guard@example.test")
-        _git(repo, "config", "user.name", "Guard Test")
-        _git(repo, "add", ".")
-        _git(repo, "commit", "-m", "seed", "--no-verify")
+        git("init", "-b", "main", cwd=repo)
+        git("config", "user.email", "guard@example.test", cwd=repo)
+        git("config", "user.name", "Guard Test", cwd=repo)
+        git("add", ".", cwd=repo)
+        git("commit", "-m", "seed", "--no-verify", cwd=repo)
         return repo
 
     def test_a_planted_term_in_a_tracked_file_fails_the_run(self, tmp_path: Path):
@@ -256,7 +253,7 @@ class TestTheGuardPlugin:
         _arm(repo, f"{TERM}\n")
         (repo / "test_local.py").write_text(
             "def test_local():\n    assert True\n", encoding="utf-8")
-        _git(repo, "init", "-b", "main")
+        git("init", "-b", "main", cwd=repo)
 
         done = run_pytest_in(repo)
 
@@ -273,8 +270,8 @@ class TestTheGuardPlugin:
         repo = self._repo(tmp_path, blocklist=f"{TERM}\n", tracked="perfectly clean\n")
         (repo / "release notes.md").write_text(
             f"this has {TERM} in it\n", encoding="utf-8")
-        _git(repo, "add", ".")
-        _git(repo, "commit", "-m", "notes", "--no-verify")
+        git("add", ".", cwd=repo)
+        git("commit", "-m", "notes", "--no-verify", cwd=repo)
 
         done = run_pytest_in(repo)
 
@@ -297,11 +294,11 @@ class TestTheGuardPlugin:
         (repo / "pyproject.toml").write_text(PYPROJECT, encoding="utf-8")
         (repo / "notes.md").write_text(
             f"this has {TERM} in it\n", encoding="utf-8")
-        _git(repo, "init", "-b", "main")
-        _git(repo, "config", "user.email", "guard@example.test")
-        _git(repo, "config", "user.name", "Guard Test")
-        _git(repo, "add", "notes.md")
-        _git(repo, "commit", "-m", "seed", "--no-verify")
+        git("init", "-b", "main", cwd=repo)
+        git("config", "user.email", "guard@example.test", cwd=repo)
+        git("config", "user.name", "Guard Test", cwd=repo)
+        git("add", "notes.md", cwd=repo)
+        git("commit", "-m", "seed", "--no-verify", cwd=repo)
         (repo / "notes.md").unlink()
 
         done = run_pytest_in(repo)
@@ -312,8 +309,8 @@ class TestTheGuardPlugin:
     def test_a_tracked_file_that_cannot_be_opened_fails_the_run(self, tmp_path: Path):
         repo = self._repo(tmp_path, blocklist=f"{TERM}\n", tracked="perfectly clean\n")
         (repo / "locked.md").write_text("ordinary prose\n", encoding="utf-8")
-        _git(repo, "add", "locked.md")
-        _git(repo, "commit", "-m", "locked", "--no-verify")
+        git("add", "locked.md", cwd=repo)
+        git("commit", "-m", "locked", "--no-verify", cwd=repo)
         (repo / "conftest.py").write_text(CONFTEST_REFUSING_LOCKED_MD, encoding="utf-8")
 
         done = run_pytest_in(repo)
