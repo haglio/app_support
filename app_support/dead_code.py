@@ -17,8 +17,7 @@ _NOTHING_TO_REPORT = 0
 _REPORT_IS_NOT_EMPTY = 3
 
 
-class ScanDidNotRun(RuntimeError):
-    pass
+class ScanDidNotRun(RuntimeError): ...
 
 
 def _refuse_a_target_with_nothing_to_read(targets: tuple[Path | str, ...]) -> None:
