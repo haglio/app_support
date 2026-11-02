@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+import dataclasses
 import os
 import pathlib
 import subprocess
@@ -714,9 +715,21 @@ def _opened(pid: int) -> int:
 _PROCESS_ID_LIST, _ACCOUNTING = 3, 1
 
 
-def _a_job_kernel32(*, job: int = WIDE_HANDLE, limited: int = 1, assigned: int = 1, holding: tuple[int, ...] = (),
-                    left_since: tuple[int, ...] = (), listed: int = 1,
-                    spent: tuple[int, int] | None = (0, 0)) -> _FakeDll:
+@dataclasses.dataclass(frozen=True)
+class _JobAnswers:
+    job: int = WIDE_HANDLE
+    limited: int = 1
+    assigned: int = 1
+    holding: tuple[int, ...] = ()
+    left_since: tuple[int, ...] = ()
+    listed: int = 1
+    spent: tuple[int, int] | None = (0, 0)
+
+
+def _a_job_kernel32(**answers) -> _FakeDll:
+    said = _JobAnswers(**answers)
+    job, limited, assigned, holding = said.job, said.limited, said.assigned, said.holding
+    left_since, listed, spent = said.left_since, said.listed, said.spent
     log: list[str] = []
 
     def query(*asked):
@@ -748,7 +761,8 @@ A_PROCESS = 0x1F4
 
 
 def _a_job(kernel32: _FakeDll, *process: int, **asked) -> JobObject:
-    return JobObject(*process, kernel32=lambda: kernel32, last_error=lambda: ERROR_ACCESS_DENIED, **asked)
+    ctypes.set_last_error(ERROR_ACCESS_DENIED)
+    return JobObject(*process, kernel32=lambda: kernel32, **asked)
 
 
 class TestAJobObject:

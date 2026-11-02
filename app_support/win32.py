@@ -4,14 +4,13 @@ import contextlib
 import ctypes
 import hashlib
 import os
-import sys
 import uuid
 from collections.abc import Iterable
 from ctypes import wintypes
 from dataclasses import dataclass
 from pathlib import Path
 
-if sys.platform == "win32":
+if os.name == "nt":
     import winreg
 
 
@@ -553,7 +552,7 @@ def _limits(processes_end_with_it: bool, processes_may_break_away: bool,
 class JobObject:
     def __init__(self, process: int | None = None, *, processes_end_with_it: bool = False,
                  processes_may_break_away: bool = False, priority_class: int | None = None,
-                 kernel32=_kernel32, last_error=_last_error) -> None:
+                 kernel32=_kernel32) -> None:
         dll = kernel32()
         create = _declare(dll, "CreateJobObjectW", ctypes.c_void_p, ctypes.c_void_p, wintypes.LPCWSTR)
         limit = _declare(dll, "SetInformationJobObject", wintypes.BOOL, ctypes.c_void_p, ctypes.c_int,
@@ -568,7 +567,6 @@ class JobObject:
         self._wait = _declare(dll, "WaitForMultipleObjects", wintypes.DWORD, wintypes.DWORD,
                               ctypes.POINTER(ctypes.c_void_p), wintypes.BOOL, wintypes.DWORD)
         self._close = _close_handle(dll)
-        self._last_error = last_error
         self._handle = create(None, None)
         if not self._handle:
             raise self._refused("CreateJobObjectW")
@@ -588,7 +586,7 @@ class JobObject:
             raise self._refused("AssignProcessToJobObject")
 
     def _refused(self, call: str) -> OSError:
-        return OSError(f"{call} failed: Win32 error {self._last_error()}")
+        return OSError(f"{call} failed: Win32 error {_last_error()}")
 
     def end_all(self) -> None:
         ending = self._each_process_in_it()
