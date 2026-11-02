@@ -120,15 +120,34 @@ def _bring_up_one(github: GitHub, project: _Project, newest: Mapping[str, str]) 
     return f"{project.repo}: #{pull} {_subject(moved)}{shipping}"
 
 
-def bring_up(github: GitHub) -> list[str]:
+@dataclass(frozen=True)
+class Brought:
+    said: list[str]
+    failed: list[str]
+
+
+def bring_up(github: GitHub) -> Brought:
     projects = _projects(github)
     libraries = sorted({pin.repo for project in projects for pin in sibling_pins_in(project.text)})
     newest = {library: tag for library in libraries if (tag := newest_release(github.tags(library)))}
-    return [said for project in projects if (said := _bring_up_one(github, project, newest))]
+    brought = Brought([], [])
+    for project in projects:
+        try:
+            said = _bring_up_one(github, project, newest)
+        except (subprocess.CalledProcessError, NotFound) as refused:
+            brought.failed.append(f"{project.repo}: {_what_github_said(refused)}")
+        else:
+            if said:
+                brought.said.append(said)
+    return brought
 
 
 class NotFound(LookupError):
     pass
+
+
+def _what_github_said(refused: Exception) -> str:
+    return (getattr(refused, "stderr", None) or str(refused)).strip()
 
 
 def _run(command: Sequence[str]) -> str:
@@ -221,7 +240,7 @@ class GhGitHub:
         try:
             self._run(["gh", "pr", "merge", str(number), "--repo", f"{self.org}/{repo}", "--auto"])
         except subprocess.CalledProcessError as refused:
-            return (refused.stderr or str(refused)).strip()
+            return _what_github_said(refused)
         return None
 
     def withdraw(self, repo: str, number: int, branch: str, why: str) -> None:
@@ -237,9 +256,10 @@ def main(argv: list[str] | None = None, *, github: GitHub | None = None) -> int:
                     "up to date one pull request taking the newest release of each.")
     parser.add_argument("--org", default="haglio")
     arguments = parser.parse_args(argv)
-    for said in bring_up(github or GhGitHub(arguments.org)):
+    brought = bring_up(github or GhGitHub(arguments.org))
+    for said in brought.said + brought.failed:
         print(said)
-    return 0
+    return 1 if brought.failed else 0
 
 
 if __name__ == "__main__":
