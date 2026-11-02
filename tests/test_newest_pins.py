@@ -9,7 +9,7 @@ import subprocess
 import pytest
 
 from app_support.dependencies import sibling_pins_in
-from app_support.newest_pins import BRANCH, GhGitHub, Move, bring_up, newest_release, newest_taken
+from app_support.newest_pins import BRANCH, IN_MERGE_QUEUE, GhGitHub, Move, bring_up, newest_release, newest_taken
 
 
 def _pin(repo: str, tag: str) -> str:
@@ -65,6 +65,7 @@ class FakeGitHub:
         self._tags = tags
         self.branches: dict[tuple[str, str], str] = {}
         self.commits: dict[str, str] = {}
+        self.queued: set[tuple[str, int]] = set()
         self.pulls: dict[str, dict] = {}
         self.armed: list[tuple[str, int]] = []
         self.withdrawn: list[tuple[str, int, str]] = []
@@ -82,7 +83,11 @@ class FakeGitHub:
     def tags(self, repo):
         return self._tags.get(repo, [])
 
+    def in_merge_queue(self, repo, number):
+        return (repo, number) in self.queued
+
     def point(self, repo, branch, sha):
+        assert not any(queued == repo for queued, _ in self.queued)
         if sha == f"{repo}-head":
             self.pulls.pop(repo, None)
             self.branches[repo, branch] = self.mains[repo]
@@ -156,6 +161,19 @@ class TestBringUp:
         assert github.armed == [("someapp", 1)]
         assert said == ["someapp: #1 already takes widgetlib v0.1.10"]
 
+    def test_a_pull_request_on_its_way_to_main_is_left_to_ship_and_the_newer_release_waits(self):
+        github = FakeGitHub({"someapp": _pyproject(_pin("widgetlib", "v0.1.9")), "widgetlib": None},
+                            {"widgetlib": ["v0.1.10"]})
+        bring_up(github)
+        offered = github.branches["someapp", BRANCH]
+        github.queued.add(("someapp", 1))
+        github._tags["widgetlib"] = ["v0.1.10", "v0.1.11"]
+
+        said = bring_up(github)
+
+        assert github.branches["someapp", BRANCH] == offered
+        assert said == ["someapp: #1 is on its way to main, so widgetlib v0.1.11 waits for the next release"]
+
     def test_a_pull_request_main_no_longer_needs_is_withdrawn(self):
         github = FakeGitHub({"someapp": _pyproject(_pin("widgetlib", "v0.1.9")), "widgetlib": None},
                             {"widgetlib": ["v0.1.10"]})
@@ -215,6 +233,19 @@ class TestGhGitHub:
 
         with pytest.raises(subprocess.CalledProcessError):
             github.file_at("someapp", "main", "pyproject.toml")
+
+    def test_github_says_whether_a_pull_request_is_in_the_merge_queue(self):
+        def queued(answer: bool) -> str:
+            return json.dumps({"data": {"repository": {"pullRequest": {"isInMergeQueue": answer}}}})
+
+        def asked_about(number: int) -> tuple[str, ...]:
+            return ("gh", "api", "graphql", "-f", f"query={IN_MERGE_QUEUE}", "-f", "org=someorg", "-f", "repo=someapp",
+                    "-F", f"number={number}")
+
+        github, _ = self._github({asked_about(7): queued(True), asked_about(8): queued(False)})
+
+        assert github.in_merge_queue("someapp", 7) is True
+        assert github.in_merge_queue("someapp", 8) is False
 
     def test_a_branch_that_does_not_exist_yet_is_made_and_one_that_does_is_moved(self):
         missing = subprocess.CalledProcessError(1, "gh", stderr="gh: Not Found (HTTP 404)")
