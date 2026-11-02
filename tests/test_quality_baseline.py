@@ -64,6 +64,7 @@ class TestExternalityLines:
         ("x = 1\n", 0),
         ("# why\nx = 1\n", 0),
         ("# mpv drops the first seek\nx = 1\n", 1),
+        ("# GGUF values are typed\nx = 1\n", 1),
         ("# Told once,\n# because mpv drops the first seek.\nx = 1\n", 2),
         ("# because mpv drops it\n\n# why\nx = 1\n", 1),
         ("# because mpv drops it\nx = 1\n# why\n", 1),
@@ -74,7 +75,7 @@ class TestExternalityLines:
         ("x = 1  # noqa: mpv\n", 0),
         ("# a mpv_engine file\n", 0),
         ("def broken(:\n    # mpv\n", 0),
-    ], ids=["code", "our own reason", "names it", "a block counts whole", "a blank ends a block", "code ends a block",
+    ], ids=["code", "our own reason", "names it", "names a model format", "a block counts whole", "a blank ends a block", "code ends a block",
             "a docstring counts whole", "our own docstring", "trailing comment", "our own trailing comment",
             "a marker for a tool", "only a whole word", "what will not parse"])
     def test_a_comment_or_docstring_naming_something_outside_the_family_counts_whole(self, source: str, lines: int):
