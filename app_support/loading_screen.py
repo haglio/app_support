@@ -176,11 +176,11 @@ class Frame:
 
 
 class Showing:
-    def __init__(self, place: MeetingPlace, snapshots: Snapshots, checkouts: Sequence[Path], *,
+    def __init__(self, place: MeetingPlace, checkouts: Sequence[Path], *,
                  progress_of: Callable[[Path], UpdateProgress | None], clock: Callable[[], float],
                  launcher_running: Callable[[], bool]):
         self._place = place
-        self._snapshots = snapshots
+        self._snapshots = place.snapshots()
         self._checkouts = tuple(checkouts)
         self._progress_of = progress_of
         self._clock = clock
@@ -464,7 +464,7 @@ def main(argv: Sequence[str] | None = None) -> int:  # pragma: no cover -- a win
     if snapshots is None:
         return 0
     checkouts = [Path(each) for each in (sys.argv[1:] if argv is None else argv)]
-    showing = Showing(place, snapshots, checkouts, progress_of=progress_of, clock=time.time,
+    showing = Showing(place, checkouts, progress_of=progress_of, clock=time.time,
                       launcher_running=_the_launcher_running())
     _Window(place, snapshots, showing, screens()).run()
     return 0
