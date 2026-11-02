@@ -259,6 +259,9 @@ number under its entry fails too, until `python -m app_support.gates.baseline` l
 it; run from the checkout, that command also carries a renamed file's entry, enters a
 section the file does not have, and refuses to raise anything. An entry above what main
 held where the branch left it fails as well, so no number can be raised by hand.
+A rename git cannot follow, of a class or of a file changed too far, is stated in
+`tools/quality_baseline_renames.json`, old key to new; that moves a number and cannot
+raise one, since a name still holding its count stands against an entry of zero.
 
 Uncovered lines are read at the end of a whole run, from the same measurement as the
 floor. A file under its entry passes, since a line can be reached by chance; the

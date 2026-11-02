@@ -2,7 +2,7 @@
 
     python -m app_support.gates.baseline
 
-lowers what fell, carries what git says was renamed, enters a section the file does not
+lowers what fell, carries what git or ``tools/quality_baseline_renames.json`` says was renamed, enters a section the file does not
 have yet, and refuses to raise anything. With ``--hold-uncovered`` it only holds the
 measurements a suite run in parts has gathered into ``.coverage`` to their entries.
 """
@@ -27,6 +27,7 @@ from app_support.private_reach import private_imports, reaches_in
 
 _COMMAND = "python -m app_support.gates.baseline"
 _CLASS_MARK = "::"
+STATED_RENAMES_PATH = "tools/quality_baseline_renames.json"
 
 
 def prose_lines(source: str) -> int:
@@ -153,6 +154,8 @@ def lowered(entries: dict[str, int], live: dict[str, int]) -> dict[str, int]:
 
 
 def _renamed_key(key: str, renames: dict[str, str]) -> str:
+    if key in renames:
+        return renames[key]
     file, mark, class_name = key.partition(_CLASS_MARK)
     return f"{renames.get(file, file)}{mark}{class_name}"
 
@@ -202,6 +205,11 @@ def renamed_since_main(root: Path) -> dict[str, str]:
     return {old: new for _, old, new in (line.split("\t") for line in (listed or "").splitlines())}
 
 
+def _renames(root: Path) -> dict[str, str]:
+    stated = root / STATED_RENAMES_PATH
+    return {**renamed_since_main(root), **(json.loads(_text(stated)) if stated.is_file() else {})}
+
+
 def _sections_at_main(root: Path) -> dict[str, dict[str, int]] | None:
     left = _where_this_left_main(root)
     held = _git(root, "show", f"{left}:{BASELINE_PATH}") if left else None
@@ -216,7 +224,7 @@ def assert_nothing_stands_above_main(checkout: Checkout) -> None:
     here, at_main = checkout.sections or {}, _sections_at_main(checkout.root)
     if at_main is None:
         return
-    renames = renamed_since_main(checkout.root)
+    renames = _renames(checkout.root)
     told = [f"{section} {key} stands at {held}, above the {entry} main holds"
             for section, entries in here.items() if section in at_main
             for key, (held, entry) in over(carried(at_main[section], renames), entries).items()
@@ -262,7 +270,7 @@ def _settled_section(checkout: Checkout, section: str, entries: dict[str, int], 
 
 def main_in(checkout: Checkout, *, said: Callable[[str], None] = print) -> int:
     on_file = checkout.sections or {}
-    renames = renamed_since_main(checkout.root)
+    renames = _renames(checkout.root)
     sections = dict(on_file)
     refusals = 0
     for section, live in _measures(checkout, on_file, said):

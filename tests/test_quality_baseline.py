@@ -130,6 +130,9 @@ class TestCarrying:
     def test_a_renamed_files_classes_go_with_it(self):
         assert baseline.carried({"old.py::A": 3}, {"old.py": "new.py"}) == {"new.py::A": 3}
 
+    def test_a_renamed_class_takes_its_entry_under_its_new_name(self):
+        assert baseline.carried({"old.py::A": 3}, {"old.py::A": "new.py::B"}) == {"new.py::B": 3}
+
     def test_an_entry_the_new_name_already_holds_is_not_added_to(self):
         assert baseline.carried({"old.py": 3, "new.py": 1}, {"old.py": "new.py"}) == {"new.py": 3}
 
@@ -163,6 +166,23 @@ class TestHoldingACount:
         _files(tmp_path, {baseline.BASELINE_PATH: json.dumps({})})
 
         with pytest.raises(AssertionError, match=r"prose_lines is gone from the file, and main holds it"):
+            baseline.assert_nothing_stands_above_main(checkout)
+
+    def test_a_rename_the_repo_states_is_no_raise_where_git_cannot_see_one(self, tmp_path: Path):
+        checkout = _checkout(tmp_path, {}, {"methods": {"pkg/a.py::A": 30}})
+        _with_a_main(tmp_path)
+        _files(tmp_path, {baseline.BASELINE_PATH: json.dumps({"methods": {"pkg/a.py::B": 30}}),
+                          baseline.STATED_RENAMES_PATH: json.dumps({"pkg/a.py::A": "pkg/a.py::B"})})
+
+        baseline.assert_nothing_stands_above_main(checkout)
+
+    def test_a_stated_rename_cannot_raise_the_number_it_moves(self, tmp_path: Path):
+        checkout = _checkout(tmp_path, {}, {"methods": {"pkg/a.py::A": 30}})
+        _with_a_main(tmp_path)
+        _files(tmp_path, {baseline.BASELINE_PATH: json.dumps({"methods": {"pkg/a.py::B": 31}}),
+                          baseline.STATED_RENAMES_PATH: json.dumps({"pkg/a.py::A": "pkg/a.py::B"})})
+
+        with pytest.raises(AssertionError, match=r"methods pkg/a.py::B stands at 31, above the 30 main holds"):
             baseline.assert_nothing_stands_above_main(checkout)
 
     def test_listing_a_class_under_the_familys_limit_raises_nothing(self, tmp_path: Path):
@@ -351,6 +371,17 @@ class TestTheCommand:
         checkout = _checkout(tmp_path, {"pkg/a.py": "# why\n" * 3}, {"prose_lines": {"pkg/a.py": 3}})
         _with_a_main(tmp_path)
         _git(tmp_path, "mv", "pkg/a.py", "pkg/b.py")
+
+        code, said = self._main(checkout)
+
+        assert code == 0
+        assert self._written(checkout)["prose_lines"] == {"pkg/b.py": 3}
+        assert "carried prose_lines pkg/a.py to pkg/b.py" in said
+
+    def test_it_carries_an_entry_the_repo_states_was_renamed(self, tmp_path: Path):
+        checkout = _checkout(tmp_path, {"pkg/b.py": "# why\n" * 3}, {"prose_lines": {"pkg/a.py": 3}})
+        _with_a_main(tmp_path)
+        _files(tmp_path, {baseline.STATED_RENAMES_PATH: json.dumps({"pkg/a.py": "pkg/b.py"})})
 
         code, said = self._main(checkout)
 
