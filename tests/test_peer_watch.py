@@ -257,3 +257,12 @@ def test_a_launcher_that_always_fails_is_retried_on_the_interval_not_every_beat(
         watch.tick()
 
     assert attempts == ["tried", "tried"]
+
+
+def test_without_localappdata_the_marker_lands_under_the_home_directory(tmp_path, monkeypatch):
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+
+    stand_down("Widget", environ={})
+
+    assert len(list(tmp_path.rglob("Widget.txt"))) == 1
+    assert is_stood_down("Widget", environ={}) is True
