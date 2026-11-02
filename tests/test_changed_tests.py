@@ -222,3 +222,11 @@ def test_a_curly_quote_in_the_file_does_not_stop_it_being_read(branch_from):
     branch.commit({"tests/test_things.py": quoted.replace("return 1", "return 2 - 1")})
 
     assert changed_test_ids(branch.path, "main") == ["tests/test_things.py::test_one"]
+
+
+def test_a_fixture_taken_out_of_the_file_names_the_tests_that_asked_for_it(branch_from):
+    branch = branch_from({"tests/test_things.py": WITH_A_FIXTURE})
+    branch.commit({"tests/test_things.py": WITH_A_FIXTURE.replace(
+        "@pytest.fixture\ndef thing():\n    return 1\n\n\n", "")})
+
+    assert changed_test_ids(branch.path, "main") == ["tests/test_things.py::test_one"]

@@ -1,4 +1,3 @@
-"""Name the tests a branch added or changed, so a gate can run those ten times."""
 from __future__ import annotations
 
 import ast
@@ -87,10 +86,6 @@ def _read(root: Path, revision_and_path: str) -> _Module:
 
 
 def _defined_by(node: ast.stmt) -> set[str]:
-    """The module-level names this statement binds, and nothing for one the walk
-    below cannot follow -- a rebinding, a tuple target, a bare statement, a mark
-    or fixture that reaches tests which never name it.  Those fall back to the
-    whole file, where a name has only the tests that mention it to answer for."""
     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
         return set() if _reaches_every_test(node) else {node.name}
     if isinstance(node, ast.ClassDef):
@@ -114,9 +109,6 @@ def _reaches_every_test(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
 
 
 def _mentions(node: ast.AST) -> set[str]:
-    """Every name the node could be reaching: what it writes out, the arguments
-    it takes -- a test's are the fixtures it asks for -- and the words of any
-    string a decorator carries, which is how ``usefixtures`` names one."""
     spoken = {inner.id for inner in ast.walk(node) if isinstance(inner, ast.Name)}
     spoken |= {taken.arg for inner in ast.walk(node)
                if isinstance(inner, (ast.FunctionDef, ast.AsyncFunctionDef))
@@ -129,9 +121,6 @@ def _mentions(node: ast.AST) -> set[str]:
 
 
 def _everything_reached(mentioned: set[str], mentioned_by: dict[str, set[str]]) -> set[str]:
-    """What a test touches through the file's own definitions, however many
-    helpers deep -- a helper that calls a helper is still the test's to answer
-    for, and a name gone from the file is kept so its loss still counts."""
     reached = set(mentioned)
     todo = [name for name in mentioned if name in mentioned_by]
     while todo:
@@ -144,9 +133,6 @@ def _everything_reached(mentioned: set[str], mentioned_by: dict[str, set[str]]) 
 
 
 def _bound_by(node: ast.Import | ast.ImportFrom) -> set[str]:
-    """Where a name comes from is where the test's subject lives, not what the
-    test does -- so a module that moved rewrites the line and changes nothing.  A
-    star import carries its module instead, its names being unknowable."""
     if isinstance(node, ast.Import):
         return {alias.asname or alias.name.split(".")[0] for alias in node.names}
     return {f"*{node.level * '.'}{node.module or ''}" if alias.name == "*"
@@ -154,8 +140,6 @@ def _bound_by(node: ast.Import | ast.ImportFrom) -> set[str]:
 
 
 def _source(root: Path, revision_and_path: str) -> str:
-    """Empty where the file is not in that revision at all -- a file the branch
-    adds has no earlier self, and every test in it is new."""
     try:
         return git(root, "show", revision_and_path)
     except subprocess.CalledProcessError:

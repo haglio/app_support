@@ -1,11 +1,3 @@
-"""The one way to the OSR2: the broker's slot, which one sender holds at a time --
-whoever connects takes it from whoever had it, and a hold takes it from anyone --
-and a sender's side of it, which holds the slot only while it wants the device and
-never makes the loop that sends wait.
-
-A sender connects to :data:`app_support.ports.OSR2_SLOT`, says its name on the
-first line, then sends T-Code a line at a time; when another sender or a hold takes
-the OSR2, the broker says so before it stops listening to the line."""
 from __future__ import annotations
 
 import contextlib
@@ -176,8 +168,6 @@ class Osr2Slot:
 
     @staticmethod
     def _hear_out(sender: _Sender) -> None:
-        """Read what a sender the OSR2 was taken from goes on sending until it hangs
-        up, so its line is never reset with the word that it was taken unread."""
         with contextlib.suppress(OSError):
             while sender.connection.recv(4096):
                 pass
