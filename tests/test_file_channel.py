@@ -297,7 +297,7 @@ def test_a_queue_a_writer_holds_this_instant_is_left_intact_for_the_next_drain(t
     path = tmp_path / "cmd.txt"
     path.write_text("NEXT", encoding="utf-8")
 
-    with patch("app_support.file_channel.os.replace", side_effect=PermissionError(32, "in use")):
+    with path.open(encoding="utf-8"):
         assert consume_command_file(path) == []
 
     assert consume_command_file(path) == ["NEXT"]
