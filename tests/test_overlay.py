@@ -12,6 +12,7 @@ from app_support.overlay import (
     MissingOverlayKey,
     backfilled,
     documented_keys,
+    keys_lacking,
     missing_keys,
     overlay_path,
     overlay_value,
@@ -127,3 +128,13 @@ class TestOverlayValue:
 
     def test_it_is_a_lookup_error_so_a_bare_except_keyerror_no_longer_hides_it_either(self):
         assert issubclass(MissingOverlayKey, LookupError)
+
+
+class TestKeysLackingAgainstAnExampleAlreadyRead:
+    def test_a_key_the_example_documents_and_the_local_overlay_lacks_is_named(self, tmp_path: Path):
+        local = _json(tmp_path / "content.local.json", {"phrases": []})
+
+        assert keys_lacking(local, _EXAMPLE) == ("acts", "web_providers")
+
+    def test_no_local_overlay_lacks_nothing(self, tmp_path: Path):
+        assert keys_lacking(tmp_path / "content.local.json", _EXAMPLE) == ()
