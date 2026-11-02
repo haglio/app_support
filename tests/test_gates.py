@@ -33,7 +33,7 @@ jobs:
         with:
           python-version: "3.14"
 """
-EVERY_REPOSITORYS_GATES = 37
+EVERY_REPOSITORYS_GATES = 39
 
 
 def _checkout(root: Path, *files: str, project: str = "example") -> Checkout:
