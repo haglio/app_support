@@ -1,6 +1,3 @@
-"""Holding the OSR2: the verbs every app asks the broker with, the wait before a
-hold lands, and the move it makes, spelled once for the broker that carries a
-hold out and every readout that draws the device getting there."""
 from __future__ import annotations
 
 from pathlib import Path

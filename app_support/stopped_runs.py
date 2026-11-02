@@ -1,9 +1,5 @@
-"""A run stops once the console it started in has closed.
-
-Stopping a job ends its shell and the console host the shell owns, but the run goes on
-wherever Git Bash broke the chain of parents the stop follows, and every console program
-it starts after that dies at start-up with 0xC0000142 -- which reads as a flaky test.
-"""
+"""Git Bash can break the chain of parents that stopping a job follows; the run then goes on, and every console
+program it starts dies at start-up with 0xC0000142."""
 from __future__ import annotations
 
 import os

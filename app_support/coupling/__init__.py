@@ -1,9 +1,3 @@
-"""How tangled a repository is, as counts per file for its baseline to hold.
-
-Most counts are of every file. A class or file enters the size counts only past
-the family's limit, so ordinary growth stays free and what is already too big
-cannot grow.
-"""
 from __future__ import annotations
 
 import ast

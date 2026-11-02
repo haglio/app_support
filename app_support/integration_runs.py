@@ -1,4 +1,3 @@
-"""Fun Time's integration runs, written down by each run and read by Line."""
 from __future__ import annotations
 
 import json

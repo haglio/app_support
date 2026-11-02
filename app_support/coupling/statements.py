@@ -1,4 +1,3 @@
-"""The statements that belong to a body: inside its blocks, and never inside a nested definition."""
 from __future__ import annotations
 
 import ast
