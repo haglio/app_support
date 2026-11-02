@@ -1,15 +1,3 @@
-"""Checks of the repository itself run before every other test.
-
-A check whose subject is the repository -- its tracked files, its code as a whole,
-its settings -- fails on one stray line anywhere in the tree, and a fail-fast run
-that reaches it last has spent its whole length on tests that could not have found
-it. So such a check is marked, and every marked test leads the run::
-
-    pytestmark = pytest.mark.repo_check
-
-The checks this package ships carry the mark, and naming any of their plugins
-brings this one with it, and with it ``app_support.stopped_runs``.
-"""
 from __future__ import annotations
 
 import pytest

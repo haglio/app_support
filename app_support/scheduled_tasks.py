@@ -67,8 +67,6 @@ def _child(parent: ET.Element, tag: str, *, text: str | None = None, **attribute
 
 
 def what_differs(wanted: str, registered: str) -> list[str]:
-    """Each value *wanted* states that *registered* does not hold.  What Task
-    Scheduler adds of its own is not a difference."""
     holds = _values(registered)
     differences = []
     for path, value in _values(wanted).items():
@@ -119,8 +117,6 @@ def schtasks(*arguments: str) -> str:
 
 
 def tasks_in(folder: str, *, run=schtasks) -> list[str]:
-    """The tasks directly in *folder*.  Task Scheduler answers for a folder it
-    does not have with an error, so a folder it will not list holds none."""
     prefix = folder.rstrip("\\") + "\\"
     try:
         listing = run("/query", "/tn", prefix, "/fo", "csv", "/nh")
