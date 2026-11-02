@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 from process_trees import ALauncherAndItsChild, within
-from production_machine import Machine, a_process, git, pins, spec
+from production_machine import Machine, a_process, before_launch, bring_up, git, keep_up, pins, spec
 
 from app_support import launcher, processes, production_update, windows_settings
 from app_support.production_update import Outcome
@@ -196,7 +196,7 @@ class TestBringingOneCheckoutUp:
                 raise production_update.StepFailed("pip install said: could not reach github.com")
             return machine.run(arguments, **kwargs)
 
-        outcome = production_update.bring_up(checkout, workspace=machine.workspace, run=no_network,
+        outcome = bring_up(checkout, workspace=machine.workspace, run=no_network,
                                              in_use=lambda venvs: [], wait_s=5.0)
 
         assert machine.head(checkout) == before
@@ -250,7 +250,7 @@ class TestSayingHowFarAnUpdateHasGot:
         machine.ship(checkout, {"pyproject.toml": pins(app_support="0.1.376")})
         seen = []
 
-        production_update.bring_up(checkout, workspace=machine.workspace, run=self.watched(machine, checkout, seen),
+        bring_up(checkout, workspace=machine.workspace, run=self.watched(machine, checkout, seen),
                                    in_use=lambda venvs: [], wait_s=5.0)
 
         assert [progress.step for progress in seen] == [0, 1, 2]
@@ -424,7 +424,7 @@ class TestAVersionThatOpensOnlyWithEveryKeyOfItsExample:
             machine.ship(checkout, {"feature.txt": "new\n"})
         machine.ship(hosted, {"content.example.json": json.dumps({"alpha": [], "beta": {}})})
 
-        outcomes = production_update.before_launch(host, machine.workspace, machine.base / "state", run=machine.run,
+        outcomes = before_launch(host, machine.workspace, machine.base / "state", run=machine.run,
                                                    in_use=lambda venvs: [])
 
         assert machine.head(host) == machine.origin_head(host)
@@ -800,7 +800,7 @@ class TestTheLibraries:
                 installs.append(env or {})
             return machine.run(arguments, **kwargs)
 
-        production_update.bring_up(checkout, workspace=machine.workspace, run=run, in_use=lambda venvs: [],
+        bring_up(checkout, workspace=machine.workspace, run=run, in_use=lambda venvs: [],
                                    wait_s=5.0)
 
         clone = machine.base / "cloned"
@@ -833,7 +833,7 @@ class TestTheTurn:
         other.start()
         holding.wait(5)
 
-        outcome = production_update.bring_up(checkout, workspace=machine.workspace, run=session_run,
+        outcome = bring_up(checkout, workspace=machine.workspace, run=session_run,
                                              in_use=lambda venvs: [], wait_s=60.0)
         other.join()
 
@@ -905,7 +905,7 @@ class TestKeepingTheWorkspaceUp:
             git("commit", "-q", "-m", "shipped", cwd=clone)
             git("push", "-q", "origin", "main", cwd=clone)
 
-        outcomes = production_update.keep_up(machine.workspace, state, run=machine.run,
+        outcomes = keep_up(machine.workspace, state, run=machine.run,
                                              in_use=lambda venvs: [], now=lambda: 5000.0)
 
         assert sorted(outcomes) == ["app", "library"]
@@ -919,7 +919,7 @@ class TestKeepingTheWorkspaceUp:
         machine.checkout("still")
         machine.ship(moved, {"new.txt": "new\n"}, fetched=False)
 
-        production_update.keep_up(machine.workspace, machine.base / "state", run=machine.run,
+        keep_up(machine.workspace, machine.base / "state", run=machine.run,
                                   in_use=lambda venvs: [])
 
         assert [step for step in machine.ran if step[0] in ("github", "fetch")] == [("github",), ("fetch", "moved")]
@@ -938,7 +938,7 @@ class TestKeepingTheWorkspaceUp:
         state = machine.base / "state"
 
         for seconds_later in (60, production_update.FETCH_UNASKED_AFTER_S):
-            production_update.keep_up(machine.workspace, state, run=machine.run, in_use=lambda venvs: [],
+            keep_up(machine.workspace, state, run=machine.run, in_use=lambda venvs: [],
                                       now=lambda seconds_later=seconds_later: fetched_at + seconds_later)
 
         assert [step for step in machine.ran if step[0] == "fetch"] == [("fetch", "app")]
@@ -950,7 +950,7 @@ class TestKeepingTheWorkspaceUp:
         with caplog.at_level("INFO", logger="production_update"):
             for down in (False, True, True, False, False):
                 machine.github_down = down
-                production_update.keep_up(machine.workspace, machine.base / "state", run=machine.run,
+                keep_up(machine.workspace, machine.base / "state", run=machine.run,
                                           in_use=lambda venvs: [])
 
         out_of_reach = ("GitHub: could not be asked what has shipped, so each checkout is fetched every 30 minutes "
@@ -966,7 +966,7 @@ class TestKeepingTheWorkspaceUp:
         app = machine.checkout("app")
         what_git_said_of_a_file = git("check-attr", "-a", "pyproject.toml", cwd=app)
 
-        production_update.keep_up(machine.workspace, machine.base / "state", run=machine.run,
+        keep_up(machine.workspace, machine.base / "state", run=machine.run,
                                   in_use=lambda venvs: [])
 
         lines = (app / ".git" / "info" / "attributes").read_text(encoding="utf-8").splitlines()
@@ -979,7 +979,7 @@ class TestKeepingTheWorkspaceUp:
         attributes.write_text("*.example binary", encoding="utf-8")
 
         for _ in range(2):
-            production_update.keep_up(machine.workspace, machine.base / "state", run=machine.run,
+            keep_up(machine.workspace, machine.base / "state", run=machine.run,
                                       in_use=lambda venvs: [])
 
         lines = attributes.read_text(encoding="utf-8").splitlines()
@@ -993,7 +993,7 @@ class TestKeepingTheWorkspaceUp:
         machine.ship(other, {"feature.txt": "new\n"})
 
         with caplog.at_level("WARNING", logger="production_update"):
-            outcomes = production_update.keep_up(machine.workspace, machine.base / "state", run=machine.run,
+            outcomes = keep_up(machine.workspace, machine.base / "state", run=machine.run,
                                                  in_use=lambda venvs: [])
 
         assert sorted(outcomes) == ["other", "stuck"]
@@ -1005,7 +1005,7 @@ class TestKeepingTheWorkspaceUp:
         (machine.workspace / "notes").mkdir()
         machine.checkout("app")
 
-        outcomes = production_update.keep_up(machine.workspace, machine.base / "state", run=machine.run,
+        outcomes = keep_up(machine.workspace, machine.base / "state", run=machine.run,
                                              in_use=lambda venvs: [])
 
         assert list(outcomes) == ["app"]
@@ -1018,7 +1018,7 @@ class TestKeepingTheWorkspaceUp:
 
         with caplog.at_level("INFO", logger="production_update"):
             for _ in range(2):
-                production_update.keep_up(machine.workspace, state, run=machine.run, fetch=False,
+                keep_up(machine.workspace, state, run=machine.run, fetch=False,
                                           in_use=lambda venvs: busy)
 
         assert [record.getMessage() for record in caplog.records] == [
@@ -1032,7 +1032,7 @@ class TestKeepingTheWorkspaceUp:
             machine.ship(checkout, {"feature.txt": "new\n"})
         state = machine.base / "state"
 
-        outcomes = production_update.before_launch(host, machine.workspace, state, run=machine.run,
+        outcomes = before_launch(host, machine.workspace, state, run=machine.run,
                                                    in_use=lambda venvs: [])
 
         assert sorted(outcomes) == ["host", "hosted"]

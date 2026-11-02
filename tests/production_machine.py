@@ -22,6 +22,23 @@ def pins(**versions: str) -> str:
     return '[project]\nname = "example"\ndependencies = [\n' + "\n".join(lines) + "\n]\n"
 
 
+def surrounded(**asked) -> dict:
+    fields = {name: asked.pop(name) for name in ("run", "in_use", "now") if name in asked}
+    return {**asked, "surroundings": production_update.Surroundings(**fields)}
+
+
+def keep_up(*where, **asked) -> dict[str, Outcome]:
+    return production_update.keep_up(*where, **surrounded(**asked))
+
+
+def before_launch(*where, **asked) -> dict[str, Outcome]:
+    return production_update.before_launch(*where, **surrounded(**asked))
+
+
+def bring_up(checkout: Path, **asked) -> Outcome:
+    return production_update.bring_up(checkout, **surrounded(**asked))
+
+
 def spec(name: str, version: str) -> str:
     return f"{name.replace('_', '-')} @ git+https://github.com/haglio/{name}@v{version}"
 
@@ -145,7 +162,7 @@ class Machine:
     def bring_up(self, checkout: Path, **kwargs) -> Outcome:
         kwargs.setdefault("in_use", lambda venvs: [])
         kwargs.setdefault("wait_s", 5.0)
-        return production_update.bring_up(checkout, workspace=self.workspace, run=self.run, **kwargs)
+        return bring_up(checkout, workspace=self.workspace, run=self.run, **kwargs)
 
 
 def a_process(name: str, pid: int = 4242) -> processes.Process:

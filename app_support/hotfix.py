@@ -70,18 +70,31 @@ class _SharedHotfix:
     tagged: bool = False
 
 
-def hotfix(worktree: Path, *, libraries: Sequence[Path] = (), run: Run = production_update.run, check: Check,
-           sweep: Sweep, bring_up: BringUp) -> str:
+@dataclasses.dataclass(frozen=True)
+class Route:
+    check: Check
+    sweep: Sweep
+    bring_up: BringUp
+    run: Run = production_update.run
+
+
+@dataclasses.dataclass(frozen=True)
+class _SharedBuilt:
+    versions: dict[tuple[str, str], _SharedHotfix]
+    places: contextlib.ExitStack
+
+
+def hotfix(worktree: Path, route: Route, *, libraries: Sequence[Path] = ()) -> str:
+    run = route.run
     fix = _a_fix(Path(worktree), run=run)
     shared = [_a_fix(Path(library), run=run) for library in libraries]
     app_fix = fix if _names_checks(fix.worktree) else None
     if app_fix is None:
         shared = [fix, *shared]
     apps = _apps_reached_from(fix.worktree, fix.production, {each.repo for each in shared})
-    built: dict[tuple[str, str], _SharedHotfix] = {}
     with contextlib.ExitStack() as shared_places:
-        return _in_each(apps, "took the hotfix", lambda app: _hotfix_of(
-            app, app_fix, shared, built, shared_places, run=run, check=check, sweep=sweep, bring_up=bring_up))
+        built = _SharedBuilt({}, shared_places)
+        return _in_each(apps, "took the hotfix", lambda app: _hotfix_of(app, app_fix, shared, built, route=route))
 
 
 def take_back(worktree: Path, *, run: Run = production_update.run, bring_up: BringUp) -> str:
@@ -163,8 +176,8 @@ def _pins_any_of(checkout: Path, repos: set[str]) -> bool:
     return bool(repos & {pin.repo for pin in sibling_pins_in((checkout / "pyproject.toml").read_text(encoding="utf-8"))})
 
 
-def _hotfix_of(app: Path, app_fix: _Fix | None, shared: list[_Fix], built: dict[tuple[str, str], _SharedHotfix],
-               shared_places: contextlib.ExitStack, *, run: Run, check: Check, sweep: Sweep, bring_up: BringUp) -> str:
+def _hotfix_of(app: Path, app_fix: _Fix | None, shared: list[_Fix], built: _SharedBuilt, *, route: Route) -> str:
+    run = route.run
     base = production_update.heading_for(app, run=run)
     asked_before = _asked_for(app, run=run)
     with contextlib.ExitStack() as this_app:
@@ -173,7 +186,7 @@ def _hotfix_of(app: Path, app_fix: _Fix | None, shared: list[_Fix], built: dict[
         pins = {pin.repo: pin for pin in sibling_pins_in(pyproject.read_text(encoding="utf-8"))}
         if app_fix and (unpinned := [fix.repo for fix in shared if fix.repo not in pins]):
             raise Refused(f"production {app.name} does not run {', '.join(unpinned)}")
-        hotfixes = [_the_shared_hotfix(fix, pins[fix.repo].tag, built, shared_places, run=run)
+        hotfixes = [_the_shared_hotfix(fix, pins[fix.repo].tag, built, run=run)
                     for fix in shared if fix.repo in pins]
         for each in hotfixes:
             _repin(pyproject, pins[each.fix.repo], each.tag)
@@ -181,15 +194,15 @@ def _hotfix_of(app: Path, app_fix: _Fix | None, shared: list[_Fix], built: dict[
         python = app / ".venv" / "Scripts" / "python.exe"
         pythonpath = [each.place for each in hotfixes] + _versions_the_venv_lacks(app, pyproject, hotfixes, this_app,
                                                                                   run=run)
-        check(python, _checks(place, app_fix.changed if app_fix else ()), place, pythonpath)
+        route.check(python, _checks(place, app_fix.changed if app_fix else ()), place, pythonpath)
         for each in hotfixes:
             if tests := _tests_the_suite_runs(each.place, each.fix.changed):
-                check(python, tests, each.place, pythonpath)
-        sweep(python, place, pythonpath)
+                route.check(python, tests, each.place, pythonpath)
+        route.sweep(python, place, pythonpath)
         for each in hotfixes:
             _tag(each, run=run)
         _ask_for(app, made, asked_before, run=run)
-    return _what_production_did(app, made, bring_up(app), run=run) + _what_else_it_brings(brought_along, hotfixes)
+    return _what_production_did(app, made, route.bring_up(app), run=run) + _what_else_it_brings(brought_along, hotfixes)
 
 
 def _ask_for(production: Path, made: str, asked_before: str, *, run: Run) -> None:
@@ -209,9 +222,8 @@ def _the_app_hotfix(app: Path, base: str, app_fix: _Fix | None, stack: contextli
     return _with_the_fix(app, app_fix, base, stack, run=run)
 
 
-def _the_shared_hotfix(fix: _Fix, pinned: str, built: dict[tuple[str, str], _SharedHotfix],
-                       shared_places: contextlib.ExitStack, *, run: Run) -> _SharedHotfix:
-    library = fix.production
+def _the_shared_hotfix(fix: _Fix, pinned: str, shared_built: _SharedBuilt, *, run: Run) -> _SharedHotfix:
+    library, built = fix.production, shared_built.versions
     if (fix.repo, pinned) not in built:
         with contextlib.ExitStack() as attempt:
             place, brought_along = _with_the_fix(library, fix, pinned, attempt, run=run)
@@ -220,7 +232,7 @@ def _the_shared_hotfix(fix: _Fix, pinned: str, built: dict[tuple[str, str], _Sha
                 git(place, "commit", "-q", "--no-verify", "-m", hotfix_message(fix.subject, fix.originals), run=run)
                 built[fix.repo, on] = _SharedHotfix(fix, place, git(place, "rev-parse", "HEAD", run=run),
                                                     _next_tag(library, on, run=run), brought_along)
-                shared_places.enter_context(attempt.pop_all())
+                shared_built.places.enter_context(attempt.pop_all())
         built[fix.repo, pinned] = built[fix.repo, on]
     return built[fix.repo, pinned]
 
@@ -396,7 +408,8 @@ def run_sweep(python: Path, place: Path, pythonpath: Sequence[Path]) -> None:
 
 
 def bring_up_now(checkout: Path, *, state: Path, in_use: InUse = production_update.running_from) -> Outcome:
-    return production_update.before_launch(checkout, checkout.parent, state, in_use=in_use)[checkout.name]
+    surroundings = production_update.Surroundings(in_use=in_use)
+    return production_update.before_launch(checkout, checkout.parent, state, surroundings=surroundings)[checkout.name]
 
 
 def main(argv: Sequence[str] | None = None, *, state: Path | None = None) -> int:
@@ -412,8 +425,7 @@ def main(argv: Sequence[str] | None = None, *, state: Path | None = None) -> int
         if options.take_back:
             print(take_back(Path.cwd(), bring_up=bring_up))
         else:
-            print(hotfix(Path.cwd(), libraries=options.libraries, check=run_checks, sweep=run_sweep,
-                         bring_up=bring_up))
+            print(hotfix(Path.cwd(), Route(run_checks, run_sweep, bring_up), libraries=options.libraries))
     except (Refused, StepFailed) as refused:
         print(f"refused: {refused}")
         return 1
