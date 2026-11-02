@@ -1,4 +1,4 @@
-"""Git Bash can break the chain of parents that stopping a job follows; the run then goes on, and every console
+"""On Windows, Git Bash can break the chain of parents that stopping a job follows; the run then goes on, and every console
 program it starts dies at start-up with 0xC0000142."""
 from __future__ import annotations
 

@@ -16,7 +16,7 @@ from app_support.process_identity import (
     read_version_field,
 )
 
-# IMAGE_SUBSYSTEM_WINDOWS_GUI and _CUI.
+# PE IMAGE_SUBSYSTEM_WINDOWS_GUI and _CUI.
 _WINDOWED, _CONSOLE = 2, 3
 _RT_ICON = 3
 _LOAD_LIBRARY_AS_DATAFILE = 0x00000002
@@ -47,8 +47,8 @@ def _subsystem(exe: Path) -> int:
         image.seek(pe_offset)
         if image.read(4) != b"PE\0\0":
             raise ValueError(f"{exe} is not a PE image")
-        # Past the 20-byte COFF header, the subsystem sits 68 bytes into the
-        # optional header -- the same offset for a 32-bit and a 64-bit image.
+        # PE: past the 20-byte COFF header, the subsystem sits 68 bytes into the
+        # optional header, the same offset for a 32-bit and a 64-bit image.
         image.seek(pe_offset + 4 + 20 + 68)
         (subsystem,) = struct.unpack("<H", image.read(2))
     return subsystem
@@ -110,7 +110,7 @@ def assert_the_app_names_its_process(
         assert _resource(expected, _RT_ICON, 1) == images[0], (
             f"the copy does not carry {Path(icon).name}")
 
-    # sys.executable is documented to be empty then.
+    # CPython documents sys.executable as empty then.
     with _running_under(""):
         try:
             name_this_process()

@@ -17,10 +17,6 @@ __all__ = [
     "Osr2Mode", "Osr2Trouble", "mode", "switched_on", "trouble",
 ]
 
-# The USB adapter takes whatever is sent to it, switched on or not, so only the
-# OSR2's own words say it has power.  While it answers the broker's question, a
-# second without an answer means it is off; one not answering is judged by the
-# temperature it reports on its own about every 15 s.
 SILENT_ONCE_OFF_S = 20.0
 ANSWERS_ONCE_OFF_S = 1.0
 ANSWERING_TRUSTED_S = 30.0

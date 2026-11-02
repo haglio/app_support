@@ -268,10 +268,6 @@ class TestTheRendering:
         assert code[0] == "Option Explicit"
 
     def test_nothing_goes_on_the_python_path_and_no_interpreter_is_searched_for(self, shape):
-        # A checkouts' parent on PYTHONPATH makes every sibling repo directory
-        # importable as a namespace package, the shadow the compat editable
-        # installs exist to prevent; and a python found on PATH has none of the
-        # venv's siblings, so it dies importing before it can log a word.
         text = launcher.render(shape)
 
         assert "PYTHONPATH" not in text
@@ -660,9 +656,7 @@ class TestALaunch:
         assert f" launch: {command}" in log.read_text(encoding="utf-8")
 
     def test_a_held_log_costs_its_name_and_not_the_launch(self, tmp_path: Path, held_open):
-        # A child of an earlier session that outlived it holds the log it
-        # inherited, and cmd cannot redirect into it -- a launch that fails
-        # before python runs, leaving nothing anywhere to say why.
+        # Windows cmd cannot redirect into a log that a child of an earlier session still holds.
         checkout = _checkout(tmp_path, LOGGED)
         _venv(checkout, "python.exe")
         inherited = checkout / "state" / "example.log"

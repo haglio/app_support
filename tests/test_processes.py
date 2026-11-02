@@ -13,7 +13,7 @@ from app_support import processes
 
 windows_only = pytest.mark.skipif(sys.platform != "win32", reason="Win32's processes")
 
-# The interpreter itself rather than a venv's python.exe, which is a stub that runs
+# Windows: the interpreter itself rather than a venv's python.exe, a stub that runs
 # the interpreter as a second process carrying the same command line.
 PYTHON = sys._base_executable
 HIS_DESKTOP = "WinSta0\\Default"

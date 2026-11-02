@@ -50,12 +50,12 @@ def _as_spelled(path: Path) -> Path:
 
 
 def _as_folded(path: Path) -> Path:
-    """Case folded: `relative_to` compares text, though a root with a capital is the same place on these disks."""
+    """Case folded: CPython's `relative_to` compares text, though Windows treats a root with a capital as the same place."""
     return Path(str(_as_spelled(path)).lower())
 
 
 def _as_the_disk_has_it(path: Path) -> Path:
-    """Follows junctions and links; on a drive busy syncing that can block for minutes."""
+    """Follows junctions and links; on a Windows drive pCloud is syncing that can block for minutes."""
     try:
         return Path(path).resolve()
     except OSError:

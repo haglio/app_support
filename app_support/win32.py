@@ -59,7 +59,7 @@ def set_app_user_model_id(app_id: str, *, shell32=_shell32) -> None:
     set_id = _declare(shell32(), "SetCurrentProcessExplicitAppUserModelID",
                       ctypes.c_long, wintypes.LPCWSTR)
     hr = set_id(app_id)
-    if hr < 0:  # the FAILED() macro
+    if hr < 0:  # Win32's FAILED() macro
         raise _hresult("SetCurrentProcessExplicitAppUserModelID", hr)
 
 
@@ -88,7 +88,7 @@ class _PROPERTYKEY(ctypes.Structure):
     _fields_ = [("fmtid", _GUID), ("pid", ctypes.c_ulong)]
 
 
-# ``System.AppUserModel.*``. A wrong key writes a real value, answers S_OK, and leaves the duplicate taskbar button.
+# Win32 shell ``System.AppUserModel.*``. A wrong key writes a real value, answers S_OK, and leaves the duplicate taskbar button.
 _APP_USER_MODEL = "9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"
 _PKEY_AppUserModel_RelaunchCommand = _PROPERTYKEY(_make_guid(_APP_USER_MODEL), 2)
 _PKEY_AppUserModel_RelaunchIconResource = _PROPERTYKEY(_make_guid(_APP_USER_MODEL), 3)
@@ -446,7 +446,7 @@ def try_acquire_mutex(name: str, *, kernel32=_kernel32, last_error=_last_error) 
     if not handle:
         return None
     if last_error() == _ERROR_ALREADY_EXISTS:
-        # Held to exit, the handle would keep somebody else's mutex alive past its owner's death.
+        # Win32: held to exit, the handle would keep somebody else's mutex alive past its owner's death.
         close(handle)
         return None
     return handle
@@ -457,7 +457,7 @@ def release_mutex(handle: int, *, kernel32=_kernel32) -> None:
 
 
 def is_mutex_held(name: str, *, kernel32=_kernel32) -> bool:
-    """Opens rather than creates, so probing cannot leave a mutex briefly in place. ``SYNCHRONIZE`` is the least access that still reports whether the name exists."""
+    """Win32: opens rather than creates, so probing cannot leave a mutex briefly in place. ``SYNCHRONIZE`` is the least access that still reports whether the name exists."""
     dll = kernel32()
     open_mutex = _declare(dll, "OpenMutexW", ctypes.c_void_p,
                           wintypes.DWORD, wintypes.BOOL, wintypes.LPCWSTR)
@@ -667,7 +667,7 @@ _MB_TOPMOST = 0x00040000
 
 
 def show_error_popup(title: str, message: str, *, user32=_user32) -> None:
-    """Put *message* on the screen under *title*, in front of everything. A hidden process has no claim on the foreground, so a plain message dialog opens underneath; ``MB_SETFOREGROUND`` and ``MB_TOPMOST`` prevent that. Raises nothing, being the last thing a dying process does."""
+    """Put *message* on the screen under *title*, in front of everything. A hidden Windows process has no claim on the foreground, so a plain message dialog opens underneath; ``MB_SETFOREGROUND`` and ``MB_TOPMOST`` prevent that. Raises nothing, being the last thing a dying process does."""
     show = _declare(user32(), "MessageBoxW", ctypes.c_int,
                     wintypes.HWND, wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.UINT)
     show(None, message, title,
@@ -716,7 +716,7 @@ def force_foreground_window(hwnd: int, *, user32=_user32, kernel32=_kernel32) ->
 
 @contextlib.contextmanager
 def _input_queue_shared(user, other_thread: int, this_thread: int):
-    """*this_thread* reading *other_thread*'s input queue for the block; left joined, the two programs' keyboard focus would move together."""
+    """Win32: *this_thread* reading *other_thread*'s input queue for the block; left joined, the two programs' keyboard focus would move together."""
     attach = _declare(user, "AttachThreadInput",
                       wintypes.BOOL, wintypes.DWORD, wintypes.DWORD, wintypes.BOOL)
     attached = bool(other_thread and other_thread != this_thread

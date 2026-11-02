@@ -141,10 +141,7 @@ class TestInstallExceptionLogging:
 
 class TestEnableFaulthandler:
     def test_a_log_directory_that_does_not_exist_yet_is_made_before_the_first_write(self, tmp_path: Path):
-        # A hard crash (a segfault in a native decoder) writes its C-level
-        # traceback straight to this handle, so it must exist before the crash —
-        # which means creating the directory is the function's job, not the
-        # caller's.
+        # CPython's faulthandler writes a hard crash's C-level traceback straight to this handle.
         log_file = tmp_path / "subdir" / "fault.log"
 
         handle = enable_faulthandler(log_file)

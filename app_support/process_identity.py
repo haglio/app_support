@@ -20,7 +20,6 @@ logger = logging.getLogger(__name__)
 _RT_ICON = 3
 _RT_GROUP_ICON = 14
 _RT_VERSION = 16
-# EndUpdateResource's second argument: whether to throw the pending edits away.
 _DISCARD_EDITS = True
 _KEEP_EDITS = False
 _LANG_EN_US = 0x0409
@@ -70,18 +69,19 @@ def build_version_info(fields: dict[str, str]) -> bytes:
                         value_length=4, wtype=0)
     var_file_info = _pad4(_node("VarFileInfo", _pad4(translation), value_length=0, wtype=1))
 
+    # Win32's VS_FIXEDFILEINFO, in field order from dwSignature to dwFileDateLS.
     fixed = struct.pack(
         "<LLLLLLLLLLLLL",
-        0xFEEF04BD,   # dwSignature
-        0x00010000,   # dwStrucVersion
-        0, 0,         # dwFileVersion MS / LS
-        0, 0,         # dwProductVersion MS / LS
-        0x3F,         # dwFileFlagsMask
-        0,            # dwFileFlags
-        0x00040004,   # dwFileOS = VOS_NT_WINDOWS32
-        0x00000001,   # dwFileType = VFT_APP
-        0,            # dwFileSubtype
-        0, 0,         # dwFileDate MS / LS
+        0xFEEF04BD,
+        0x00010000,
+        0, 0,
+        0, 0,
+        0x3F,
+        0,
+        0x00040004,
+        0x00000001,
+        0,
+        0, 0,
     )
     return _node("VS_VERSION_INFO", fixed + string_file_info + var_file_info,
                  value_length=len(fixed), wtype=0)
@@ -133,7 +133,7 @@ def stamp_identity(exe: Path, *, fields: dict[str, str], icon: bytes | None) -> 
             for index, image in enumerate(images):
                 put(_RT_ICON, index + 1, image)
             put(_RT_GROUP_ICON, 1, directory)
-            # UpdateResource succeeds when deleting a resource id that is absent, then EndUpdateResource
+            # Win32 UpdateResource succeeds when deleting a resource id that is absent, then EndUpdateResource
             # fails with ERROR_INTERNAL_ERROR; the icon images past ours stay in the file for that reason.
     except Exception:
         dll.EndUpdateResourceW(handle, _DISCARD_EDITS)
@@ -215,7 +215,7 @@ class ProcessNamer:
             icon = None
 
         try:
-            # copy2 treats a directory destination as "copy into"; copyfile refuses it.
+            # CPython's shutil.copy2 treats a directory destination as "copy into"; copyfile refuses it.
             shutil.copyfile(source, target)
             self._stamp(target, icon=icon, fields={
                 "CompanyName": self.app_name,
