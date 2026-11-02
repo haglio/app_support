@@ -211,7 +211,7 @@
   "uncovered_lines": {
     "app_support/changed_tests.py": 3,
     "app_support/clocks/pytest_plugin.py": 8,
-    "app_support/coverage_gate.py": 54,
+    "app_support/coverage_gate.py": 55,
     "app_support/dead_code.py": 36,
     "app_support/dependencies.py": 69,
     "app_support/file_channel.py": 8,
@@ -242,7 +242,7 @@
     "app_support/sanitize/__main__.py": 3,
     "app_support/sanitize/guard.py": 86,
     "app_support/sanitize/pytest_plugin.py": 6,
-    "app_support/sanitize/test_tracked_tree.py": 6,
+    "app_support/sanitize/test_tracked_tree.py": 11,
     "app_support/shipped_tests.py": 15,
     "app_support/siblings.py": 20,
     "app_support/taken_out.py": 1,
