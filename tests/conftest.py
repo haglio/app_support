@@ -170,10 +170,6 @@ def _the_process_is_given_back():
         for handler in list(logger.handlers):
             logger.removeHandler(handler)
             handler.close()
-    # Unconditionally, not only when it was switched off: a test that called
-    # enable_faulthandler leaves it on and pointed at a file it is about to
-    # close, which is worse than off. There is no way to read back the stream it
-    # had, so it goes back to the one a crash should reach.
     if faulthandler_was_on:
         faulthandler.enable(sys.__stderr__, all_threads=True)
     else:

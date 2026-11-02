@@ -9,7 +9,7 @@ from ctypes import wintypes
 OFFSCREEN = "offscreen"
 AGENT = "agent"
 HIS = "his"
-# Claude Code sets it in every shell and children inherit it; Git Bash breaks the parent chain via env, pipes and subshells.
+# Claude Code sets it in every shell and children inherit it; on Windows, Git Bash breaks the parent chain via env, pipes and subshells.
 SESSION_MARK = "CLAUDECODE"
 
 _QUERY_LIMITED_INFORMATION = 0x1000

@@ -59,7 +59,7 @@ def test_no_blocklisted_terms_in_the_tracked_tree(pytestconfig):
     terms = load_blocklist(blocklist) if blocklist.exists() else []
     if not terms:
         _say_the_tree_was_not_scanned(blocklist)
-    # -z: a tracked name with a space would otherwise split into two unreadable paths, skipped silently.
+    # git ls-files -z: a tracked name with a space would otherwise split into two unreadable paths, skipped silently.
     listed = subprocess.run(
         ["git", "-C", str(repo), "ls-files", "-z"],
         capture_output=True, text=True, check=True,

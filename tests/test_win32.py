@@ -135,9 +135,7 @@ class _FakeOle32:
 
 class TestSetShortcutAppUserModelId:
     def test_an_apartment_it_never_opened_is_not_given_back(self):
-        # RPC_E_CHANGED_MODE means somebody else put this thread in the other
-        # concurrency model and holds the reference. Uninitializing anyway
-        # decrements their count and can close the apartment under them.
+        # COM: RPC_E_CHANGED_MODE means somebody else holds this thread's apartment; uninitializing would close it under them.
         ole32 = _FakeOle32(init=RPC_E_CHANGED_MODE)
 
         with pytest.raises(OSError, match="CoInitializeEx failed: HRESULT 0x80010106"):
@@ -157,8 +155,7 @@ class TestSetShortcutAppUserModelId:
         assert len(ole32.CoUninitialize.calls) == 1
 
     def test_an_apartment_the_thread_already_had_is_still_given_back(self):
-        # S_FALSE: this thread was already initialized in the same model. It is
-        # a success, and it still took a reference this thread owes back.
+        # COM: S_FALSE is a success that still took a reference this thread owes back.
         ole32 = _FakeOle32(init=S_FALSE, create=E_INVALIDARG)
 
         with pytest.raises(OSError, match=r"CoCreateInstance\(ShellLink\) failed"):
@@ -328,7 +325,7 @@ class TestAShortcutWrittenOnWindows:
         write_shortcut(str(lnk), Shortcut(target=str(target), arguments='-m example --flag "a b"', working_directory=str(tmp_path), icon=str(target)))
 
         read = _what_the_shell_reads_off(tmp_path, lnk)
-        # The shell hands a path back in the case the file system spells it.
+        # The Windows shell hands a path back in the case the file system spells it.
         icon, _, index = read["icon"].rpartition(",")
         assert pathlib.PureWindowsPath(read["target"]) == pathlib.PureWindowsPath(target)
         assert read["arguments"] == '-m example --flag "a b"'
@@ -611,9 +608,7 @@ class TestTryAcquireMutex:
         assert kernel32.CreateMutexW.restype is ctypes.c_void_p
 
     def test_a_mutex_someone_else_holds_is_given_back_rather_than_leaked(self):
-        # CreateMutexW succeeds either way; ERROR_ALREADY_EXISTS is the only
-        # thing that tells the two apart, which is why the handle is opened
-        # with use_last_error.
+        # Win32 CreateMutexW succeeds either way; only ERROR_ALREADY_EXISTS tells the two apart.
         kernel32 = _FakeKernel32(handle=WIDE_HANDLE)
 
         held = try_acquire_mutex("Global\\ExampleApp.dce3a7c5ad9e",
@@ -679,7 +674,7 @@ class TestIsMutexHeld:
         assert kernel32.CloseHandle.calls == []
 
 
-# The four flags, from the documentation rather than from the module under test.
+# The four Win32 MessageBox flags, from the documentation rather than from the module under test.
 MB_OK = 0x0
 MB_ICONERROR = 0x10
 MB_SETFOREGROUND = 0x00010000
@@ -1022,12 +1017,6 @@ class TestAJobObjectOnWindows:
 
 class TestShowErrorPopup:
     def test_the_dialog_comes_up_in_front_of_whatever_is_there(self):
-        # The reason the whole helper exists. A process launched hidden from a
-        # shortcut has no claim on the foreground, so without SETFOREGROUND and
-        # TOPMOST the dialog opens *underneath* what the user is looking at -- which
-        # reads as having crashed with no explanation. Two of the four copies
-        # this replaces omit TOPMOST, which is the flag their own docstring
-        # calls the point.
         user32 = _FakeDll(MessageBoxW=_FakeFunction(1))
 
         show_error_popup("Example App", "The scene file could not be read.",
@@ -1037,8 +1026,7 @@ class TestShowErrorPopup:
         assert flags == MB_OK | MB_ICONERROR | MB_SETFOREGROUND | MB_TOPMOST
 
     def test_the_message_goes_in_the_body_and_the_title_on_the_bar(self):
-        # MessageBoxW takes the body first and the caption second, which is the
-        # opposite order to the one this is called in.
+        # Win32 MessageBoxW takes the body first and the caption second.
         user32 = _FakeDll(MessageBoxW=_FakeFunction(1))
 
         show_error_popup("Example App", "The scene file could not be read.",
@@ -1114,10 +1102,7 @@ class TestForceForegroundWindow:
         assert log == []
 
     def test_with_nothing_in_front_the_window_s_own_queue_takes_the_activation(self):
-        # A desktop with no foreground window -- a hidden one, as an integration
-        # suite runs on -- has no queue to borrow, and SetForegroundWindow alone
-        # then delivers no WM_ACTIVATE; SetActiveWindow from the window's own
-        # queue does.
+        # Win32: with no foreground window there is no queue to borrow, and SetForegroundWindow alone delivers no WM_ACTIVATE.
         log: list = []
         user32, kernel32 = _a_desktop(foreground_before=0, foreground_after=0, log=log)
         window_thread = 7003
@@ -1155,8 +1140,7 @@ class TestForceForegroundWindow:
             111, user32=lambda: user32, kernel32=lambda: kernel32) is False
 
     def test_the_queues_are_parted_even_when_the_activation_fails(self):
-        # Left attached, the two threads share one input state for good: the
-        # other program's keyboard focus and this one's move together.
+        # Win32: threads left attached share one input state for good.
         log: list = []
         user32, kernel32 = _a_desktop(foreground_before=999, foreground_after=111, log=log)
 

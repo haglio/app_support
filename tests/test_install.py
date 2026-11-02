@@ -57,8 +57,6 @@ def test_the_installed_package_is_not_a_namespace_shadow_of_the_repo_root():
 
 
 def test_the_installed_packages_modules_come_from_that_same_package():
-    # A namespace shadow can still serve submodules through the editable finder,
-    # so proving __init__ resolved is not enough on its own.
     package_file, submodule_file = _resolve_from_outside_any_repo()
 
     assert package_file != "None"

@@ -133,18 +133,6 @@ class TestWhichRunsAreEnforced:
 
 class TestWhatShippingReachesInAConsumer:
     def test_this_repo_root_offers_a_consumer_only_the_one_name(self):
-        """An editable install puts this repo's root on the `sys.path` of every
-        venv holding it, and a real package anywhere on the path beats a
-        namespace portion of the same name wherever that sits. So every package
-        that directory publishes can stand in for a directory of ten other
-        suites, and `tools` and `tests` are names every one of them uses.
-
-        It publishes only `app_support` today because nothing else beside it
-        carries an `__init__.py`, so the rest are namespace portions themselves.
-        That is load-bearing and invisible, so it is pinned here: the day this
-        repo grows a `tests/__init__.py` is the day ten suites import the wrong
-        `tests`.
-        """
         published = sorted(
             entry.name for entry in APP_SUPPORT.iterdir()
             if (entry.is_dir() and (entry / "__init__.py").exists())

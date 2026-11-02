@@ -34,7 +34,7 @@ def _code_version(directory: str) -> tuple[str | None, bool | None]:
     commit = next((line[len(_OID_HEADER):] for line in lines
                    if line.startswith(_OID_HEADER)), None)
     if commit is None or not commit[:1].isalnum():
-        return None, None  # an unborn HEAD reports "(initial)"
+        return None, None  # git: an unborn HEAD reports "(initial)"
     return commit, any(not line.startswith("#") for line in lines)
 
 

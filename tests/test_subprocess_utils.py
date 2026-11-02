@@ -45,7 +45,7 @@ def test_off_windows_the_added_flag_has_nowhere_to_go_either():
 
 @_windows_half
 def test_both_suppressions_are_applied_not_just_one():
-    # CREATE_NO_WINDOW alone leaves a child that explicitly asks for a window
+    # Windows: CREATE_NO_WINDOW alone leaves a child that explicitly asks for a window
     # showing one, and SW_HIDE alone still allocates the console; a console
     # flashing over the video is the bug either half on its own permits.
     with _platform("win32"):

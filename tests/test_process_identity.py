@@ -131,9 +131,7 @@ class TestBuildIconResources:
 
 class TestNamedExe:
     def test_copies_the_interpreter_to_a_role_named_sibling(self, tmp_path: Path):
-        # A sibling, not a copy elsewhere: pyvenv.cfg is found one directory up
-        # from the interpreter, so anywhere but Scripts/ is a different (or no)
-        # virtualenv, with the app's own imports failing.
+        # CPython finds pyvenv.cfg one directory up from the interpreter, so only a sibling stays in the virtualenv.
         source = _stub_interpreter(tmp_path)
         resources = _FakeResources()
 
@@ -374,7 +372,7 @@ def _has_resource(exe: Path, *, kind: int, name: int) -> bool:
     k32.FindResourceW.restype = wintypes.HANDLE
     k32.FindResourceW.argtypes = [wintypes.HMODULE, ctypes.c_void_p, ctypes.c_void_p]
     k32.FreeLibrary.argtypes = [wintypes.HMODULE]
-    module = k32.LoadLibraryExW(str(exe), None, 0x00000002)  # LOAD_LIBRARY_AS_DATAFILE
+    module = k32.LoadLibraryExW(str(exe), None, 0x00000002)  # Win32 LOAD_LIBRARY_AS_DATAFILE
     if not module:
         return False
     try:

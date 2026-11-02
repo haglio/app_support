@@ -78,7 +78,7 @@ def _one_run(command: list[str], chunk: list[str], root: Path, *, run: int, runs
     return True
 
 
-_LONGEST_COMMAND_LINE = 32_766  # CreateProcessW's limit, less its terminating null
+_LONGEST_COMMAND_LINE = 32_766  # Win32 CreateProcessW's limit, less its terminating null
 
 
 class _Pace:

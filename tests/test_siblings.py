@@ -156,9 +156,6 @@ class TestTheCheckoutUnderTest:
             _imported("widgetlib", checkout / "widgetlib" / "__init__.py"), checkout=checkout)
 
     def test_refuses_a_namespace_package_which_is_no_checkout_at_all(self, tmp_path: Path):
-        # The checkout directory shares the package's name, so with the family's
-        # parent on the path the name resolves to an empty namespace portion and
-        # every submodule under it comes from somewhere else.
         family = _family(tmp_path)
 
         with pytest.raises(RuntimeError, match="PYTHONPATH"):

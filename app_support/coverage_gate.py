@@ -27,7 +27,7 @@ _EXCLUDED_LINES = ("if TYPE_CHECKING:", 'if __name__ == "__main__":')
 
 _STOOD_DOWN = pytest.StashKey[str]()
 
-# The last four are the cache plugin's options, absent under `-p no:cacheprovider`, so they are read with `getattr`.
+# The last four are pytest's cache plugin options, absent under `-p no:cacheprovider`, so they are read with `getattr`.
 _NARROWINGS = (
     ("keyword", "-k {}"),
     ("markexpr", "-m {}"),

@@ -219,7 +219,7 @@ def _priority_class(pid: int) -> int:
     kernel32.OpenProcess.restype = wintypes.HANDLE
     kernel32.GetPriorityClass.argtypes = [wintypes.HANDLE]
     kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
-    handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+    handle = kernel32.OpenProcess(0x1000, False, pid)  # Win32 PROCESS_QUERY_LIMITED_INFORMATION
     try:
         return kernel32.GetPriorityClass(handle)
     finally:
@@ -250,7 +250,7 @@ def _image_of(pid: int) -> str:
     kernel32.QueryFullProcessImageNameW.argtypes = [
         wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD)]
     kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
-    handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+    handle = kernel32.OpenProcess(0x1000, False, pid)  # Win32 PROCESS_QUERY_LIMITED_INFORMATION
     try:
         name = ctypes.create_unicode_buffer(32768)
         size = wintypes.DWORD(len(name))
