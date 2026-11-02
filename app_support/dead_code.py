@@ -1,28 +1,3 @@
-"""The family's dead-code gate, published once instead of copied eleven times.
-
-Every repo here answers "has anything stopped being used?" with vulture, and
-eight of them had grown their own arrangement of the same subprocess call: six
-shapes and three whitelist conventions. Counted rather than assumed: **seven of
-the eight report a clean tree for a directory that holds no Python at all**
-(evolver is the one that already asserts it found sources), and **one of them
-reports a clean tree when vulture is not installed** -- the four that compare an
-exit code to zero fail that case instead, with a message reading "Vulture found
-dead code:" and then nothing. Every repo now asks for the gate by naming
-``app_support.gates.pytest_plugin``, which hands it the repo's own tree::
-
-    assert_no_dead_code(ROOT / "the_package", whitelist=ROOT / "vulture_whitelist.py")
-
-Name the production directories rather than scanning ``.`` under an
-``--exclude`` list. vulture matches those patterns against absolute paths, and
-an agent's checkout lives at ``<repo>/.claude/worktrees/<name>`` -- so
-``--exclude .claude`` matches the root of the tree being scanned and excludes
-every file in it, which is precisely the no-op this module exists to make
-impossible.
-
-vulture is a dev dependency of the repo asking for the gate, not of this
-package: nothing here imports it, and this package installs into every app's
-venv where a scanner has no business being.
-"""
 from __future__ import annotations
 
 import ast
@@ -45,7 +20,7 @@ _REPORT_IS_NOT_EMPTY = 3
 
 
 class ScanDidNotRun(RuntimeError):
-    """vulture never reached an answer, so silence here means nothing."""
+    pass
 
 
 def _refuse_a_target_with_nothing_to_read(targets: tuple[Path | str, ...]) -> None:
@@ -90,8 +65,6 @@ def _refuse_a_whitelist_inside_the_scan(
 def _refuse_a_target_inside_a_caller(
     targets: tuple[Path | str, ...], callers: tuple[Path, ...]
 ) -> None:
-    """What is inside a caller is left out of the report, so a target there
-    would be scanned and never reported on."""
     for target in targets:
         path = Path(target).resolve()
         for caller in callers:
@@ -107,22 +80,6 @@ def scan(
     min_confidence: int = 60,
     callers: Iterable[Path | str] = (),
 ) -> str:
-    """vulture's report over *targets*; empty when there is nothing to report.
-
-    *whitelist* is a Python file naming the exceptions a repo has decided on --
-    framework callbacks, attributes read by something vulture cannot follow. It
-    is handed to vulture as one more thing to scan, so a name mentioned there
-    counts as used.
-
-    *callers* are read alongside the targets, so a name they use counts as used,
-    and what is dead inside them is left to their own gate: a library's own tests,
-    and the apps that import it.
-
-    Raises `ScanDidNotRun` rather than returning that same empty string when the
-    scan did not happen. The two are the whole difficulty: a gate that reads
-    "vulture is not installed" or "that directory is gone" as a clean tree is
-    green for the rest of its life.
-    """
     callers = tuple(Path(caller).resolve() for caller in callers)
     _refuse_a_target_inside_a_caller(targets, callers)
     if whitelist is not None:
@@ -199,7 +156,6 @@ def assert_no_dead_code(
     each_alone: bool = False,
     callers: Iterable[Path | str] = (),
 ) -> None:
-    """Fail the suite with vulture's report over *targets*."""
     report = _reports(targets, whitelist, min_confidence, each_alone, callers)
     assert not report, (
         "vulture found dead code. Delete it, or -- if the caller is a framework "
@@ -241,14 +197,6 @@ def assert_whitelist_is_live(
     each_alone: bool = False,
     callers: Iterable[Path | str] = (),
 ) -> None:
-    """Fail on a whitelist entry that no longer suppresses anything.
-
-    The file records the exceptions a repo decided on, so an entry whose subject
-    was deleted is not merely tidy-able: it is a standing exemption for whatever
-    name happens to match it next. One repo in this family reached 31 dead
-    entries out of 45, 23 of them naming symbols the family no longer contains,
-    and its gate could not see what its own deletions had made stale.
-    """
     _refuse_a_whitelist_inside_the_scan(targets, whitelist)
     report = _reports(targets, None, min_confidence, each_alone, callers)
     stale = sorted(
@@ -263,8 +211,6 @@ def assert_whitelist_is_live(
 
 
 def packages_under(root) -> set[str]:
-    """Every top-level package beside *root*: a directory with an ``__init__.py``
-    whose name is not hidden or private."""
     return {
         path.name for path in Path(root).iterdir()
         if path.is_dir() and (path / "__init__.py").exists()
@@ -273,11 +219,6 @@ def packages_under(root) -> set[str]:
 
 
 def assert_every_package_is_scanned(root, scanned, *, ignoring=("tests",)) -> None:
-    """Fail on a top-level package the gate does not name.
-
-    A package added beside the named ones would otherwise get no gate at all,
-    which is how one repo's ``tools/`` came to hold 699 lines nothing scanned.
-    """
     unnamed = sorted(packages_under(root) - set(scanned) - set(ignoring))
     assert not unnamed, (
         "packages beside the scanned ones that no gate names: "
@@ -285,23 +226,12 @@ def assert_every_package_is_scanned(root, scanned, *, ignoring=("tests",)) -> No
     )
 
 
-# The ruff rules that name dead code and nothing else: an import nothing uses, a
-# redefinition that shadows the first, a local assigned and never read.
 DEAD_CODE_LINT_RULES = ("F401", "F811", "F841")
 
-# A parameter the body never reads, one level out from the constructor scan in
-# `app_support.unread`. ARG001 alone by default: a framework override (Qt's
-# paintEvent, a Funestra's pump) is handed arguments it is free to ignore.
 UNREAD_ARGUMENT_RULES = ("ARG001",)
 
 
 def assert_nothing_is_imported_or_assigned_and_left_unread(root, *targets) -> None:
-    """The blind spot vulture has: deadness local to one module.
-
-    vulture resolves names across the whole tree it is handed, so an import
-    unused HERE but live in a sibling module never reports. ruff answers per
-    file, under these rules alone, whatever the repo's own config ratchets.
-    """
     found = lint.findings_for_rules(root, DEAD_CODE_LINT_RULES, *targets)
     assert not found, "ruff found dead code:\n" + "\n".join(found)
 
@@ -317,7 +247,6 @@ def _allowed_by(finding: str) -> str:
 def assert_no_function_takes_an_argument_it_never_reads(
     root, *targets, rules=UNREAD_ARGUMENT_RULES, allowing=(),
 ) -> None:
-    """A signature that asks for something it does not use is a lie."""
     found = lint.findings_for_rules(root, rules, *targets)
     found = unread.not_allowed({finding: _allowed_by(finding) for finding in found}, allowing)
     assert not found, "ruff found unread arguments:\n" + "\n".join(found)

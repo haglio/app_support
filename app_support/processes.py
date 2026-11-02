@@ -1,7 +1,3 @@
-"""What is running on this machine, and whose it is, read through Win32 alone.
-
-Standard library only.
-"""
 from __future__ import annotations
 
 import ctypes
@@ -160,8 +156,6 @@ def running() -> list[Process]:
 
 
 def _described(pid: int, ppid: int, name: str) -> Process | None:
-    """The process, or None for one that has ended and is listed only while
-    something still holds a handle to it."""
     handle = _kernel32.OpenProcess(_QUERY_LIMITED_INFORMATION, False, pid) if pid else None
     if not handle:
         return Process(pid, ppid, 0.0, name, "", "")

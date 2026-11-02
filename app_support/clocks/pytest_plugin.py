@@ -1,12 +1,3 @@
-"""The clock checks alone, for a repository that has not yet asked for every family gate.
-
-    # pyproject.toml
-    [tool.pytest.ini_options]
-    addopts = "-p app_support.clocks.pytest_plugin --timeout=60 --timeout-method=thread"
-
-``app_support.gates.pytest_plugin`` ships the same checks with the rest, and a
-run that names both collects them once.
-"""
 from __future__ import annotations
 
 from pathlib import Path

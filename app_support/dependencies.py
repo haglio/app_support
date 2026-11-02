@@ -1,48 +1,3 @@
-"""What a repo needs is what its pyproject says, in all four of the ways it says it.
-
-A launcher that imports a package nobody declared works on the machine that
-happened to have it and dies on the next one -- and on the merge gate, which
-installs exactly what the pyproject says.  The same is true of a version nobody
-bounded, a sibling checkout nobody recorded, a sibling nobody pinned, a version
-nobody bumps, and a Python floor no run proves.  Six gates, adopted a line each::
-
-    from app_support.dependencies import (
-        assert_every_dependency_is_bounded, assert_every_import_is_declared,
-        assert_every_sibling_is_declared,
-        assert_the_declared_floor_is_the_one_the_gate_runs)
-
-    def test_every_third_party_import_is_declared():
-        assert_every_import_is_declared(
-            ROOT, [ROOT / "the_package"], ROOT / "pyproject.toml",
-            local=("the_package",))
-
-    def test_every_requirement_is_bounded():
-        assert_every_dependency_is_bounded(ROOT / "pyproject.toml")
-
-    def test_every_sibling_is_declared():
-        assert_every_sibling_is_declared(
-            ROOT, [ROOT / "the_package", ROOT / "tests"], ROOT / "pyproject.toml")
-
-    def test_the_declared_floor_is_the_one_the_gate_runs():
-        assert_the_declared_floor_is_the_one_the_gate_runs(
-            ROOT / "pyproject.toml", ROOT / ".github" / "workflows" / "merge-gate.yml")
-
-    def test_every_sibling_is_pinned():           # a consumer
-        assert_every_sibling_is_pinned(ROOT / "pyproject.toml")
-
-    def test_the_version_comes_from_the_tag():    # a shared package
-        assert_the_version_comes_from_the_tag(ROOT / "pyproject.toml")
-
-``assert_every_dependency_is_imported`` is the first gate's converse, for the
-dependency nothing reaches for that every install fetches anyway.
-
-An import inside a ``try`` is optional by construction and not counted; the
-standard library and the packages named *local* -- the repo's own -- are not
-either.  The three siblings are not third-party, because none is published and a
-pyproject that named one would send pip to PyPI; they are declared instead in
-``[tool.haglio] siblings``, which is what the third gate reads.  Standard
-library only.
-"""
 from __future__ import annotations
 
 import ast
@@ -55,8 +10,6 @@ from pathlib import Path
 
 from app_support.siblings import RENAMED_SIBLINGS, sibling_checkout
 
-# Import names that differ from the distribution that provides them, across the
-# family; a repo adds its own on top.
 FAMILY_IMPORT_NAMES: Mapping[str, str] = {
     "serial": "pyserial",
     "cv2": "opencv-python",
@@ -78,13 +31,8 @@ FAMILY_IMPORT_NAMES: Mapping[str, str] = {
     "skimage": "scikit-image",
 }
 
-# The family's shared packages: a repo names the ones it needs under [tool.haglio]
-# siblings and pins each at a tag.
 FAMILY_SIBLINGS = ("app_support", "funestra", "shared_ui", "voice_core")
 
-# What a sibling's modules are imported as, where that is not its repo's name:
-# funestra answers to funestra_core and player_core as well, for the checkouts
-# from before it had its own name.
 _SIBLING_PACKAGES: Mapping[str, tuple[str, ...]] = {
     "funestra": ("funestra", "funestra_core", "player_core"),
 }
@@ -111,12 +59,6 @@ def is_a_family_sibling(pyproject: Path) -> bool:
 
 
 def declared_dependencies(pyproject: Path) -> set[str]:
-    """The distributions ``[project.dependencies]`` and every optional extra name, normalized.
-
-    An extra is a declaration too: a feature whose imports need
-    ``pip install repo[voice]`` is declared, and installing the feature is the
-    launcher's business, not this gate's.
-    """
     with Path(pyproject).open("rb") as handle:
         project = tomllib.load(handle).get("project", {})
     requirements = list(project.get("dependencies", []))
@@ -131,8 +73,6 @@ def declared_dependencies(pyproject: Path) -> set[str]:
 
 
 class _TopLevelImports(ast.NodeVisitor):
-    """The top-level names a module imports, optionally skipping those in a ``try``."""
-
     def __init__(self, *, optional: bool = False) -> None:
         self.names: set[str] = set()
         self._optional = optional
@@ -150,19 +90,12 @@ class _TopLevelImports(ast.NodeVisitor):
 
 
 def _sources(package: Path) -> list[Path]:
-    """*package*'s modules: every ``.py`` under a directory, or the one file named."""
     package = Path(package)
     return [package] if package.is_file() else sorted(package.rglob("*.py"))
 
 
 def _imported_names(root: Path, packages: Iterable[Path], *,
                     optional: bool = False) -> dict[str, list[str]]:
-    """Every top-level name the *packages* import, with the files that do.
-
-    A package is a directory, or a single root-level module -- an entry point,
-    a config -- named as a file; a repo that keeps modules at its root has both.
-    An import inside a ``try`` is counted only when *optional* is asked for.
-    """
     found: dict[str, set[str]] = {}
     for package in packages:
         for path in _sources(package):
@@ -178,7 +111,6 @@ def _imported_names(root: Path, packages: Iterable[Path], *,
 
 
 def third_party_imports(root: Path, packages: Iterable[Path], *, local: Iterable[str] = ()) -> dict[str, list[str]]:
-    """Every third-party name the *packages* import, with the files that do."""
     skip = (set(sys.stdlib_module_names) | set(local)
             | set(family_packages()))
     return {name: files for name, files in _imported_names(root, packages).items()
@@ -189,7 +121,6 @@ def undeclared_imports(
     root: Path, packages: Iterable[Path], pyproject: Path, *,
     local: Iterable[str] = (), import_names: Mapping[str, str] | None = None,
 ) -> list[str]:
-    """One line per third-party import no declared dependency provides."""
     names = {**FAMILY_IMPORT_NAMES, **(import_names or {})}
     declared = declared_dependencies(pyproject)
     return [
@@ -212,14 +143,6 @@ def unimported_dependencies(
     root: Path, packages: Iterable[Path], pyproject: Path, *,
     import_names: Mapping[str, str] | None = None, allowing: Iterable[str] = (),
 ) -> list[str]:
-    """Every runtime dependency no module reaches for, fetched by every install anyway.
-
-    The converse of :func:`undeclared_imports`, and the two disagree about a
-    ``try`` on purpose: an import inside one is optional by construction and
-    needs no declaration, but a package something reaches for *is* used, however
-    guarded.  Extras are not read -- a dev extra's test runner is a dependency
-    nothing imports by design.
-    """
     names = {**FAMILY_IMPORT_NAMES, **(import_names or {})}
     spellings: dict[str, set[str]] = {}
     for imported, distribution in names.items():
@@ -242,7 +165,6 @@ def assert_every_dependency_is_imported(
     root: Path, packages: Iterable[Path], pyproject: Path, *,
     import_names: Mapping[str, str] | None = None, allowing: Iterable[str] = (),
 ) -> None:
-    """A dependency nothing imports is fetched by every install and every CI run."""
     unimported = unimported_dependencies(
         root, packages, pyproject, import_names=import_names, allowing=allowing)
     assert not unimported, (
@@ -254,26 +176,12 @@ _PLUGIN = re.compile(r"-p\s+([A-Za-z_][A-Za-z0-9_]*)")
 
 
 def declared_siblings(pyproject: Path) -> set[str]:
-    """The family checkouts a repo says it is installed beside.
-
-    ``[project.dependencies]`` cannot hold them -- none of the three is
-    published, so pip would go looking on PyPI -- and for years the record was a
-    comment, which decayed: of the nine consumers, three named a sibling they no
-    longer import and four named none at all while importing two.
-    """
     with Path(pyproject).open("rb") as handle:
         table = tomllib.load(handle).get("tool", {}).get("haglio", {})
     return {RENAMED_SIBLINGS.get(name, name) for name in table.get("siblings", ())}
 
 
 def sibling_imports(root: Path, packages: Iterable[Path], pyproject: Path) -> dict[str, list[str]]:
-    """The siblings the *packages* need, with what needs them.
-
-    A pytest plugin the config loads by name counts: ``-p
-    app_support.sanitize.pytest_plugin`` is what arms the content guard, and a
-    repo can need the package without a line of its own importing it.  A library
-    importing itself does not: its own name is read off the project.
-    """
     with Path(pyproject).open("rb") as handle:
         project = tomllib.load(handle)
     itself = _normalized(project.get("project", {}).get("name", ""))
@@ -297,12 +205,6 @@ def _some_of(files: list[str], *, most: int = 3) -> str:
 
 
 def _what_a_sibling_needs(name: str, near: Path) -> set[str] | None:
-    """What the *name* checkout beside this one declares, or None if it is not there.
-
-    None is not "nothing": a public clone with no siblings on disk cannot be
-    asked, and a check that read that as an empty answer would call every
-    inherited requirement unused.
-    """
     try:
         checkout = sibling_checkout(name, near=near)
     except RuntimeError:
@@ -311,13 +213,6 @@ def _what_a_sibling_needs(name: str, near: Path) -> set[str] | None:
 
 
 def inherited_siblings(declared: Iterable[str], near: Path) -> set[str] | None:
-    """Everything the *declared* siblings need in turn, or None if they cannot be read.
-
-    A sibling is installed for what it imports as well as for itself: genau
-    imports no shared_ui module and cannot run a line without it, because the
-    Funestra HUDs it does import are painted in the family's colors.  So the
-    set a repo has to install is the closure, not the direct imports.
-    """
     inherited: set[str] = set()
     pending = list(declared)
     while pending:
@@ -332,7 +227,6 @@ def inherited_siblings(declared: Iterable[str], near: Path) -> set[str] | None:
 
 
 def undeclared_siblings(root: Path, packages: Iterable[Path], pyproject: Path) -> list[str]:
-    """Where the siblings a repo needs and the siblings it declares disagree, both ways."""
     needed = sibling_imports(root, packages, pyproject)
     declared = declared_siblings(pyproject)
     wrong = [f"{name} is imported by {_some_of(files)} and declared nowhere"
@@ -347,29 +241,16 @@ def undeclared_siblings(root: Path, packages: Iterable[Path], pyproject: Path) -
 
 
 def assert_every_sibling_is_declared(root: Path, packages: Iterable[Path], pyproject: Path) -> None:
-    """The siblings a repo is installed beside are the ones it says, exactly.
-
-    Both directions: an undeclared one leaves the CI workflow as the only record
-    of what a checkout needs, and a declared one nothing needs costs a clone and
-    an install on every run while reading as a dependency to anyone deciding what
-    may safely change.  What a declared sibling needs in turn counts as needed --
-    installing funestra without shared_ui gets a checkout that cannot import
-    a HUD.
-    """
     wrong = undeclared_siblings(root, packages, pyproject)
     assert not wrong, "[tool.haglio] siblings is not what the tree needs:\n  " + "\n  ".join(wrong)
 
 
 _CEILING = re.compile(r"(<|~=|==)")
 
-# A family repo named at a tag: `name @ git+https://github.com/haglio/repo@v0.1.138`.
-# One commit, so nothing can arrive under it -- tighter than any ceiling. A ref
-# that is not a version tag (a branch, `main`) is the opposite and is not matched.
 _TAG_PIN = re.compile(r"@\s*git\+https://\S+@v[0-9]\S*$")
 
 
 def _requirements(pyproject: Path) -> list[tuple[str, str]]:
-    """Every requirement the project declares, with the group that declares it."""
     return _requirements_in(Path(pyproject).read_text(encoding="utf-8"))
 
 
@@ -382,14 +263,6 @@ def _requirements_in(pyproject_text: str) -> list[tuple[str, str]]:
 
 
 def unbounded_requirements(pyproject: Path, *, allowing: Iterable[str] = ()) -> list[str]:
-    """Every declared requirement that nothing stops from taking a new major version.
-
-    A ceiling, an exact pin, a compatible-release clause and a family repo named
-    at a tag all bound one; a bare name, a floor alone and a repo named at a
-    branch do not, and each lets a Tuesday's release become what the next run
-    installs.  *allowing* names the ones a repo has decided to leave open, which
-    is a decision that then has a place to be written down.
-    """
     exempt = {_normalized(name) for name in allowing}
     return [
         f"{requirement} ({group})"
@@ -404,10 +277,6 @@ def _bounded(requirement: str) -> bool:
 
 
 def assert_every_dependency_is_bounded(pyproject: Path, *, allowing: Iterable[str] = ()) -> None:
-    """No upper bound anywhere means each run installs whatever PyPI serves that
-    morning, so a new major version can land on the gates and not on the
-    machines the family runs.
-    """
     unbounded = unbounded_requirements(pyproject, allowing=allowing)
     assert not unbounded, (
         "Requirements with no upper bound, so a new major version lands unasked:\n  "
@@ -419,7 +288,6 @@ _GATE_VERSION = re.compile(r'python-version:\s*"(\d+)\.(\d+)"')
 
 
 def declared_floor(pyproject: Path) -> tuple[int, int]:
-    """The ``requires-python`` floor, as (major, minor)."""
     with Path(pyproject).open("rb") as handle:
         declared = tomllib.load(handle).get("project", {}).get("requires-python", "")
     match = _FLOOR.match(declared.strip())
@@ -428,25 +296,12 @@ def declared_floor(pyproject: Path) -> tuple[int, int]:
 
 
 def proven_floor(workflow: Path) -> tuple[int, int]:
-    """The lowest Python any leg of the merge gate runs the suite on.
-
-    Lowest, not first: a gate may run a second, later version to read what it
-    says, and what the floor has to match is the oldest one anything is
-    actually collected on.
-    """
     found = _GATE_VERSION.findall(Path(workflow).read_text(encoding="utf-8"))
     assert found, f"{workflow} names no python-version, so nothing proves a floor"
     return min((int(major), int(minor)) for major, minor in found)
 
 
 def assert_the_declared_floor_is_the_one_the_gate_runs(pyproject: Path, workflow: Path) -> None:
-    """``requires-python`` promises a version; only a run proves one.
-
-    A floor below every version the gate runs is a promise nothing has tested
-    and the tree can contradict outright -- syntax or a stdlib module younger
-    than the number -- so the two places that state it are held together and
-    neither can drift alone.
-    """
     declared, proven = declared_floor(pyproject), proven_floor(workflow)
     assert declared == proven, (
         f"{pyproject.name} says >={declared[0]}.{declared[1]} and the gate proves "
@@ -454,7 +309,6 @@ def assert_the_declared_floor_is_the_one_the_gate_runs(pyproject: Path, workflow
 
 
 FAMILY_ON_GITHUB = "https://github.com/haglio/"
-# A family repo named at a tag: `name @ git+https://github.com/haglio/repo@v0.1.138`.
 _SIBLING_PIN = re.compile(
     r"^(?P<package>[A-Za-z0-9._-]+)\s*@\s*git\+" + re.escape(FAMILY_ON_GITHUB)
     + r"(?P<repo>[A-Za-z0-9._-]+)@(?P<tag>v[0-9]\S*)$"
@@ -492,18 +346,10 @@ def repinned(pyproject_text: str, pin: SiblingPin, tag: str) -> str:
 
 
 def pinned_siblings(pyproject: Path) -> dict[str, str]:
-    """Which family repo each pinned requirement names, and at what tag."""
     return {pin.repo: pin.tag for pin in sibling_pins_in(Path(pyproject).read_text(encoding="utf-8"))}
 
 
 def assert_every_sibling_is_pinned(pyproject: Path) -> None:
-    """A consumer runs the copy of each sibling it was built against.
-
-    Unpinned, a sibling was whatever checkout happened to sit beside this one, so
-    a change landing in one repo reached every consumer the same minute -- and a
-    change whose other half had not landed turned all of them red at once, in
-    their own gates, with no cause in their own history.
-    """
     with Path(pyproject).open("rb") as handle:
         siblings = set(tomllib.load(handle).get("tool", {}).get("haglio", {}).get("siblings", []))
     pinned = pinned_siblings(pyproject)
@@ -524,12 +370,6 @@ def assert_every_sibling_is_pinned(pyproject: Path) -> None:
 
 
 def assert_the_version_comes_from_the_tag(pyproject: Path) -> None:
-    """A shared package's version is the tag on its landing, so a consumer can pin it.
-
-    A number written into `pyproject.toml` does not move: every one of these said
-    0.1.0 from the day its repo was made until the day pinning arrived, through
-    every landing in between.
-    """
     with Path(pyproject).open("rb") as handle:
         raw = tomllib.load(handle)
     project = raw.get("project", {})

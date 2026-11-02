@@ -1,4 +1,3 @@
-"""Import every module a checkout's pyproject packages, in the interpreter its app runs on."""
 from __future__ import annotations
 
 import argparse

@@ -1,34 +1,3 @@
-"""The family's coverage settings and floor, published once instead of measured nowhere.
-
-A repo adopts both in a line::
-
-    # pyproject.toml
-    addopts = "... -p app_support.gates.pytest_plugin -p app_support.coverage_gate --cov --cov-report="
-
-and commits the `.coveragerc` that `render_config` writes: the family's settings,
-whatever the repo says it does not unit-test with the reason it gives, and its floor,
-the number the run refuses to go below. The floor is the one line the config test lets
-differ from repo to repo, and it rises with the suite: a whole run that beats it by a
-point fails and names the number to raise it to, half a point under what the run
-reached. What a repo does not unit-test is named
-there and nowhere else, so the config test also counts the lines of what is measured
-that carry `pragma: no cover`, and refuses more than the repo says it still carries --
-none, unless its pyproject's [tool.haglio.coverage] says `max-pragmas`.
-
-What is measured is the repo itself, less its tests: `source = .` reaches the root's
-own modules and every package under it, which a list of package names does not -- a
-root module is neither a package nor a directory, and coverage drops one silently,
-which is how a repo's entry point stops being part of its own number. Coverage skips
-dot-directories as it walks, so the agents' worktrees under `.claude`, the venv, the
-caches and the temporary roots a suite writes are all passed over without being named,
-and it takes any folder holding a `pyvenv.cfg` for somebody else's code wherever it sits.
-
-The measuring rides the unit suite rather than a second pass over the tree: pytest-cov
-collects while the suite runs and this plugin decides whether the floor applies, which
-it does only to a run of the whole suite -- a narrowed run measures a fraction of the
-code and would fail every time. pytest-cov is a dev dependency of the repo asking for
-the gate, never a dependency of this package.
-"""
 from __future__ import annotations
 
 import configparser
@@ -49,8 +18,6 @@ from app_support.gates import Checkout, over
 
 
 class NotUnitTested(NamedTuple):
-    """A file a repo says it does not unit-test, and the reason it gives."""
-
     path: str
     because: str
 
@@ -82,8 +49,6 @@ _NOT_WHAT_A_REPO_SHIPS = (
 
 
 def render_config(not_unit_tested=(), floor=0.0) -> str:
-    """The `.coveragerc` a repo commits: the family's settings, what this repo does
-    not unit-test with the reason, and its floor."""
     omitted = "".join(f"    # {shell.because}\n    {shell.path}\n"
                       for shell in (*_NOT_WHAT_A_REPO_SHIPS, *not_unit_tested))
     excluded = "".join(f"    {line}\n" for line in _EXCLUDED_LINES)
@@ -104,13 +69,6 @@ def render_config(not_unit_tested=(), floor=0.0) -> str:
 
 
 def why_this_is_not_the_whole_suite(config) -> str | None:
-    """Why the floor does not apply to this run, or None when it does.
-
-    A floor is a statement about the whole suite. Held against a run somebody
-    narrowed -- one test while debugging, the changed tests the flake gate repeats,
-    a `-k` -- it compares a fraction of the code against the number the whole suite
-    reaches, so it would fail every time and the answer would mean nothing.
-    """
     chosen = config.option
     if chosen.file_or_dir:
         return "the run named " + ", ".join(chosen.file_or_dir)
@@ -192,16 +150,12 @@ def pytest_terminal_summary(terminalreporter) -> None:
 
 
 def floor_of(coveragerc) -> float:
-    """The number a repo's own `.coveragerc` says its coverage may not go below."""
     parsed = configparser.ConfigParser()
     parsed.read_string(Path(coveragerc).read_text(encoding="utf-8"))
     return parsed.getfloat("report", "fail_under")
 
 
 def assert_config_is_the_familys(coveragerc, not_unit_tested=(), max_pragmas=0) -> None:
-    """*coveragerc* is `render_config` of its own floor, byte for byte, every file it
-    excuses is still in the repo, and no more lines of what it measures carry
-    `pragma: no cover` than *max_pragmas*."""
     coveragerc = Path(coveragerc)
     written = coveragerc.read_text(encoding="utf-8")
     expected = render_config(not_unit_tested, floor_of(coveragerc))

@@ -1,7 +1,3 @@
-"""How a list of things reads in a sentence.
-
-Standard library only.
-"""
 from __future__ import annotations
 
 from collections.abc import Sequence

@@ -25,19 +25,6 @@ def wait_until(
     now: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
 ) -> None:
-    """Block until ``predicate()`` is truthy, or raise ``TimeoutError`` trying.
-
-    Waiting on a thread or a child process by sleeping a fixed number of seconds
-    pays that whole nap on every machine and still goes red on a loaded one.
-    Polling the thing itself returns the moment it happens, and spends the
-    timeout only when it never does. The error names the predicate, so a wait
-    that does time out says which one.
-
-    The last poll happens at the deadline rather than before it — the work often
-    lands during the final nap — and no nap runs past it. ``now`` and ``sleep``
-    are injectable so this helper's own tests need no real clock; callers who
-    want the real one leave them alone.
-    """
     deadline = now() + timeout
     while True:
         if predicate():

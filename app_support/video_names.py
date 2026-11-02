@@ -1,9 +1,3 @@
-"""What a video's file name and its metadata record say it is.
-
-Evolver writes both -- it appends the models that processed a video to the name,
-and records the scene a clip shows -- and Fun Time reads them, so the rule is one
-format the two agree on, kept where both read it.
-"""
 from __future__ import annotations
 
 import re

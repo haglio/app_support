@@ -1,8 +1,3 @@
-"""Every repo of the family takes the newest release of each library it pins, through one
-pull request a library's landing opens in it or brings up to date.
-
-Standard library only.
-"""
 from __future__ import annotations
 
 import argparse
@@ -155,8 +150,6 @@ def _run(command: Sequence[str]) -> str:
 
 
 class GhGitHub:
-    """The organization on GitHub, asked through the gh command and git."""
-
     def __init__(self, org: str, *, run: Callable[[Sequence[str]], str] = _run) -> None:
         self.org = org
         self._run = run

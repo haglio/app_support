@@ -1,11 +1,3 @@
-"""The numbers a repo keeps per file, checked in, which only ever move the right way.
-
-    python -m app_support.gates.baseline
-
-lowers what fell, carries what git or ``tools/quality_baseline_renames.json`` says was renamed, enters a section the file does not
-have yet, and refuses to raise anything. With ``--hold-uncovered`` it only holds the
-measurements a suite run in parts has gathered into ``.coverage`` to their entries.
-"""
 from __future__ import annotations
 
 import ast

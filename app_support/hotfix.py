@@ -1,10 +1,3 @@
-"""``python -m app_support.hotfix``, run from an agent's worktree: its branch's fix into production now.
-
-From an app's worktree the fix goes to that app's production, with the shared code's fixes ``--with``
-names; from a worktree of the shared code it goes to every app whose production runs that code, as a
-version tagged here and never pushed. Production's updater keeps a hotfix until the same fix ships the
-usual way, or until ``--take-back`` sends it back to what has shipped. Standard library only.
-"""
 from __future__ import annotations
 
 import argparse
@@ -407,7 +400,7 @@ def bring_up_now(checkout: Path, *, state: Path, in_use: InUse = production_upda
 
 
 def main(argv: Sequence[str] | None = None, *, state: Path | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="python -m app_support.hotfix", description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(prog="python -m app_support.hotfix", description="``python -m app_support.hotfix``, run from an agent's worktree: its branch's fix into production now.")
     parser.add_argument("--with", dest="libraries", action="append", type=Path, default=[], metavar="WORKTREE",
                         help="a worktree of the shared code this fix needs, to go out with it")
     parser.add_argument("--take-back", action="store_true",

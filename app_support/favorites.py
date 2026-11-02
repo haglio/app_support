@@ -1,4 +1,3 @@
-"""Whether a library video is a favorite, said on the record mirroring it, and the page it came from."""
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
