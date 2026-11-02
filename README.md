@@ -244,11 +244,14 @@ that is what a public clone and a fresh CI checkout both look like.
 
 `tools/quality_baseline.json` holds, per file, a repo's prose lines, private
 reaches (a read of another object's private name, through any handle), private
-imports (charged to the module that defines the name, through any re-export) and
-uncovered lines, and per listed class (`path::Class`) its methods. A number over its
-entry fails, and a file the section does not name enters at zero, so a total can no
-longer hide one file growing while another shrinks. A prose, reach, import or method
-number under its entry fails too, until `python -m app_support.gates.baseline` lowers
+imports (charged to the module that defines the name, through any re-export),
+uncovered lines and what `app_support.coupling` counts (reach chains, mutables
+imported, and in tests its mocks, patches, monkeypatches, SimpleNamespace bags and
+patches of a library's insides); per listed class (`path::Class`) its methods; and
+under `over_the_limits` each class or file past one of the family's limits
+(`path::Class::methods`, `path::statements`). A number over its entry fails, and a file the section does not name enters at zero, so a total can no
+longer hide one file growing while another shrinks. Any of them but uncovered lines
+under its entry fails too, until `python -m app_support.gates.baseline` lowers
 it; run from the checkout, that command also carries a renamed file's entry, enters a
 section the file does not have, and refuses to raise anything. An entry above what main
 held where the branch left it fails as well, so no number can be raised by hand.

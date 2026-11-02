@@ -1,11 +1,4 @@
-"""How tangled a repository is, as counts that only come down.
-
-A repository pins what it measures under ``[tool.haglio.coupling]`` in its
-pyproject: a ceiling for each count over its whole tree, and under ``held`` a
-ceiling for each class or file past one of the family's limits. A count that
-rises fails the run, and so does one that falls with its ceiling left standing,
-so what was cleaned stays clean.
-"""
+"""How tangled a repository is, per file and per class; ``app_support.gates.baseline`` holds the numbers."""
 from __future__ import annotations
 
 import ast
@@ -21,13 +14,12 @@ from app_support.unread import python_files
 
 CLASS_LIMITS = {"methods": 30, "attributes": 30, "chains": 30, "chain-length": 3}
 FILE_LIMITS = {"statements": 300, "fan-out": 15}
-LIMITS = {**CLASS_LIMITS, **FILE_LIMITS}
 
 
 @dataclass(frozen=True)
 class Measured:
-    totals: Mapping[str, int] = field(default_factory=dict)
-    over_the_limits: Mapping[str, Mapping[str, int]] = field(default_factory=dict)
+    per_file: Mapping[str, Mapping[str, int]] = field(default_factory=dict)
+    over_the_limits: Mapping[str, int] = field(default_factory=dict)
     another_apps_imports: Mapping[str, int] = field(default_factory=dict)
 
 
@@ -36,75 +28,49 @@ def _sources(root: Path, paths: Iterable[Path]) -> dict[str, str]:
     return {file.relative_to(root).as_posix(): file.read_text(encoding="utf-8") for file in files}
 
 
-def _over(limits: Mapping[str, int], measures: Mapping[str, int]) -> dict[str, int]:
-    return {name: count for name, count in measures.items() if count > limits[name]}
+def _over(limits: Mapping[str, int], unit: str, measures: Mapping[str, int]) -> Iterator[tuple[str, int]]:
+    for name, count in measures.items():
+        if count > limits[name]:
+            yield f"{unit}::{name}", count
 
 
-def _classes_over(classes: Mapping[str, ClassSurface]) -> Iterator[tuple[str, dict[str, int]]]:
+def _classes_over(classes: Mapping[str, ClassSurface]) -> Iterator[tuple[str, int]]:
     for unit, surface in classes.items():
-        yield unit, _over(CLASS_LIMITS, {"methods": surface.methods, "attributes": surface.attributes,
-                                         "chains": surface.chains, "chain-length": surface.longest_chain})
+        yield from _over(CLASS_LIMITS, unit, {"methods": surface.methods, "attributes": surface.attributes,
+                                              "chains": surface.chains, "chain-length": surface.longest_chain})
 
 
 def _statements(source: str) -> int:
     return sum(isinstance(node, ast.stmt) for node in ast.walk(ast.parse(source)))
 
 
-def _files_over(code: Mapping[str, str], fan_out: Mapping[str, int]) -> Iterator[tuple[str, dict[str, int]]]:
+def _files_over(code: Mapping[str, str], fan_out: Mapping[str, int]) -> Iterator[tuple[str, int]]:
     for path, source in code.items():
-        yield path, _over(FILE_LIMITS, {"statements": _statements(source), "fan-out": fan_out[path]})
+        yield from _over(FILE_LIMITS, path, {"statements": _statements(source), "fan-out": fan_out[path]})
+
+
+def _kept(counts: Mapping[str, int]) -> dict[str, int]:
+    return {unit: count for unit, count in counts.items() if count}
 
 
 def measure(checkout: Checkout) -> Measured:
     code = _sources(checkout.root, checkout.code)
     tests = _sources(checkout.root, checkout.own_tests)
     tree = ModuleTree(code)
-    classes = {f"{path}::{name}": surface for path, source in code.items()
-               for name, surface in measure_classes(source).items()}
-    doubles = [asdict(count_doubles(source, own=checkout.own_names)) for source in tests.values()]
+    surfaces = {path: measure_classes(source) for path, source in code.items()}
+    classes = {f"{path}::{name}": surface for path, held in surfaces.items() for name, surface in held.items()}
+    doubles = {path: asdict(count_doubles(source, own=checkout.own_names)) for path, source in tests.items()}
     return Measured(
-        totals={
-            "reach-chains": sum(surface.chains for surface in classes.values()),
-            "mutables-imported": sum(tree.mutables_imported().values()),
-            **{name.replace("_", "-"): sum(counts[name] for counts in doubles)
+        per_file={
+            "reach_chains": _kept({path: sum(surface.chains for surface in held.values())
+                                   for path, held in surfaces.items()}),
+            "mutables_imported": _kept(tree.mutables_imported()),
+            **{name: _kept({path: counts[name] for path, counts in doubles.items()})
                for name in ("mocks", "patches", "monkeypatches", "simple_namespaces", "library_patches")},
         },
-        over_the_limits={unit: over for unit, over in (*_classes_over(classes), *_files_over(code, tree.fan_out()))
-                         if over},
+        over_the_limits=dict((*_classes_over(classes), *_files_over(code, tree.fan_out()))),
         another_apps_imports=another_apps_imports({**code, **tests}, own=checkout.own_names),
     )
-
-
-def _total_problems(totals: Mapping[str, int], ceilings: Mapping) -> Iterator[str]:
-    for name, count in sorted(totals.items()):
-        ceiling = ceilings.get(name, 0)
-        if count > ceiling:
-            yield f"{name} rose to {count}, over its ceiling of {ceiling}"
-        elif count < ceiling:
-            yield f"{name} fell to {count}: lower its ceiling from {ceiling} to {count}"
-
-
-def _held_problems(over: Mapping[str, Mapping[str, int]], held: Mapping) -> Iterator[str]:
-    for unit in sorted({*over, *held}):
-        measures, ceilings = over.get(unit, {}), held.get(unit, {})
-        for name in sorted({*measures, *ceilings}):
-            count, ceiling = measures.get(name), ceilings.get(name)
-            if count is None:
-                yield f"{unit} is within the family's limit for {name}: take it off [tool.haglio.coupling.held]"
-            elif ceiling is None:
-                yield f"{unit} has {count} {name}, over the family's limit of {LIMITS[name]}"
-            elif count > ceiling:
-                yield f"{unit} rose to {count} {name}, over its ceiling of {ceiling}"
-            elif count < ceiling:
-                yield f"{unit} fell to {count} {name}: lower its ceiling from {ceiling} to {count}"
-
-
-def assert_within_ceilings(measured: Measured, ceilings: Mapping) -> None:
-    problems = [*_total_problems(measured.totals, ceilings),
-                *_held_problems(measured.over_the_limits, ceilings.get("held", {}))]
-    assert not problems, (
-        "the repo's [tool.haglio.coupling] holds these where they stood; a ceiling only comes down, "
-        "so a rise is cut back rather than pinned:\n" + "\n".join(problems))
 
 
 def assert_no_app_imports_another(measured: Measured) -> None:

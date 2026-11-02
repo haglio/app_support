@@ -65,45 +65,42 @@ class TestProseLines:
         assert baseline.prose_lines(source) == lines
 
 
-class TestMethods:
-    @pytest.mark.parametrize(("source", "methods"), [
-        ("class A:\n    def f(self):\n        pass\n    def g(self):\n        pass\n", 2),
-        ("class A:\n    async def f(self):\n        pass\n", 1),
-        ("class A:\n    if True:\n        def f(self):\n            pass\n", 1),
-        ("class A:\n    try:\n        x = 1\n    except E:\n        def f(self):\n            pass\n", 1),
-        ("class A:\n    def f(self):\n        def inner():\n            pass\n", 1),
-        ("class A:\n    class B:\n        def f(self):\n            pass\n", 0),
-        ("class C:\n    def f(self):\n        pass\n", 0),
-    ], ids=["two", "async", "inside a block", "inside a handler", "a closure is not one", "a nested class's are not", "no such class"])
-    def test_a_class_is_counted_by_what_it_defines_itself(self, source: str, methods: int):
-        assert baseline.methods_of(source, "A") == methods
-
-
 class TestWhatACountReads:
     def test_prose_is_read_over_the_code_and_the_tests(self, tmp_path: Path):
         checkout = _checkout(tmp_path, {"pkg/a.py": "# why\n", "tools/t.py": "# why\n# what\n",
                                         "tests/test_a.py": "# why\n", "main.py": "x = 1\n"})
 
-        assert baseline.count_named("prose_lines").measure(checkout, {}) == {
+        assert baseline.live_sections(checkout, {})["prose_lines"] == {
             "pkg/a.py": 1, "tools/t.py": 2, "tests/test_a.py": 1}
 
     def test_reaches_are_read_over_the_code_alone(self, tmp_path: Path):
         checkout = _checkout(tmp_path, {"pkg/a.py": "def f(b):\n    return b._c\n",
                                         "tests/test_a.py": "def f(b):\n    return b._c\n"})
 
-        assert baseline.count_named("private_reaches").measure(checkout, {}) == {"pkg/a.py": 1}
+        assert baseline.live_sections(checkout, {})["private_reaches"] == {"pkg/a.py": 1}
 
     def test_private_imports_are_read_over_the_code_alone(self, tmp_path: Path):
         checkout = _checkout(tmp_path, {"pkg/a.py": "from pkg.b import _c\n", "pkg/b.py": "_c = 1\n",
                                         "tests/test_a.py": "from pkg.b import _c\n"})
 
-        assert baseline.count_named("private_imports").measure(checkout, {}) == {"pkg/a.py": 1}
+        assert baseline.live_sections(checkout, {})["private_imports"] == {"pkg/a.py": 1}
 
     def test_methods_are_read_only_of_the_classes_the_repo_lists(self, tmp_path: Path):
         checkout = _checkout(tmp_path, {"pkg/a.py": "class A:\n    def f(self):\n        pass\n\n\nclass B:\n    def g(self):\n        pass\n"})
 
-        assert baseline.count_named("methods").measure(checkout, {"pkg/a.py::A": 5, "pkg/gone.py::C": 1}) == {
+        assert baseline.live_sections(checkout, {"methods": {"pkg/a.py::A": 5, "pkg/gone.py::C": 1}})["methods"] == {
             "pkg/a.py::A": 1}
+
+    def test_doubles_are_read_per_test_file(self, tmp_path: Path):
+        checkout = _checkout(tmp_path, {"tests/test_a.py": "from unittest.mock import MagicMock\nMagicMock()\n",
+                                        "tests/test_b.py": "from unittest.mock import MagicMock\nMagicMock()\nMagicMock()\n"})
+
+        assert baseline.live_sections(checkout, {})["mocks"] == {"tests/test_a.py": 1, "tests/test_b.py": 2}
+
+    def test_what_is_over_a_limit_is_read_per_class_and_per_file(self, tmp_path: Path):
+        checkout = _checkout(tmp_path, {"pkg/long.py": "x = 1\n" * 301})
+
+        assert baseline.live_sections(checkout, {})["over_the_limits"] == {"pkg/long.py::statements": 301}
 
 
 class TestTheCompare:
@@ -130,29 +127,54 @@ class TestCarrying:
     def test_a_renamed_files_classes_go_with_it(self):
         assert baseline.carried({"old.py::A": 3}, {"old.py": "new.py"}) == {"new.py::A": 3}
 
+    def test_what_is_over_a_limit_goes_with_it(self):
+        assert baseline.carried({"old.py::statements": 301}, {"old.py": "new.py"}) == {"new.py::statements": 301}
+
     def test_an_entry_the_new_name_already_holds_is_not_added_to(self):
         assert baseline.carried({"old.py": 3, "new.py": 1}, {"old.py": "new.py"}) == {"new.py": 3}
 
 
 class TestHoldingACount:
     def test_a_section_the_file_does_not_have_passes(self, tmp_path: Path):
-        baseline.assert_count_holds(_checkout(tmp_path, {"pkg/a.py": "# why\n"}, {}), baseline.count_named("prose_lines"))
+        baseline.assert_counts_hold(_checkout(tmp_path, {"pkg/a.py": "# why\n"}, {}))
 
     def test_a_rise_and_a_fall_are_both_told(self, tmp_path: Path):
         checkout = _checkout(tmp_path, {"pkg/a.py": "# why\n# what\n", "pkg/b.py": "x = 1\n"},
                              {"prose_lines": {"pkg/a.py": 1, "pkg/b.py": 1}})
 
         with pytest.raises(AssertionError) as told:
-            baseline.assert_count_holds(checkout, baseline.count_named("prose_lines"))
+            baseline.assert_counts_hold(checkout)
 
         assert "pkg/a.py holds 2 prose_lines, over its entry of 1" in str(told.value)
         assert "pkg/b.py holds 0 prose_lines, under its entry of 1" in str(told.value)
+
+    def test_a_class_newly_over_a_limit_is_told(self, tmp_path: Path):
+        checkout = _checkout(tmp_path, {"pkg/long.py": "x = 1\n" * 301}, {"over_the_limits": {}})
+
+        with pytest.raises(AssertionError, match=r"pkg/long.py::statements holds 301 over_the_limits, over its entry of 0"):
+            baseline.assert_counts_hold(checkout)
+
+    def test_one_no_longer_over_a_limit_comes_off_the_list(self, tmp_path: Path):
+        checkout = _checkout(tmp_path, {"pkg/long.py": "x = 1\n"}, {"over_the_limits": {"pkg/long.py::statements": 301}})
+
+        with pytest.raises(AssertionError, match=r"pkg/long.py::statements holds 0 over_the_limits, under its entry of 301"):
+            baseline.assert_counts_hold(checkout)
+
+    def test_every_rise_is_named_at_once(self, tmp_path: Path):
+        checkout = _checkout(tmp_path, {"pkg/a.py": "# why\n", "tests/test_a.py": "from unittest.mock import MagicMock\nMagicMock()\n"},
+                             {"prose_lines": {}, "mocks": {}})
+
+        with pytest.raises(AssertionError) as told:
+            baseline.assert_counts_hold(checkout)
+
+        assert "pkg/a.py holds 1 prose_lines" in str(told.value)
+        assert "tests/test_a.py holds 1 mocks" in str(told.value)
 
     def test_a_reach_over_its_entry_shows_its_line(self, tmp_path: Path):
         checkout = _checkout(tmp_path, {"pkg/a.py": "def f(b):\n    return b._c\n"}, {"private_reaches": {}})
 
         with pytest.raises(AssertionError, match=r"pkg/a.py:2: b._c"):
-            baseline.assert_count_holds(checkout, baseline.count_named("private_reaches"))
+            baseline.assert_counts_hold(checkout)
 
     def test_nothing_above_main_holds_with_no_history_to_read(self, tmp_path: Path):
         baseline.assert_nothing_stands_above_main(_checkout(tmp_path, {}, {"prose_lines": {"pkg/a.py": 9}}))
@@ -285,8 +307,10 @@ class TestTheCommand:
         code, _ = self._main(checkout)
 
         assert code == 0
-        assert self._written(checkout) == {"methods": {}, "private_imports": {},
-                                           "private_reaches": {"pkg/a.py": 1}, "prose_lines": {"pkg/a.py": 1}}
+        written = self._written(checkout)
+        assert written["private_reaches"] == {"pkg/a.py": 1}
+        assert written["prose_lines"] == {"pkg/a.py": 1}
+        assert written["methods"] == {}
 
     def test_it_lowers_what_fell(self, tmp_path: Path):
         checkout = _checkout(tmp_path, {"pkg/a.py": "# why\n"}, {"prose_lines": {"pkg/a.py": 3}})
@@ -333,7 +357,8 @@ class TestTheCommand:
         self._main(checkout)
 
         written = (tmp_path / baseline.BASELINE_PATH).read_text(encoding="utf-8")
-        assert '  "prose_lines": {\n    "pkg/a.py": 1,\n    "pkg/b.py": 1\n  }\n}\n' in written
+        assert '  "prose_lines": {\n    "pkg/a.py": 1,\n    "pkg/b.py": 1\n  },\n' in written
+        assert written.endswith("}\n")
 
 
 class TestUncoveredLines:

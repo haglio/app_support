@@ -8,7 +8,6 @@ measurements a suite run in parts has gathered into ``.coverage`` to their entri
 """
 from __future__ import annotations
 
-import ast
 import io
 import json
 import subprocess
@@ -16,10 +15,11 @@ import sys
 import tokenize
 from collections.abc import Callable, Iterator
 from pathlib import Path
-from typing import NamedTuple
 
 import coverage
 
+from app_support.coupling import measure
+from app_support.coupling.classes import measure_classes
 from app_support.coverage_gate import UNCOVERED, uncovered_in_report, uncovered_rises
 from app_support.gates import BASELINE_PATH, Checkout, over
 from app_support.private_reach import private_imports, reaches_in
@@ -47,24 +47,6 @@ def prose_lines(source: str) -> int:
     return len(prose)
 
 
-def _defined_directly(body: list[ast.stmt]) -> Iterator[ast.stmt]:
-    for statement in body:
-        if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            yield statement
-        elif not isinstance(statement, ast.ClassDef):
-            for field in ("body", "orelse", "finalbody"):
-                yield from _defined_directly(getattr(statement, field, []))
-            for handler in getattr(statement, "handlers", []):
-                yield from _defined_directly(handler.body)
-
-
-def methods_of(source: str, class_name: str) -> int:
-    for node in ast.walk(ast.parse(source)):
-        if isinstance(node, ast.ClassDef) and node.name == class_name:
-            return sum(1 for _ in _defined_directly(node.body))
-    return 0
-
-
 def _python_under(paths: tuple[Path, ...]) -> Iterator[Path]:
     for path in paths:
         if path.is_file():
@@ -81,7 +63,7 @@ def _key(path: Path, checkout: Checkout) -> str:
     return path.relative_to(checkout.root).as_posix()
 
 
-def _prose(checkout: Checkout, _entries: dict[str, int]) -> dict[str, int]:
+def _prose(checkout: Checkout) -> dict[str, int]:
     counted = {_key(path, checkout): prose_lines(_text(path))
                for path in _python_under((*checkout.code, *checkout.own_tests))}
     return {key: lines for key, lines in counted.items() if lines}
@@ -97,16 +79,8 @@ def _reach_listing(checkout: Checkout) -> dict[str, list[str]]:
     return listing
 
 
-def _reaches(checkout: Checkout, _entries: dict[str, int]) -> dict[str, int]:
-    return {key: len(found) for key, found in _reach_listing(checkout).items()}
-
-
 def _import_listing(checkout: Checkout) -> dict[str, list[str]]:
     return private_imports(_python_under(checkout.code), checkout.root)
-
-
-def _imports(checkout: Checkout, _entries: dict[str, int]) -> dict[str, int]:
-    return {key: len(found) for key, found in _import_listing(checkout).items()}
 
 
 def _methods(checkout: Checkout, entries: dict[str, int]) -> dict[str, int]:
@@ -114,30 +88,35 @@ def _methods(checkout: Checkout, entries: dict[str, int]) -> dict[str, int]:
     for key in entries:
         file, class_name = key.split(_CLASS_MARK)
         path = checkout.root / file
-        methods = methods_of(_text(path), class_name) if path.is_file() else 0
-        if methods:
-            measured[key] = methods
+        surface = measure_classes(_text(path)).get(class_name) if path.is_file() else None
+        if surface and surface.methods:
+            measured[key] = surface.methods
     return measured
 
 
-class Count(NamedTuple):
-    section: str
-    measure: Callable[[Checkout, dict[str, int]], dict[str, int]]
-    remedy: str
-    listing: Callable[[Checkout], dict[str, list[str]]] | None = None
+def _counted(listing: dict[str, list[str]]) -> dict[str, int]:
+    return {key: len(found) for key, found in listing.items()}
 
 
-COUNTS = (
-    Count("prose_lines", _prose, "say it in a name or a test, or delete it"),
-    Count("private_reaches", _reaches, "ask the object for what you need rather than reading its private name",
-          _reach_listing),
-    Count("private_imports", _imports, "make the name public, or stop reading it from outside", _import_listing),
-    Count("methods", _methods, "give the new method to a collaborator, or to a new one"),
-)
+def live_sections(checkout: Checkout, on_file: dict[str, dict[str, int]]) -> dict[str, dict[str, int]]:
+    coupling = measure(checkout)
+    return {
+        "prose_lines": _prose(checkout),
+        "private_reaches": _counted(_reach_listing(checkout)),
+        "private_imports": _counted(_import_listing(checkout)),
+        "methods": _methods(checkout, on_file.get("methods", {})),
+        "over_the_limits": dict(coupling.over_the_limits),
+        **{section: dict(counts) for section, counts in coupling.per_file.items()},
+    }
 
 
-def count_named(section: str) -> Count:
-    return next(count for count in COUNTS if count.section == section)
+_LISTINGS = {"private_reaches": _reach_listing, "private_imports": _import_listing}
+_REMEDIES = {
+    "prose_lines": "say it in a name or a test, or delete it",
+    "private_reaches": "ask the object for what you need rather than reading its private name",
+    "private_imports": "make the name public, or stop reading it from outside",
+}
+_CUT_IT_BACK = "cut it back rather than raising the number"
 
 
 def owed(entries: dict[str, int], live: dict[str, int]) -> dict[str, tuple[int, int]]:
@@ -150,8 +129,8 @@ def lowered(entries: dict[str, int], live: dict[str, int]) -> dict[str, int]:
 
 
 def _renamed_key(key: str, renames: dict[str, str]) -> str:
-    file, mark, class_name = key.partition(_CLASS_MARK)
-    return f"{renames.get(file, file)}{mark}{class_name}"
+    file, mark, within = key.partition(_CLASS_MARK)
+    return f"{renames.get(file, file)}{mark}{within}"
 
 
 def carried(entries: dict[str, int], renames: dict[str, str]) -> dict[str, int]:
@@ -165,20 +144,23 @@ def _write_sections(root: Path, sections: dict[str, dict[str, int]]) -> None:
     path.write_text(json.dumps(sections, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n")
 
 
-def assert_count_holds(checkout: Checkout, count: Count) -> None:
-    entries = (checkout.sections or {}).get(count.section)
-    if entries is None:
-        return
-    live = count.measure(checkout, entries)
-    told = [f"{key} holds {held} {count.section}, over its entry of {entry}: {count.remedy}"
-            for key, (held, entry) in over(entries, live).items()]
-    told += [f"{key} holds {held} {count.section}, under its entry of {entry}: run {_COMMAND}"
-             for key, (held, entry) in owed(entries, live).items()]
-    assert not told, "\n".join([*told, *_lines_behind(checkout, count, over(entries, live))])
+def assert_counts_hold(checkout: Checkout) -> None:
+    on_file = checkout.sections or {}
+    told: list[str] = []
+    for section, live in live_sections(checkout, on_file).items():
+        if section not in on_file:
+            continue
+        rises = over(on_file[section], live)
+        told += [f"{key} holds {held} {section}, over its entry of {entry}: {_REMEDIES.get(section, _CUT_IT_BACK)}"
+                 for key, (held, entry) in rises.items()]
+        told += [f"{key} holds {held} {section}, under its entry of {entry}: run {_COMMAND}"
+                 for key, (held, entry) in owed(on_file[section], live).items()]
+        told += _lines_behind(checkout, section, rises)
+    assert not told, chr(10).join(told)
 
 
-def _lines_behind(checkout: Checkout, count: Count, rises: dict[str, tuple[int, int]]) -> list[str]:
-    listing = count.listing(checkout) if count.listing and rises else {}
+def _lines_behind(checkout: Checkout, section: str, rises: dict[str, tuple[int, int]]) -> list[str]:
+    listing = _LISTINGS[section](checkout) if section in _LISTINGS and rises else {}
     return [line for key in rises for line in listing.get(key, ())]
 
 
@@ -225,8 +207,7 @@ def _last_run(root: Path):
 
 
 def _measures(checkout: Checkout, sections: dict[str, dict[str, int]], said) -> Iterator[tuple[str, dict[str, int]]]:
-    for count in COUNTS:
-        yield count.section, count.measure(checkout, sections.get(count.section, {}))
+    yield from live_sections(checkout, sections).items()
     last = _last_run(checkout.root)
     if last is not None:
         yield UNCOVERED, uncovered_in_report(last, checkout.root)

@@ -33,7 +33,7 @@ jobs:
         with:
           python-version: "3.14"
 """
-EVERY_REPOSITORYS_GATES = 22
+EVERY_REPOSITORYS_GATES = 21
 
 
 def _checkout(root: Path, *files: str, project: str = "example") -> Checkout:
@@ -142,11 +142,11 @@ class TestTheGatesPlugin:
         assert done.returncode == 1, done.stdout
         assert f"::{goes_red} - " in done.stdout, done.stdout
 
-    def test_a_ceiling_the_repo_pinned_is_held(self, tmp_path: Path):
-        done = run_pytest_in(_repo(tmp_path, numbers="[tool.haglio.coupling]\nmocks = 1\n"))
+    def test_a_number_the_repo_pinned_is_held(self, tmp_path: Path):
+        done = run_pytest_in(_repo(tmp_path, files={"tools/quality_baseline.json": '{"mocks": {"tests/test_example.py": 1}}'}))
 
         assert done.returncode == 1, done.stdout
-        assert "::test_no_count_has_moved_from_its_ceiling - " in done.stdout, done.stdout
+        assert "::test_no_baseline_entry_has_moved - " in done.stdout, done.stdout
 
     def test_what_a_repo_allows_is_read_from_its_numbers(self, tmp_path: Path):
         a_helper_nothing_calls = {"tests/helpers.py": "def never_called():\n    return 1\n"}
