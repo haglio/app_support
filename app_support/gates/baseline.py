@@ -15,7 +15,7 @@ import coverage
 
 from app_support.coupling import METHODS_LIMIT, measured_sections
 from app_support.coupling.classes import measure_classes
-from app_support.coverage_gate import UNCOVERED, uncovered_in_report, uncovered_rises
+from app_support.coverage_gate import UNCOVERED, uncovered_rises, unreached_lines_in_report
 from app_support.gates import BASELINE_PATH, Checkout, over
 from app_support.private_reach import private_imports, reaches_in
 
@@ -322,7 +322,7 @@ def _measures(checkout: Checkout, sections: dict[str, dict[str, int]], said) -> 
         yield count.section, count.measure(checkout, sections.get(count.section, {}))
     last = _last_run(checkout.root)
     if last is not None:
-        yield UNCOVERED, uncovered_in_report(last, checkout.root)
+        yield UNCOVERED, {key: len(lines) for key, lines in unreached_lines_in_report(last, checkout.root).items()}
     elif UNCOVERED in sections:
         said(f"left {UNCOVERED} as it was: no whole run's .coverage to read")
 

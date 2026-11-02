@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -544,7 +545,19 @@ class TestUncoveredLines:
         said: list[str] = []
 
         assert baseline.hold_uncovered(Checkout(tmp_path), said=said.append) == 1
-        assert said == ["pkg/mod.py leaves 1 uncovered_lines, over its entry of 0: test them, or take them out"]
+        assert len(said) == 1
+        assert said[0].startswith("pkg/mod.py leaves 1 uncovered_lines, over its entry of 0, at lines ")
+
+    def test_a_rise_says_which_lines_since_a_ci_run_keeps_nothing_else_to_read(self, tmp_path: Path):
+        done = self._measured(tmp_path, {"uncovered_lines": {}})
+
+        assert re.search(r"pkg/mod\.py leaves 1 uncovered_lines, over its entry of 0, at lines \d+:", done.stdout)
+
+    def test_a_rise_on_a_file_the_change_never_touched_is_named_as_a_line_reached_only_sometimes(self, tmp_path: Path):
+        done = self._measured(tmp_path, {"uncovered_lines": {}})
+
+        assert "reached only some of the time" in done.stdout
+        assert "test them, or take them out" not in done.stdout
 
     def test_holding_a_gathered_run_at_its_entries_passes(self, tmp_path: Path):
         self._measured(tmp_path, {"uncovered_lines": {"pkg/mod.py": 1}})
