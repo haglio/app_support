@@ -9,7 +9,16 @@ import subprocess
 import pytest
 
 from app_support.dependencies import sibling_pins_in
-from app_support.newest_pins import BRANCH, IN_MERGE_QUEUE, GhGitHub, Move, bring_up, newest_release, newest_taken
+from app_support.newest_pins import (
+    BRANCH,
+    IN_MERGE_QUEUE,
+    GhGitHub,
+    Move,
+    bring_up,
+    main,
+    newest_release,
+    newest_taken,
+)
 
 
 def _pin(repo: str, tag: str) -> str:
@@ -66,6 +75,7 @@ class FakeGitHub:
         self.branches: dict[tuple[str, str], str] = {}
         self.commits: dict[str, str] = {}
         self.queued: set[tuple[str, int]] = set()
+        self.refuse_to_move: dict[str, Exception] = {}
         self.pulls: dict[str, dict] = {}
         self.armed: list[tuple[str, int]] = []
         self.withdrawn: list[tuple[str, int, str]] = []
@@ -88,6 +98,8 @@ class FakeGitHub:
 
     def point(self, repo, branch, sha):
         assert not any(queued == repo for queued, _ in self.queued)
+        if repo in self.refuse_to_move:
+            raise self.refuse_to_move[repo]
         if sha == f"{repo}-head":
             self.pulls.pop(repo, None)
             self.branches[repo, branch] = self.mains[repo]
@@ -130,7 +142,7 @@ class TestBringUp:
              "partslib": None},
             {"widgetlib": ["v0.1.9", "v0.1.10"], "partslib": ["v0.1.3", "v0.1.4"]})
 
-        said = bring_up(github)
+        said = bring_up(github).said
 
         assert pinned_siblings_in(github.branches["someapp", BRANCH]) == {"widgetlib": "v0.1.10", "partslib": "v0.1.4"}
         assert github.pulls["someapp"]["title"] == "Take widgetlib v0.1.10 and partslib v0.1.4"
@@ -156,7 +168,7 @@ class TestBringUp:
                             {"widgetlib": ["v0.1.10"]})
         bring_up(github)
 
-        said = bring_up(github)
+        said = bring_up(github).said
 
         assert github.armed == [("someapp", 1)]
         assert said == ["someapp: #1 already takes widgetlib v0.1.10"]
@@ -169,7 +181,7 @@ class TestBringUp:
         github.queued.add(("someapp", 1))
         github._tags["widgetlib"] = ["v0.1.10", "v0.1.11"]
 
-        said = bring_up(github)
+        said = bring_up(github).said
 
         assert github.branches["someapp", BRANCH] == offered
         assert said == ["someapp: #1 is on its way to main, so widgetlib v0.1.11 waits for the next release"]
@@ -180,7 +192,7 @@ class TestBringUp:
         bring_up(github)
         github.mains["someapp"] = _pyproject(_pin("widgetlib", "v0.1.10"))
 
-        said = bring_up(github)
+        said = bring_up(github).said
 
         assert github.withdrawn == [("someapp", 1, "main takes the newest release of each library already.")]
         assert said == ["someapp: withdrew #1, as main takes the newest release of each library already"]
@@ -190,15 +202,45 @@ class TestBringUp:
                             {"widgetlib": ["v0.1.10"]})
         github.refuse_to_arm = "auto-merge is not allowed for this repository"
 
-        assert bring_up(github) == [
+        assert bring_up(github).said == [
             ("someapp: #1 Take widgetlib v0.1.10 (not set to ship by itself: auto-merge is not allowed for this "
              "repository)")]
+
+    def test_a_repo_github_refuses_is_named_in_github_s_words_and_the_rest_are_still_offered(self):
+        github = FakeGitHub({"firstapp": _pyproject(_pin("widgetlib", "v0.1.9")),
+                             "secondapp": _pyproject(_pin("widgetlib", "v0.1.9")), "widgetlib": None},
+                            {"widgetlib": ["v0.1.10"]})
+        github.refuse_to_move["firstapp"] = subprocess.CalledProcessError(
+            1, "gh", stderr="gh: Reference update failed (HTTP 422)")
+
+        brought = bring_up(github)
+
+        assert brought.said == ["secondapp: #1 Take widgetlib v0.1.10"]
+        assert brought.failed == ["firstapp: gh: Reference update failed (HTTP 422)"]
+
+    def test_a_run_that_could_not_offer_a_repo_fails_after_saying_all_of_it(self, capsys):
+        github = FakeGitHub({"firstapp": _pyproject(_pin("widgetlib", "v0.1.9")),
+                             "secondapp": _pyproject(_pin("widgetlib", "v0.1.9")), "widgetlib": None},
+                            {"widgetlib": ["v0.1.10"]})
+        github.refuse_to_move["firstapp"] = subprocess.CalledProcessError(
+            1, "gh", stderr="gh: Reference update failed (HTTP 422)")
+
+        assert main([], github=github) == 1
+        said = capsys.readouterr().out
+        assert "secondapp: #1 Take widgetlib v0.1.10" in said
+        assert "firstapp: gh: Reference update failed (HTTP 422)" in said
+
+    def test_a_run_that_offered_every_repo_succeeds(self):
+        github = FakeGitHub({"someapp": _pyproject(_pin("widgetlib", "v0.1.9")), "widgetlib": None},
+                            {"widgetlib": ["v0.1.10"]})
+
+        assert main([], github=github) == 0
 
     def test_a_repo_taking_the_newest_of_each_or_pinning_nothing_is_left_alone(self):
         github = FakeGitHub({"someapp": _pyproject(_pin("widgetlib", "v0.1.10")), "plainapp": _pyproject(),
                              "widgetlib": None}, {"widgetlib": ["v0.1.10"]})
 
-        assert bring_up(github) == []
+        assert bring_up(github).said == []
         assert github.pulls == {}
 
 
