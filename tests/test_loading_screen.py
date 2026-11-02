@@ -1,4 +1,3 @@
-"""The loading screen a launcher shows from the click until the app's own is up."""
 from __future__ import annotations
 
 import json
@@ -183,9 +182,6 @@ def updating(step: int = 0, *, since: float = 1000.0) -> production_update.Updat
 
 
 class Launch:
-    """A launcher's loading screen over two checkouts, the app's and one it hosts,
-    with the snapshots the app left at its last start."""
-
     def __init__(self, tmp_path: Path):
         self.place = a_place(tmp_path, "Updating Example...", "Updating Hosted...")
         self.place.leave_snapshots(opening=b"opening", full=b"full", updating=[b"example", b"hosted"],
@@ -318,8 +314,6 @@ class TestWhatTheLaunchersLoadingScreenStandsOver:
 
 
 class _FakeUser32:
-    """user32 as far as measuring the screens reaches into it."""
-
     def __init__(self):
         self.asked: list[str] = []
         self.metrics = {0: 2560, 1: 1440, 76: -1440, 77: 0, 78: 4000, 79: 3440}

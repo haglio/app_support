@@ -1,5 +1,3 @@
-"""What a module of Python defines, and what it uses of a package.  Every package,
-module and name here is invented."""
 from __future__ import annotations
 
 from app_support.python_source import names_defined, references

@@ -1,9 +1,3 @@
-"""Tests for where in a run the checks of the repository itself go.
-
-Every case runs a real pytest against a throwaway repo, and reads the order off
-``--collect-only``, which lists a run's tests in the order it will run them.
-Every "banned" term here is invented.
-"""
 from __future__ import annotations
 
 import subprocess
@@ -79,7 +73,6 @@ def test_the_familys_checks_lead_then_the_repos_own_then_the_rest(tmp_path: Path
 
 
 def test_the_checks_still_lead_a_run_another_plugin_reorders_after_everything_else(tmp_path: Path):
-    """The merge gate shuffles every run and deals it into parts after collection."""
     repo = _repo(tmp_path, {"tests/conftest.py": A_PLUGIN_THAT_REVERSES_EVERY_RUN_LAST,
                             "tests/test_a_code.py": A_TEST, "tests/test_z_tree.py": A_CHECK_OF_ITS_OWN})
 

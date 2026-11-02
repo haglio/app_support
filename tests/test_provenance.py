@@ -1,8 +1,3 @@
-"""What made a file, in the form that outlives the app that wrote it.
-
-Every checkout here is a real git repository under tmp_path: the module's whole
-job is reading one, so a fake would test the fake.
-"""
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -14,7 +9,6 @@ from app_support import provenance
 
 
 def _checkout(tmp_path: Path, name: str = "someapp") -> Path:
-    """A checkout of *name* with one commit, its package one level down."""
     repo = tmp_path / name
     (repo / name).mkdir(parents=True)
     (repo / name / "app.py").write_text("", encoding="utf-8")
@@ -38,8 +32,6 @@ class TestStamp:
         assert recorded["app_commit"] == git(*IDENTIFIED, "rev-parse", "HEAD", cwd=repo)
 
     def test_reads_the_checkout_once_so_a_running_app_keeps_its_commit(self, tmp_path: Path):
-        # A tray that has been up for days holds the code it imported at launch;
-        # asking git again would report a checkout the running code is not.
         repo = _checkout(tmp_path)
         anchor = repo / "someapp" / "app.py"
         first = provenance.stamp("someapp", anchor=anchor)["app_commit"]
@@ -52,8 +44,6 @@ class TestStamp:
         assert provenance.stamp("someapp", anchor=anchor)["app_commit"] == first
 
     def test_says_when_the_checkout_carried_edits_the_commit_does_not(self, tmp_path: Path):
-        # A preview branch is generated from with edits in the tree; the sha
-        # alone would name code that never ran.
         repo = _checkout(tmp_path)
         (repo / "someapp" / "app.py").write_text("edited", encoding="utf-8")
 
@@ -65,8 +55,6 @@ class TestStamp:
         assert provenance.stamp("someapp", anchor=repo / "someapp" / "app.py")["app_dirty"] is False
 
     def test_code_outside_a_checkout_records_no_commit_rather_than_a_guess(self, tmp_path: Path):
-        # A wrong version is worse than a missing one: an upgrade sweep would
-        # skip the file believing it current.
         recorded = provenance.stamp("someapp", anchor=tmp_path / "loose" / "app.py")
 
         assert recorded["app_commit"] is None
@@ -90,8 +78,6 @@ class TestStamp:
         assert (provenance.METHOD, provenance.METHOD_VERSION) == ("recipe", "recipe_version")
 
     def test_records_when_it_was_stamped_because_the_file_gets_moved(self, tmp_path: Path):
-        # Evolver moves a clip through the library, so its mtime stops answering
-        # when the thing was made.
         stamped = datetime.fromisoformat(
             provenance.stamp("someapp", anchor=tmp_path / "app.py")["stamped_at"])
 
@@ -99,8 +85,6 @@ class TestStamp:
         assert abs((stamped - datetime.now(UTC)).total_seconds()) < 60
 
     def test_is_the_same_keys_however_little_is_known(self, tmp_path: Path):
-        # A fact nobody knows is an explicit None, never an absent key: a reader
-        # of a ten-year-old file should not have to guess which shape it got.
         known = provenance.stamp("origenerator", anchor=tmp_path / "app.py",
                                  method="wan22_i2v", method_version="v007")
         unknown = provenance.stamp("someapp", anchor=tmp_path / "app.py")

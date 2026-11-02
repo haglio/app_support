@@ -48,8 +48,6 @@ def test_start_daemon_thread_passes_kwargs_to_target():
 
 
 class _FakeClock:
-    """A clock that only moves when the code under test asks to sleep."""
-
     def __init__(self):
         self.time = 0.0
         self.naps: list[float] = []
@@ -123,8 +121,6 @@ def test_wait_until_names_a_predicate_that_carries_no_name_by_its_repr():
 
 
 def test_wait_until_checks_the_predicate_once_more_when_the_deadline_arrives():
-    # The work often finishes during the last nap. A loop that stops looking
-    # *at* the deadline rather than *at and after* it turns that into a red.
     clock = _FakeClock()
 
     def true_at_the_deadline():

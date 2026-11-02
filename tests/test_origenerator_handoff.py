@@ -1,10 +1,3 @@
-"""The four files an Origenerator opened on its own and a Fun Time session hand
-each other: each one's writer against its reader, the process a line names, and
-the state folders every copy of either app meets the others in.
-
-Every pid and every checkout here is fabricated; the one live process the
-tests name is the test run's own.
-"""
 from __future__ import annotations
 
 import json

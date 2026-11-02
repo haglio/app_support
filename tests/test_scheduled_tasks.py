@@ -46,8 +46,6 @@ class TestTheRendering:
         assert _leaf(xml, "Triggers/TimeTrigger/Repetition/Interval") == "PT2M"
 
     def test_the_repeats_need_no_date_of_registration(self):
-        """A repeat counted from the day it was registered would make two
-        registrations of one task differ, and every check say it had changed."""
         assert (scheduled_tasks.render(EXAMPLE, user="EXAMPLE\\someone")
                 == scheduled_tasks.render(EXAMPLE, user="EXAMPLE\\someone"))
         assert _leaf(scheduled_tasks.render(EXAMPLE, user="EXAMPLE\\someone"),
@@ -93,8 +91,6 @@ class TestTheRendering:
 
 
 def _as_registered(xml: str, **changes: str | None) -> str:
-    """*xml* the way Task Scheduler hands a task back: with values of its own
-    added, and with *changes* -- a path to a new value, or None to drop it."""
     root = ET.fromstring(xml)
     ET.SubElement(root.find(NAMESPACE + "RegistrationInfo"), NAMESPACE + "URI").text = "\\x"
     idle = ET.SubElement(root.find(NAMESPACE + "Settings"), NAMESPACE + "IdleSettings")
@@ -151,9 +147,6 @@ class TestWhatATaskSaysItIs:
 
 
 class _Schtasks:
-    """Task Scheduler's command-line tool as far as these calls use it: what it
-    was asked, and what it answers."""
-
     def __init__(self, answer: str = "", *, refusal: str | None = None) -> None:
         self.answer = answer
         self.refusal = refusal
@@ -187,8 +180,6 @@ class TestTheCommandLineTool:
             "\\Example\\Example Tray", "\\Example\\Other"]
 
     def test_only_the_folder_is_asked_for(self):
-        """Every folder on the machine took a busy runner more than a minute to
-        list; one folder takes what that folder holds."""
         schtasks = _Schtasks(LISTING)
 
         scheduled_tasks.tasks_in("\\Example", run=schtasks)
@@ -283,7 +274,6 @@ class TestTheCommandLineTool:
 
 
 def _never_started(xml: str) -> str:
-    """*xml* with the task switched off, so registering it here starts nothing."""
     root = ET.fromstring(xml)
     ET.SubElement(root.find(NAMESPACE + "Settings"), NAMESPACE + "Enabled").text = "false"
     return ET.tostring(root, encoding="unicode")
@@ -291,9 +281,6 @@ def _never_started(xml: str) -> str:
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Task Scheduler: only Windows can say")
 class TestARealRegistration:
-    """What only Task Scheduler can say: that it takes the rendered task, without
-    an administrator, and hands back every value it was given."""
-
     FOLDER = "\\Haglio"
 
     @pytest.fixture

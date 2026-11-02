@@ -1,4 +1,3 @@
-"""A run of pytest the way a repo of the family starts one, with this checkout's app_support."""
 from __future__ import annotations
 
 import os

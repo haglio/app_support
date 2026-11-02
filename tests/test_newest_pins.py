@@ -1,5 +1,3 @@
-"""Every repo taking the newest release of each library it pins.  Every repo, package and
-tag here is invented."""
 from __future__ import annotations
 
 import base64
@@ -66,9 +64,6 @@ class TestNewestRelease:
 
 
 class FakeGitHub:
-    """The organization's repos, each a main holding one pyproject (or none), its tags,
-    and the pull requests offered in it, all in memory."""
-
     def __init__(self, mains: dict[str, str | None], tags: dict[str, list[str]]):
         self.mains = dict(mains)
         self._tags = tags

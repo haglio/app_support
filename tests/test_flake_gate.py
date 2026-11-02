@@ -33,7 +33,6 @@ def test_a_test_that_always_passes_holds_up(tmp_path: Path):
 
 
 def test_nothing_to_repeat_runs_nothing_at_all(tmp_path: Path):
-    """An empty list handed to pytest is the whole suite, ten times over."""
     (tmp_path / "test_broken.py").write_text("def test_broken():\n    assert False\n", encoding="utf-8")
     loads = []
 
@@ -98,12 +97,6 @@ def test_the_refusal_says_which_run_failed_and_carries_what_it_printed(tmp_path:
 
 
 class _Paced:
-    """Runs that cost what they would, on a clock nothing else moves.
-
-    The cap is arithmetic over measured seconds, and a suite cannot spend real
-    minutes proving it -- so these runs cost time without taking any, and the
-    gate reads the clock they move."""
-
     def __init__(self, *, seconds_a_test: float, seconds_to_start: float = 0.0,
                  slow: frozenset[str] = frozenset(), seconds_a_slow_test: float = 0.0):
         self.seconds_a_test = seconds_a_test
@@ -153,8 +146,6 @@ def test_a_cap_too_small_for_them_all_repeats_what_fits_and_names_the_rest(
 
 
 def test_a_run_that_would_end_past_the_cap_is_never_started(tmp_path: Path, monkeypatch):
-    """The cap is a ceiling, not a ceiling and one more run: what the gate is
-    capped below is the job's own clock, which stops it reporting anything."""
     paced = _Paced(seconds_a_test=1.0)
     paced.install(monkeypatch)
 
@@ -200,8 +191,6 @@ def test_with_no_cap_at_all_every_test_is_repeated(tmp_path: Path, monkeypatch):
 
 def test_a_cap_the_very_first_run_spends_leaves_every_test_unrepeated(
         tmp_path: Path, monkeypatch):
-    """Nothing can be proved in the time left, and the gate says so rather than
-    running on past the job's own ceiling -- where it reports nothing at all."""
     paced = _Paced(seconds_a_test=1.0, seconds_to_start=400.0)
     paced.install(monkeypatch)
     ids = _named(400)
@@ -273,9 +262,6 @@ def _image_of(pid: int) -> str:
 
 @windows_only
 def test_a_worker_is_the_interpreter_itself_so_ending_it_leaves_nothing_spinning():
-    """Started through a venv's python.exe, a worker was a launcher running the
-    spinning interpreter as its child, and one launcher ended moments after it
-    started left that child spinning with no parent."""
     with busy_machine(workers=1) as workers:
         assert Path(_image_of(workers[0].pid)).samefile(sys._base_executable)
 
@@ -288,9 +274,6 @@ def test_on_a_machine_nobody_is_using_the_workers_compete_with_the_runs():
 
 @windows_only
 def test_the_runs_keep_the_priority_the_gate_was_started_with(tmp_path: Path):
-    """Lowered, a test waiting on a child of its own was starved by the other
-    sessions' suites past its timeout, and the gate called it flaky.  A CI
-    runner starts the whole job below normal, which the runs keep too."""
     (tmp_path / "test_own_priority.py").write_text(OWN_PRIORITY, encoding="utf-8")
 
     assert_they_hold_up(tmp_path, ["test_own_priority.py::test_own_priority"], runs=1)
@@ -428,8 +411,6 @@ def test_the_command_says_how_many_it_repeated(branch_from, monkeypatch, capsys)
 
 
 def test_the_command_names_every_test_a_cap_left_unrepeated(branch_from, monkeypatch, capsys):
-    """A cap the runs cannot fit in turns nothing away -- it says what it could
-    not get to, so the gap is read rather than guessed at."""
     branch = branch_from({"tests/test_things.py": OLD})
     branch.commit({"tests/test_new.py": "def test_new():\n    assert True\n"})
     monkeypatch.chdir(branch.path)

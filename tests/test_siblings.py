@@ -1,7 +1,3 @@
-"""Where the other checkouts are: the walk that finds a sibling from a clone and
-from a worktree alike, the sys.path rule, the overlay's project roots, and the
-refusal of a suite that imported its package from a different checkout.
-Every checkout here is a fabricated tree under tmp_path."""
 from __future__ import annotations
 
 import subprocess
@@ -24,7 +20,6 @@ from app_support.siblings import (
 
 
 def _family(tmp_path: Path) -> Path:
-    """Two checkouts side by side, each with its package one level down."""
     family = tmp_path / "family"
     for name in ("someapp", "widgetlib"):
         package = family / name / name
@@ -43,7 +38,6 @@ class TestSiblingCheckout:
         assert found == family / "widgetlib"
 
     def test_a_worktree_finds_the_same_primary(self, tmp_path: Path):
-        # The walk goes up past .claude/worktrees/<x> to where the siblings sit.
         family = _family(tmp_path)
         worktree = family / "someapp" / ".claude" / "worktrees" / "feature" / "someapp"
         worktree.mkdir(parents=True)
@@ -51,10 +45,8 @@ class TestSiblingCheckout:
         assert sibling_checkout("widgetlib", near=worktree / "paths.py") == family / "widgetlib"
 
     def test_a_directory_that_merely_shares_the_name_is_not_it(self, tmp_path: Path):
-        # The repo directory is the package's name too; only the one with the
-        # package inside is the checkout.
         family = _family(tmp_path)
-        (family / "someapp" / "widgetlib").mkdir()  # no widgetlib/widgetlib/__init__.py
+        (family / "someapp" / "widgetlib").mkdir()
 
         assert sibling_checkout("widgetlib", near=family / "someapp" / "someapp" / "x.py") == (
             family / "widgetlib")
@@ -84,8 +76,6 @@ class TestSiblingCheckout:
 
 class TestEnsureSiblingImportable:
     def test_the_checkout_goes_on_the_path_at_the_back(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-        # At the back: the checkout also holds the sibling's own tests and
-        # tools packages, which at the front shadow the app's.
         family = _family(tmp_path)
         monkeypatch.setattr(sys, "path", ["C:/somewhere/first"])
 
@@ -94,8 +84,6 @@ class TestEnsureSiblingImportable:
         assert sys.path == ["C:/somewhere/first", str(family / "widgetlib")]
 
     def test_a_name_something_already_provides_is_left_to_it(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-        # A session that chose a checkout through PYTHONPATH keeps it; json is
-        # a stand-in for a name that resolves to a real module.
         monkeypatch.setattr(sys, "path", list(sys.path))
         before = list(sys.path)
 
@@ -146,8 +134,6 @@ class TestProjectDir:
 
 
 def _imported(name: str, file: Path | None) -> ModuleType:
-    """A module object standing in for one already imported; ``None`` is what a
-    namespace package reports for its file."""
     module = ModuleType(name)
     module.__file__ = None if file is None else str(file)
     return module
@@ -155,8 +141,6 @@ def _imported(name: str, file: Path | None) -> ModuleType:
 
 class TestTheCheckoutUnderTest:
     def test_refuses_a_package_imported_from_another_checkout(self, tmp_path: Path):
-        # A worktree's suite that resolves the package from the primary is green
-        # about code the branch never changed.
         family = _family(tmp_path)
         primary = family / "widgetlib" / "widgetlib" / "__init__.py"
         worktree = family / "widgetlib" / ".claude" / "worktrees" / "feature"
@@ -270,8 +254,6 @@ class TestTheCheckoutsThatImportAPackage:
         assert found == [otherapp, someapp]
 
     def test_a_checkout_holding_the_package_is_a_copy_of_it_and_no_caller(self, checkout_tracking):
-        """A worktree's own primary, and the old-named clone this machine keeps of
-        funestra: read as callers, they count the package's names as used."""
         package = {"pyproject.toml": "", "widgetlib/__init__.py": "",
                    "tests/test_hinges.py": "from widgetlib import hinges\n"}
         primary = checkout_tracking("widgetlib", package)

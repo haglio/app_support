@@ -1,4 +1,3 @@
-"""Tests for app_support.logging_utils."""
 from __future__ import annotations
 
 import faulthandler
@@ -103,7 +102,6 @@ class TestInstallExceptionLogging:
         log_file = tmp_path / "exc.log"
         logger = configure_logging("test.exc.ki", log_file)
         install_exception_logging(logger)
-        # Should not raise or log
         sys.excepthook(KeyboardInterrupt, KeyboardInterrupt(), None)
         for h in logger.handlers:
             h.flush()
@@ -111,11 +109,6 @@ class TestInstallExceptionLogging:
         assert "KeyboardInterrupt" not in content
 
     def test_an_exception_that_kills_a_thread_reaches_the_log(self, tmp_path: Path):
-        """The thread half of the hook, driven the way it fires in production:
-        a worker dies, and the log must say what killed it and which thread it
-        was — a hook that swallowed the exception would leave both hooks
-        "installed" and every crash silent.
-        """
         log_file = tmp_path / "exc.log"
         logger = configure_logging("test.exc.threadcrash", log_file)
         install_exception_logging(logger)
@@ -147,8 +140,6 @@ class TestInstallExceptionLogging:
 
 
 class TestEnableFaulthandler:
-    """The one function no consumer's suite covered while it lived in genau."""
-
     def test_a_log_directory_that_does_not_exist_yet_is_made_before_the_first_write(self, tmp_path: Path):
         # A hard crash (a segfault in a native decoder) writes its C-level
         # traceback straight to this handle, so it must exist before the crash —
@@ -164,12 +155,6 @@ class TestEnableFaulthandler:
             handle.close()
 
     def test_arms_faulthandler_not_just_the_file(self, tmp_path: Path):
-        """Registering with faulthandler is the function's namesake effect; an
-        open handle in the right directory with nothing armed on it would
-        swallow the very crash it exists to record. pytest arms faulthandler
-        for its own reporting, so it is switched off first — otherwise this
-        would pass without the function doing anything.
-        """
         faulthandler.disable()
         log_file = tmp_path / "fault.log"
 
@@ -180,8 +165,6 @@ class TestEnableFaulthandler:
             handle.close()
 
     def test_appends_rather_than_truncating(self, tmp_path: Path):
-        # Crashes are rare and worth keeping across runs; truncating would throw
-        # away the previous one exactly when a second is being diagnosed.
         log_file = tmp_path / "fault.log"
         log_file.write_text("earlier crash\n", encoding="utf-8")
 

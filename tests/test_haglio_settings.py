@@ -1,6 +1,3 @@
-"""The settings all of Haglio shares, written once and read by every app.
-
-Every value here is fabricated."""
 from __future__ import annotations
 
 import json
@@ -50,7 +47,6 @@ def test_a_setting_the_file_lacks_is_named_with_the_file(tmp_path, monkeypatch):
 
 
 def test_a_suite_on_a_machine_with_real_settings_asks_for_the_example(tmp_path, monkeypatch):
-    """A suite runs as a public checkout does, never on the library's own settings."""
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
     (tmp_path / ".haglio").mkdir()
     _settings(tmp_path / ".haglio" / "settings.json", {"library_root": "D:/library"})

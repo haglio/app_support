@@ -1,4 +1,3 @@
-"""A read of another object's private name, through any handle. Every module here is invented."""
 from __future__ import annotations
 
 from pathlib import Path

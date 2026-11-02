@@ -1,11 +1,3 @@
-"""The OSR2's slot, both ends of it: the broker's, which hands on the T-Code of
-the one sender holding it, and a sender's, which holds it only while it wants
-the device.
-
-Most of the broker's side is served one end of a connected pair on the test's
-own thread, so what it did is settled by the time the call returns; the ones
-about two senders at once go through a listening slot.
-"""
 from __future__ import annotations
 
 import contextlib
@@ -32,8 +24,6 @@ def _slot() -> Osr2Slot:
 
 
 class _Written:
-    """A session's writer: every line it was handed, and whose."""
-
     def __init__(self):
         self._lines: queue.Queue[tuple[str, str]] = queue.Queue()
 
@@ -76,15 +66,12 @@ def _the_log_says(caplog, words: str) -> str:
 
 @contextlib.contextmanager
 def _connected(slot: Osr2Slot, name: bytes):
-    """A sender connected to a listening slot, having named itself."""
     with socket.create_connection(slot.address, timeout=_WITHIN_S) as sender:
         sender.sendall(name + b"\n")
         yield sender
 
 
 def _a_sender_that_says(*sent: bytes) -> tuple[socket.socket, socket.socket]:
-    """The slot's end and the sender's of one connection, everything the sender
-    will ever say already said."""
     ours, theirs = socket.socketpair()
     for each in sent:
         theirs.sendall(each)
@@ -93,8 +80,6 @@ def _a_sender_that_says(*sent: bytes) -> tuple[socket.socket, socket.socket]:
 
 
 def _hung_up_on(theirs: socket.socket) -> bool:
-    """Whether the slot closed the sender's line, whatever it said first.  A close
-    with what the sender sent still unread reaches it as a reset rather than an end."""
     theirs.settimeout(_WITHIN_S)
     try:
         while theirs.recv(16):
@@ -152,9 +137,6 @@ class TestTheBrokersSide:
         assert written.so_far() == [("caf\N{REPLACEMENT CHARACTER}", "L05000I33")]
 
     def test_a_connection_that_says_nothing_for_a_second_is_hung_up_on(self):
-        """Both bounds: it is given its second, and not much more.  Without the
-        upper one a connection that never speaks holds a thread for good; without
-        the lower one a sender that is slow to start is turned away."""
         ours, theirs = socket.socketpair()
 
         started = time.monotonic()
@@ -167,10 +149,6 @@ class TestTheBrokersSide:
         assert _hung_up_on(theirs)
 
     def test_a_name_said_a_piece_at_a_time_still_has_only_its_second(self, monkeypatch):
-        """Each piece arriving inside the second must not start the second over: the
-        second is up when the clock says so, not a second after the last piece.  So
-        once a piece has come and the clock is past the second, the slot hangs up at
-        once rather than waiting on the next."""
         readings = iter([100.0, 100.0])
         monkeypatch.setattr(slot_module, "time",
                             types.SimpleNamespace(monotonic=lambda: next(readings, 101.0)))
@@ -204,8 +182,6 @@ class TestTheBrokersSide:
         assert _hung_up_on(theirs)
 
     def test_lines_sent_before_a_hold_took_the_osr2_are_not_handed_on_after_it(self):
-        """What the sender had already sent is still in hand when the hold lands;
-        handing it on would undo the hold with the sender's last word."""
         slot = _slot()
         handed_on = []
 
@@ -347,9 +323,6 @@ class TestTheBrokersSide:
             slot.close()
 
     def test_a_failed_accept_does_not_stop_the_slot_listening(self, monkeypatch, heard):
-        """Windows can fail an accept for a connection its sender dropped before it
-        was taken; a slot that stopped listening then would keep every sender off
-        the OSR2 until the broker was started again."""
         real_accept = socket.socket.accept
         failures = [ConnectionResetError("dropped before it was taken")]
 
@@ -375,8 +348,6 @@ class TestTheBrokersSide:
             slot.close()
 
     def test_the_slot_listens_on_loopback_only(self, listening):
-        """T-Code drives the device, so a slot reachable from the network is one
-        anybody on it can drive."""
         host, _port = listening.address
 
         assert host == "127.0.0.1"
@@ -399,8 +370,6 @@ class TestTheBrokersSide:
             nothing_listens_there.bind(address)
 
     def test_a_sender_stays_connected_while_the_serial_session_opens_again(self, listening):
-        """The slot outlives the serial session, which a port error ends and the
-        broker opens again: the sender goes on where it was, into the new one."""
         before, after = _Written(), _Written()
         listening.write_through(before)
 
@@ -416,8 +385,6 @@ class TestTheBrokersSide:
         assert before.so_far() == []
 
     def test_t_code_sent_while_no_session_is_up_is_dropped_rather_than_kept_for_the_next(self):
-        """Kept, it would reach the device late, all at once, as moves nobody is
-        making any more."""
         slot = _slot()
         ours, _theirs = _a_sender_that_says(b"portrait\nL01000I33\n")
         slot.serve(ours)
@@ -443,8 +410,6 @@ class TestTheBrokersSide:
         assert written.so_far() == [("portrait", "L05000I33"), ("portrait", "L09999I33")]
 
     def test_a_sender_whose_line_could_not_be_handed_on_does_not_keep_the_slot(self, heard):
-        """Left holding it, a sender nothing reads any more would keep every other
-        sender off the device for good."""
         slot = _slot()
 
         def broken(_sender, _line):
@@ -470,8 +435,6 @@ class Clock:
 
 
 def _keep_sending(sender: Osr2Sender, until, *, within_s: float = _WITHIN_S) -> bool:
-    """Send the way a Funestra's frame loop does, a line a frame, until *until*
-    holds; the sender dials and names itself over its first few sends."""
     deadline = time.monotonic() + within_s
     while time.monotonic() < deadline:
         sender.send("L05000I100")

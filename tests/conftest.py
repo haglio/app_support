@@ -1,10 +1,3 @@
-"""Shared fixtures — and the process every test here borrows a piece of.
-
-This package's whole job is the process-wide scaffolding eight apps install, so
-its tests install it too: exception hooks, faulthandler's stream, a rotating file
-handler on a named logger. None of that belongs to the next test, and pytest's
-own reporting is the first casualty when it is left standing.
-"""
 from __future__ import annotations
 
 import contextlib
@@ -44,8 +37,6 @@ def pytest_configure(config):
 
 
 class Branch:
-    """A git repository checked out on ``branch``, which forks from ``main``."""
-
     def __init__(self, path: Path):
         self.path = path
 
@@ -66,7 +57,6 @@ class Branch:
 
 @pytest.fixture
 def repository_named(tmp_path):
-    """Make a repository named *name* whose ``main`` holds *files*."""
     def make(name: str, files: dict[str, str]) -> Branch:
         repository = Branch(tmp_path / name)
         repository.path.mkdir()
@@ -80,7 +70,6 @@ def repository_named(tmp_path):
 
 @pytest.fixture
 def branch_from(repository_named):
-    """Make a repository whose ``main`` holds *files*, on a branch just made from it."""
     def make(files: dict[str, str]) -> Branch:
         branch = repository_named("repo", files)
         branch.git("checkout", "-q", "-b", "branch")
@@ -90,8 +79,6 @@ def branch_from(repository_named):
 
 @pytest.fixture
 def checkout_tracking(tmp_path):
-    """Make a checkout named *name* in the folder the others sit in, its *files*
-    tracked and nothing committed."""
     def make(name: str, files: dict[str, str]) -> Path:
         checkout = Branch(tmp_path / name)
         checkout.path.mkdir()
@@ -140,8 +127,6 @@ def desktop_of_its_own():
 
 @pytest.fixture
 def child_on_its_own_desktop(desktop_of_its_own):
-    """A child started suspended on a desktop made for the test, as ``(desktop name, pid)``.
-    It never runs a line, and its parameters name the desktop from the moment it exists."""
     pid = desktop_of_its_own.start([sys._base_executable, "-c", "import time; time.sleep(120)"], suspended=True)
     return desktop_of_its_own.name, pid
 
@@ -171,17 +156,6 @@ def being_replaced():
 
 @pytest.fixture(autouse=True)
 def _the_process_is_given_back():
-    """Put back the process-wide things a test installed.
-
-    * Both exception hooks, so a thread that dies later reaches pytest's
-      reporting rather than a log file in a `tmp_path` already deleted.
-    * faulthandler, so a native crash after a test that called
-      ``enable_faulthandler`` still prints a traceback — the tests used to
-      switch it off in their own teardown, which switched pytest's off too.
-    * Every handler on a logger the test brought into being: an open
-      ``RotatingFileHandler`` holds its file, and thirteen of them were being
-      carried to the end of the run.
-    """
     hooks = (sys.excepthook, threading.excepthook)
     faulthandler_was_on = faulthandler.is_enabled()
     loggers_before = set(logging.Logger.manager.loggerDict)
@@ -192,7 +166,7 @@ def _the_process_is_given_back():
     for name in set(logging.Logger.manager.loggerDict) - loggers_before:
         logger = logging.Logger.manager.loggerDict.get(name)
         if not isinstance(logger, logging.Logger):
-            continue  # a placeholder for a child logger; it holds nothing
+            continue
         for handler in list(logger.handlers):
             logger.removeHandler(handler)
             handler.close()
@@ -208,8 +182,6 @@ def _the_process_is_given_back():
 
 @pytest.fixture(autouse=True)
 def _the_updaters_log_is_given_back():
-    """main() points the updater's logger at a file of the test's and stops it
-    reaching the root logger, where caplog listens."""
     logger = logging.getLogger("production_update")
     yield
     for handler in list(logger.handlers):

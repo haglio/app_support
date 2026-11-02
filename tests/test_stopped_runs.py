@@ -1,8 +1,3 @@
-"""Tests for a run that stops once the console it started in has closed.
-
-The run that matters is a real pytest with a console of its own, which closes it the
-way a stopped job's closes: its console host ends and the run lives on.
-"""
 from __future__ import annotations
 
 import os
@@ -20,7 +15,6 @@ from app_support.threading_utils import start_daemon_thread
 
 pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="Win32's consoles")
 
-# Every repo of the family names the blocked-word plugin, which brings this one with it.
 PYPROJECT = '[tool.pytest.ini_options]\naddopts = "-p no:cacheprovider -p app_support.sanitize.pytest_plugin"\n'
 CLOSING_ITS_OWN_CONSOLE = """\
 import ctypes

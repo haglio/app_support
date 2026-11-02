@@ -1,9 +1,3 @@
-"""One contract test per file two repos meet at: its real writer against its
-real reader, under the name both spell, through the calls both use.
-
-Every value here is fabricated; the files are the family's, the contents are
-not.
-"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -43,9 +37,6 @@ class TestTheBrokersCommandFile:
         assert consume_command_file(path) == ["PARK"]
 
     def test_two_verbs_between_ticks_are_both_heard_in_order(self, tmp_path: Path):
-        """The defect the broker's own consumer had: it read the file and then
-        truncated it, so a verb written into the gap was erased unread -- and
-        two verbs read together came back as one word matching neither."""
         path = tmp_path / state_files.BROKER_CMD
         append_command(path, "park")
         append_command(path, "resume")

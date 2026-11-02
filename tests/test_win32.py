@@ -1,11 +1,3 @@
-"""The Windows calls a windowed process makes about itself.
-
-None of these tests touch Windows.  Each one hands the call under test a fake
-DLL through the same keyword-only seam a consumer never uses, so the decisions
--- what is declared, what is passed, what is raised, what is closed -- are
-pinned on every platform.  What a fake cannot stand in for is COM itself, and
-those cases say so where they stop.
-"""
 from __future__ import annotations
 
 import ctypes
@@ -57,8 +49,8 @@ from app_support.win32 import (
 
 # One real failure code, as Windows hands it over: a signed 32-bit value whose
 # documentation is filed under the unsigned spelling of the same bits.
-E_INVALIDARG = -2147024809  # 0x80070057
-RPC_E_CHANGED_MODE = -2147417850  # 0x80010106
+E_INVALIDARG = -2147024809
+RPC_E_CHANGED_MODE = -2147417850
 S_FALSE = 1
 ERROR_ACCESS_DENIED = 5
 ERROR_ALREADY_EXISTS = 183
@@ -66,13 +58,6 @@ SYNCHRONIZE = 0x00100000
 
 
 class _FakeFunction:
-    """A ctypes function pointer as far as this module uses one.
-
-    The prototype is settable because declaring it is part of the behavior
-    under test, and every call is recorded because what was passed is the other
-    part.
-    """
-
     def __init__(self, result: object = 0, *, name: str = "", log: list | None = None) -> None:
         self.result = result
         self.argtypes: object = None
@@ -89,8 +74,6 @@ class _FakeFunction:
 
 
 class _FakeDll:
-    """A loaded DLL as far as this module reaches into one."""
-
     def __init__(self, **functions: _FakeFunction) -> None:
         for name, function in functions.items():
             setattr(self, name, function)
@@ -108,9 +91,6 @@ class TestSetAppUserModelId:
         assert set_id.restype is ctypes.c_long
 
     def test_a_refusal_reaches_the_caller(self):
-        # The nine copies this replaces disagreed about this: some raised, some
-        # logged, some swallowed. Raising is the only one of the three that
-        # leaves the choice with the app.
         shell32 = _FakeDll(
             SetCurrentProcessExplicitAppUserModelID=_FakeFunction(E_INVALIDARG))
 
@@ -118,8 +98,6 @@ class TestSetAppUserModelId:
             set_app_user_model_id("Example.App", shell32=lambda: shell32)
 
     def test_the_refusal_names_the_call_and_a_number_that_can_be_looked_up(self):
-        # 0x{hr:08x} on a signed value prints 0x-7ff8ffa9 for a code whose
-        # documentation is filed under 0x80070057.
         shell32 = _FakeDll(
             SetCurrentProcessExplicitAppUserModelID=_FakeFunction(E_INVALIDARG))
 
@@ -129,11 +107,6 @@ class TestSetAppUserModelId:
 
 
 def _guid_to_uuid(guid) -> uuid.UUID:
-    """Read a ``GUID`` struct back out as a UUID.
-
-    Round-tripping is the point: restating the four fields the way the module
-    packs them would pass however they were packed.
-    """
     return uuid.UUID(fields=(
         guid.Data1, guid.Data2, guid.Data3,
         guid.Data4[0], guid.Data4[1],
@@ -154,14 +127,6 @@ class TestTheShortcutProperty:
 
 
 class _FakeOle32:
-    """ole32 as far as the stamper reaches into it.
-
-    The apartment pair, and the one COM call that can refuse before any vtable
-    is walked -- which is as far as a fake can go.  Past ``CoCreateInstance``
-    the code is reading function pointers out of an object Windows built, and
-    only the windows-latest gate can say whether it reads them right.
-    """
-
     def __init__(self, *, init: int = 0, create: int = E_INVALIDARG) -> None:
         self.CoInitializeEx = _FakeFunction(init)
         self.CoUninitialize = _FakeFunction(None)
@@ -206,7 +171,6 @@ class TestSetShortcutAppUserModelId:
 
 class TestReadShortcut:
     def test_an_apartment_it_never_opened_is_not_given_back(self):
-        # The reader's bracket is the stamper's, for the stamper's reason.
         ole32 = _FakeOle32(init=RPC_E_CHANGED_MODE)
 
         with pytest.raises(OSError, match="CoInitializeEx failed"):
@@ -225,11 +189,6 @@ class TestReadShortcut:
 
 
 def _through_the_script_host(tmp_path: pathlib.Path, script: str, **env: str) -> str:
-    """Run *script* under the console script host, handing it *env*.
-
-    The paths ride in as environment variables rather than interpolated into
-    the script, so a quote in a temp path is never VBScript syntax.
-    """
     path = tmp_path / f"probe-{uuid.uuid4().hex}.vbs"
     path.write_text(script, encoding="ascii")
     host = pathlib.Path(os.environ.get("SYSTEMROOT", r"C:\Windows")) / "System32" / "cscript.exe"
@@ -240,8 +199,6 @@ def _through_the_script_host(tmp_path: pathlib.Path, script: str, **env: str) ->
 
 
 def _a_shortcut(tmp_path: pathlib.Path) -> pathlib.Path:
-    """A real .lnk, written the way the family's launchers write theirs --
-    through WScript.Shell, which carries no AppUserModelID."""
     lnk = tmp_path / "Example.lnk"
     _through_the_script_host(
         tmp_path,
@@ -270,10 +227,6 @@ def _what_the_shell_reads_off(tmp_path: pathlib.Path, lnk: pathlib.Path) -> dict
 
 @pytest.mark.skipif(not hasattr(ctypes, "windll"), reason="COM: only Windows can say")
 class TestTheStampOnARealShortcut:
-    """The one thing the fakes above cannot stand in for: past CoCreateInstance
-    the code reads function pointers out of an object Windows built, and only
-    Windows can say whether it reads them right."""
-
     def test_a_shortcut_the_shell_wrote_carries_no_identity(self, tmp_path: pathlib.Path):
         assert read_shortcut(str(_a_shortcut(tmp_path))).app_id is None
 
@@ -312,8 +265,6 @@ class TestStampPinnedShortcuts:
         assert result == {pins / "example app.lnk": None}
 
     def test_a_pin_whose_name_only_begins_the_same_is_left_alone(self, tmp_path: pathlib.Path):
-        # A retired "Example App VR.lnk" still in the pin folder would be kept
-        # looking live by a stamp meant for the pin beside it.
         pins = self._pins(tmp_path, "Example App VR.lnk", "Other.lnk", "Example App.txt")
         stamped: list[str] = []
 
@@ -508,8 +459,6 @@ class TestDressWindow:
 
 
 class _FakeRegistry:
-    """winreg as far as a description is written and read: keys of values."""
-
     HKEY_CURRENT_USER = "HKCU"
     REG_SZ = 1
 
@@ -598,15 +547,10 @@ class TestAWindowDressedOnWindows:
 
 class TestMutexName:
     def test_the_name_is_the_base_and_a_digest_of_the_identity(self):
-        # Pinned to the digit, because the name is a promise to a process that
-        # is already running: a different spelling of it does not refuse the
-        # second launch, it lets it through beside the first.
         assert mutex_name("Global\\ExampleApp", "C:/Example App/example_config.json") \
             == "Global\\ExampleApp.dce3a7c5ad9e"
 
     def test_a_different_identity_gets_a_different_mutex(self):
-        # What buys a suite its own instances: a run on its own temp config is
-        # a different session and must not be refused by the live one.
         first = mutex_name("Global\\ExampleApp", "C:/Example App/example_config.json")
         second = mutex_name("Global\\ExampleApp", "C:/Example App/other_config.json")
 
@@ -614,7 +558,6 @@ class TestMutexName:
         assert second == "Global\\ExampleApp.55654890faf8"
 
     def test_an_identity_that_is_a_path_spells_the_same_name_twice(self):
-        # The callers hand this a Path as often as a string.
         config = pathlib.Path("C:/Example App/example_config.json")
 
         assert mutex_name("Global\\ExampleApp", config) \
@@ -622,8 +565,6 @@ class TestMutexName:
 
 
 class _FakeKernel32:
-    """kernel32 as far as the mutex guard reaches into it."""
-
     def __init__(self, *, handle: int = 0, opened: int = 0,
                  log: list | None = None) -> None:
         self.CreateMutexW = _FakeFunction(handle, name="CreateMutexW", log=log)
@@ -641,9 +582,6 @@ THIS_PROCESS = 0xFFFF_FFFF_FFFF_FFFF
 
 class TestTryAcquireMutex:
     def test_the_handle_comes_back_so_the_caller_can_hold_it(self):
-        # Returning a bool instead is a live defect in one of the three copies
-        # this replaces: the handle it made goes out of scope, and a guard whose
-        # handle has been closed stops guarding.
         kernel32 = _FakeKernel32(handle=WIDE_HANDLE)
 
         held = try_acquire_mutex("Global\\ExampleApp.dce3a7c5ad9e",
@@ -723,9 +661,6 @@ class TestReleaseMutex:
 
 class TestIsMutexHeld:
     def test_a_held_mutex_is_opened_and_let_go_again(self):
-        # Opening rather than creating is the point: a created-then-closed
-        # handle would, for those few microseconds, make a starting instance
-        # believe another one was already up.
         kernel32 = _FakeKernel32(opened=WIDE_HANDLE)
 
         assert is_mutex_held("Global\\ExampleApp.dce3a7c5ad9e",
@@ -753,10 +688,6 @@ MB_TOPMOST = 0x00040000
 
 @pytest.mark.skipif(not hasattr(ctypes, "windll"), reason="a named mutex: only Windows can say")
 class TestANamedMutexOnWindows:
-    """The fakes above pin what is declared and what is closed; these ask
-    Windows itself whether the two calls agree about one real mutex, under a
-    name nothing else on the machine could be holding."""
-
     def test_a_name_nobody_holds_reads_as_free(self):
         assert not is_mutex_held(f"Local\\app-support-test-{uuid.uuid4().hex}")
 
@@ -772,8 +703,6 @@ class TestANamedMutexOnWindows:
         assert not is_mutex_held(name)
 
     def test_probing_a_free_name_does_not_claim_it(self):
-        # A probe that left a mutex in place would refuse the very instance it
-        # was asked on behalf of.
         name = f"Local\\app-support-test-{uuid.uuid4().hex}"
 
         is_mutex_held(name)
@@ -1121,9 +1050,6 @@ class TestShowErrorPopup:
         assert caption == "Example App"
 
     def test_a_dialog_that_will_not_open_is_not_raised_over(self):
-        # Alone in this module, and deliberately: this is the last thing a dying
-        # process does, and an exception thrown from the error reporter replaces
-        # the error nobody has been shown yet with one nobody will see either.
         user32 = _FakeDll(MessageBoxW=_FakeFunction(0))
 
         assert show_error_popup("Example App", "The scene file could not be read.",
@@ -1131,9 +1057,6 @@ class TestShowErrorPopup:
 
 
 class _Answers(_FakeFunction):
-    """A function whose answers change from one call to the next, the way the
-    foreground does across a call that takes it."""
-
     def __init__(self, *answers: object, name: str = "", log: list | None = None) -> None:
         super().__init__(name=name, log=log)
         self._answers = list(answers)

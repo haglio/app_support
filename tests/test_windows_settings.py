@@ -160,8 +160,6 @@ class TestWhatADeclarationMakes:
 
 
 class _TaskScheduler:
-    """Task Scheduler's command-line tool, holding its tasks in a dict."""
-
     def __init__(self, tasks: dict[str, str] | None = None) -> None:
         self.tasks = dict(tasks or {})
 

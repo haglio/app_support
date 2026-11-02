@@ -1,4 +1,3 @@
-"""A favorite is a mark on the video's own record, and the page it opens with it."""
 from __future__ import annotations
 
 import json

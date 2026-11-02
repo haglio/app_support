@@ -1,4 +1,3 @@
-"""Tests for app_support.file_channel: the queue, the claim, the flag and the whole publish."""
 from __future__ import annotations
 
 import os
@@ -20,8 +19,6 @@ from app_support.file_channel import (
 
 
 def test_append_command_queues_a_verb_without_losing_the_one_before_it(tmp_path: Path):
-    """The channel is a queue, not a slot: two writers in one drain window must
-    both be heard, and a writer that overwrites silently eats the other's verb."""
     path = tmp_path / "cmd.txt"
 
     assert append_command(path, "SET_ACTIVE 1")
@@ -31,13 +28,8 @@ def test_append_command_queues_a_verb_without_losing_the_one_before_it(tmp_path:
 
 
 def test_append_command_starts_a_line_of_its_own_after_an_unterminated_write(tmp_path: Path):
-    """An orchestrator that writes the file whole rarely bothers with a trailing
-    newline, and appending straight onto that welds the two verbs into one word
-    that matches neither — silently losing both.  Observed as exactly that: a
-    "NEXT" written whole, an appended flag, and a Funestra that never navigated.
-    """
     path = tmp_path / "cmd.txt"
-    path.write_text("NEXT", encoding="utf-8")  # no trailing newline
+    path.write_text("NEXT", encoding="utf-8")
 
     assert append_command(path, "SET_ACTIVE 1")
 
@@ -62,11 +54,6 @@ def test_append_command_creates_the_file_and_its_directory(tmp_path: Path):
 
 
 def test_append_command_retries_past_a_drain_then_gives_up(tmp_path: Path):
-    """The orchestrator drains this file ~20x/s, and a write overlapping a drain
-    hits a Windows sharing violation.  Retrying makes that a millisecond's wait;
-    a file locked for longer drops the line rather than raising into a run loop —
-    the next command lands, where an exception would take the loop down.
-    """
     path = tmp_path / "cmd.txt"
 
     with patch("pathlib.Path.open", side_effect=PermissionError(13, "Permission denied")):
@@ -120,8 +107,6 @@ def test_consume_skips_blank_lines(tmp_path: Path):
 
 
 def test_consume_takes_the_queue_away(tmp_path: Path):
-    """Claimed by rename, not read-then-truncated: the truncate had a gap one
-    verb wide, and a handoff verb appended into it was erased unread."""
     path = tmp_path / "cmd.txt"
     path.write_text("NEXT", encoding="utf-8")
 
@@ -188,9 +173,6 @@ def test_read_paused_state_strips_a_byte_order_mark(tmp_path: Path):
 
 
 def test_publish_retries_past_a_reader_holding_the_file_open(tmp_path: Path):
-    """Windows refuses to replace a file another process has open, so a publish
-    landing inside one of the reader's polls raises.  Riding out that microsecond
-    delivers the record instead of dropping it."""
     path = tmp_path / "status.txt"
     path.write_text("old\n", encoding="utf-8")
     real_replace = os.replace
@@ -210,7 +192,6 @@ def test_publish_retries_past_a_reader_holding_the_file_open(tmp_path: Path):
 
 
 def test_a_publish_keeps_the_line_endings_the_format_asks_for(tmp_path: Path):
-    """A format that terminates its own lines must not have them translated again."""
     path = tmp_path / "rows.csv"
 
     assert publish_whole(path, "one\r\ntwo\r\n", newline="") is True
@@ -219,11 +200,6 @@ def test_a_publish_keeps_the_line_endings_the_format_asks_for(tmp_path: Path):
 
 
 def test_a_write_that_could_not_land_raises_rather_than_reporting_it(tmp_path: Path):
-    """A stage rewriting another app's file has to stop when the write fails.
-
-    :func:`publish_whole` answers a run loop, which has a frame to draw and
-    nothing useful to do about a failure; a pipeline stage is the opposite case,
-    and a False it forgot to read is a rewrite everybody believes happened."""
     path = tmp_path / "session.json"
 
     with (
@@ -279,9 +255,6 @@ def test_a_refusal_that_outlasts_the_callers_attempts_is_raised():
 
 
 def test_a_write_makes_the_directory_it_writes_into(tmp_path: Path):
-    """A tree of records laid out to match a tree of files grows a folder the
-    first time something is written into it, so every writer would otherwise
-    carry the same guard."""
     path = tmp_path / "not" / "yet" / "record.json"
 
     write_whole(path, "{}")
@@ -290,10 +263,6 @@ def test_a_write_makes_the_directory_it_writes_into(tmp_path: Path):
 
 
 def test_a_write_that_dies_part_way_leaves_the_old_file_whole(tmp_path: Path):
-    """The reason the write goes through a rename at all: these documents are
-    read by other processes while one writes them, so a reader sees the old one
-    or the new one and never half of either -- and never a leftover beside it
-    that reads as a file some component owns."""
     path = tmp_path / "record.json"
     path.write_text("the old one", encoding="utf-8")
 
@@ -308,13 +277,6 @@ def test_a_write_that_dies_part_way_leaves_the_old_file_whole(tmp_path: Path):
 
 
 def test_a_publish_keeps_its_temp_file_to_itself_and_never_dies_tidying_it(tmp_path: Path):
-    """Two Funestras publish one status file while a room changes hands, and both
-    built the same temp name from it: on 2026-09-28 one Funestra's tidy-up of a
-    replace that had failed hit the other's open handle, and the PermissionError
-    came out of a call whose whole contract is to answer a run loop False.
-
-    So the temp file a publish writes is its own, and whatever happens to it the
-    answer is still a bool."""
     path = tmp_path / "status.txt"
     shared = path.with_suffix(".tmp")
     still_open = ExitStack()

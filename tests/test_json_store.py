@@ -1,4 +1,3 @@
-"""The lock and the whole-file write two processes editing one document need."""
 from __future__ import annotations
 
 import json
@@ -71,8 +70,6 @@ def test_a_change_that_hands_back_nothing_leaves_the_document_alone(tmp_path):
 
 
 def test_a_second_writer_waits_rather_than_writing_over_the_first(tmp_path):
-    """The lost update this module exists to stop: two processes hold one
-    document, and the one that writes second erases the first one's field."""
     path = tmp_path / "clip.json"
     _write(path, {})
     inside = threading.Event()
@@ -93,8 +90,6 @@ def test_a_second_writer_waits_rather_than_writing_over_the_first(tmp_path):
     assert inside.wait(5)
     second = threading.Thread(target=locked_update, args=(path, add_beta))
     second.start()
-    # Long enough for the second writer to have read the document, had it been
-    # let in: without the lock it reads the empty one and writes beta alone.
     second.join(0.3)
     may_finish.set()
     first.join(5)

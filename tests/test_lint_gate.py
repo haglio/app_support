@@ -1,4 +1,3 @@
-"""The family's ruff config and lint gate, `app_support.lint`."""
 from __future__ import annotations
 
 import subprocess
@@ -22,7 +21,7 @@ def test_a_repos_ratchet_survives_the_round_trip(tmp_path):
     written = tmp_path / "ruff.toml"
     written.write_text(lint.render_config(["PLR2004", "PLC0415"]), encoding="utf-8")
     assert lint.ratchet_of(written) == ("PLR2004", "PLC0415")
-    lint.assert_config_is_the_familys(written)  # its own rendering is the family's
+    lint.assert_config_is_the_familys(written)
 
 
 def test_a_counted_ratchet_keeps_each_rules_places_through_the_round_trip(tmp_path):
@@ -117,9 +116,6 @@ def test_a_tree_ruff_never_looked_at_is_not_clean(tmp_path):
 
 
 def test_a_noqa_for_a_rule_this_config_does_not_run_is_not_unused(tmp_path):
-    """Other gates run ruff with selects of their own (genau's argument scan is
-    `ARG`), and a ratcheted rule is ignored, not gone: a marker for either is
-    dormant, and RUF100 must leave it for the gate that reads it."""
     repo = _repo(tmp_path, "def f(a):  # noqa: ARG001\n    return 1\n")
     (repo / "ruff.toml").write_text(lint.render_config(["PLC0415"]), encoding="utf-8")
     (repo / "pkg" / "late.py").write_text(
@@ -129,10 +125,6 @@ def test_a_noqa_for_a_rule_this_config_does_not_run_is_not_unused(tmp_path):
 
 
 def test_only_the_named_trees_and_the_root_files_are_scanned(tmp_path):
-    """A gate checks out siblings beside or inside the repo (funestra's runner
-    puts shared_ui under it), and a checkout lives in `.claude/worktrees`: a scan of
-    `.` reads all of them under this repo's config. The named directories and the
-    root's own files are the repo."""
     repo = _repo(tmp_path, "def f():\n    return 1\n")
     nested = repo / "sibling_checkout" / "pkg"
     nested.mkdir(parents=True)

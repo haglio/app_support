@@ -1,4 +1,3 @@
-"""A desktop made for one test, which nothing started on it outlives."""
 from __future__ import annotations
 
 import sys
