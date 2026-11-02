@@ -63,10 +63,9 @@ class Sweeps:
             raise hotfix.Refused("example.app did not import")
 
 
-def route(machine: Machine, worktree: Path, *, checks: Checks | None = None, sweeps: Sweeps | None = None,
-          libraries: tuple[Path, ...] = (), bring_up=None) -> str:
-    return hotfix.hotfix(worktree, libraries=libraries, run=machine.run, check=checks or Checks(),
-                         sweep=sweeps or Sweeps(), bring_up=bring_up or machine.bring_up)
+def route(machine: Machine, worktree: Path, *, libraries: tuple[Path, ...] = (), **steps) -> str:
+    the_steps = {"check": Checks(), "sweep": Sweeps(), "bring_up": machine.bring_up, **steps}
+    return hotfix.hotfix(worktree, hotfix.Route(run=machine.run, **the_steps), libraries=libraries)
 
 
 def the_shared_code(machine: Machine) -> Path:
@@ -95,7 +94,7 @@ class TestTheRoute:
         worktree = a_branch(machine, production, {"fix.txt": "fixed\n", "tests/test_fix.py": "def test_it(): pass\n"})
         checks = Checks()
 
-        route(machine, worktree, checks=checks)
+        route(machine, worktree, check=checks)
 
         [(python, tests, place, pythonpath)] = checks.ran
         assert python == production / ".venv" / "Scripts" / "python.exe"
@@ -107,7 +106,7 @@ class TestTheRoute:
         worktree = a_branch(machine, production, {"fix.txt": "fixed\n"})
         sweeps = Sweeps()
 
-        route(machine, worktree, sweeps=sweeps)
+        route(machine, worktree, sweep=sweeps)
 
         [(python, place, _pythonpath)] = sweeps.ran
         assert python == production / ".venv" / "Scripts" / "python.exe"
@@ -119,7 +118,7 @@ class TestTheRoute:
                                                   "tests/test_fix.py": "def test_it(): pass\n"})
         checks = Checks()
 
-        route(machine, worktree, checks=checks)
+        route(machine, worktree, check=checks)
 
         assert checks.ran[0][1] == ["tests/test_launch.py", "tests/test_fix.py"]
 
@@ -169,7 +168,7 @@ class TestTheRoute:
             machine.bring_up(production)
 
         route(machine, a_branch(machine, production, {"two.txt": "fixed\n"}, name="claude/two"),
-              checks=production_takes_the_first_meanwhile)
+              check=production_takes_the_first_meanwhile)
 
         assert (production / "one.txt").is_file()
         assert (production / "two.txt").is_file()
@@ -210,7 +209,7 @@ class TestAFixInTheSharedCode:
         worktree = a_branch(machine, library, {"engine.txt": "fixed\n", "tests/test_engine.py": "def test_it(): pass\n"})
         checks, sweeps = Checks(), Sweeps()
 
-        route(machine, worktree, checks=checks, sweeps=sweeps)
+        route(machine, worktree, check=checks, sweep=sweeps)
 
         [(_, app_tests, _, pythonpath), (_, library_tests, library_place, also)] = checks.ran
         assert app_tests == ["tests/test_launch.py"]
@@ -237,7 +236,7 @@ class TestAFixInTheSharedCode:
         worktree = a_branch(machine, app, {"pyproject.toml": pins(funestra="0.1.2") + CHECKS})
         checks = Checks()
 
-        route(machine, worktree, checks=checks)
+        route(machine, worktree, check=checks)
 
         assert checks.heads[0] == [released]
         assert "funestra@v0.1.2" in (app / "pyproject.toml").read_text(encoding="utf-8")
@@ -274,7 +273,7 @@ class TestAFixInTheSharedCode:
                 raise hotfix.Refused("tests/test_launch.py::test_it failed")
 
         with pytest.raises(hotfix.Refused, match=re.escape("production other refused it: tests/test_launch.py::test_it")):
-            route(machine, a_branch(machine, library, {"engine.txt": "fixed\n"}), checks=failing_for_the_other_app)
+            route(machine, a_branch(machine, library, {"engine.txt": "fixed\n"}), check=failing_for_the_other_app)
 
         assert "funestra@v0.1.1.1" in (app / "pyproject.toml").read_text(encoding="utf-8")
         assert machine.head(other) == untouched
@@ -299,7 +298,7 @@ class TestAFixInTheSharedCode:
 
         with pytest.raises(hotfix.Refused, match=re.escape("funestra v0.1.1.1")):
             route(machine, a_branch(machine, library, {"engine.txt": "fixed\n"}),
-                  checks=another_hotfix_takes_it_meanwhile)
+                  check=another_hotfix_takes_it_meanwhile)
 
         assert git("rev-parse", "v0.1.1.1^{commit}", cwd=library) == released
         assert machine.hotfix_asked_for(app) is None
@@ -312,7 +311,7 @@ class TestAFixInTheSharedCode:
         app = machine.checkout(files={"pyproject.toml": pins(funestra="0.1.1") + CHECKS})
         checks = Checks()
 
-        route(machine, a_branch(machine, app, {"pyproject.toml": pins(funestra="0.1.2") + CHECKS}), checks=checks)
+        route(machine, a_branch(machine, app, {"pyproject.toml": pins(funestra="0.1.2") + CHECKS}), check=checks)
 
         assert checks.heads[0] == [released]
 
@@ -464,7 +463,7 @@ class TestTheCommandLine:
 
     def test_each_worktree_named_with_with_goes_out_with_the_fix(self, monkeypatch, tmp_path):
         handed = {}
-        monkeypatch.setattr(hotfix, "hotfix", lambda worktree, **options: handed.update(options) or "done")
+        monkeypatch.setattr(hotfix, "hotfix", lambda worktree, _route, **options: handed.update(options) or "done")
 
         assert hotfix.main(["--with", "one", "--with", "two"], state=tmp_path) == 0
         assert handed["libraries"] == [Path("one"), Path("two")]
@@ -492,7 +491,7 @@ class TestWhatIsRefused:
         worktree = a_branch(machine, production, {"fix.txt": "fixed\n"})
 
         with pytest.raises(hotfix.Refused, match="test_it failed"):
-            route(machine, worktree, checks=Checks(failing=True))
+            route(machine, worktree, check=Checks(failing=True))
 
         assert machine.head(production) == before
         assert machine.hotfix_asked_for(production) is None
@@ -501,7 +500,7 @@ class TestWhatIsRefused:
         worktree = a_branch(machine, production, {"fix.txt": "fixed\n"})
 
         with pytest.raises(hotfix.Refused, match="did not import"):
-            route(machine, worktree, sweeps=Sweeps(failing=True))
+            route(machine, worktree, sweep=Sweeps(failing=True))
 
         assert machine.hotfix_asked_for(production) is None
 
@@ -536,7 +535,7 @@ class TestWhatIsRefused:
             git("update-ref", "refs/haglio/hotfix", theirs, cwd=production)
 
         with pytest.raises(hotfix.Refused, match="another hotfix"):
-            route(machine, worktree, checks=another_session_asks_meanwhile)
+            route(machine, worktree, check=another_session_asks_meanwhile)
 
         assert machine.hotfix_asked_for(production) == theirs
 

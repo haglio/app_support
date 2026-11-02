@@ -383,7 +383,12 @@ class _Plan:
         return f"up to date at {self.head[:8]}"
 
 
-def _branch_and_target(checkout: Path, *, run: Run) -> tuple[str, str]:
+class _Heading(NamedTuple):
+    branch: str
+    target: str
+
+
+def _branch_and_target(checkout: Path, *, run: Run) -> _Heading:
     branch = default_branch(checkout, run=run)
     if branch is None:
         raise _LeftAlone("follows no branch; left where it is")
@@ -406,7 +411,7 @@ def _branch_and_target(checkout: Path, *, run: Run) -> tuple[str, str]:
         missing = f"{commit_file} names {named[:8]}, which this checkout does not have"
     if target is None:
         raise _LeftAlone(missing)
-    return branch, _the_hotfix_or(checkout, target, run=run)
+    return _Heading(branch, _the_hotfix_or(checkout, target, run=run))
 
 
 def _the_hotfix_or(checkout: Path, target: str, *, run: Run) -> str:
@@ -422,7 +427,9 @@ def _the_hotfix_or(checkout: Path, target: str, *, run: Run) -> str:
     return target
 
 
-def _plan(checkout: Path, branch: str, target: str, *, workspace: Path, run: Run, now: Callable[[], float]) -> _Plan:
+def _plan(checkout: Path, heading: _Heading, *, workspace: Path, surroundings: Surroundings) -> _Plan:
+    branch, target = heading
+    run, now = surroundings.run, surroundings.now
     head = git(checkout, "rev-parse", "HEAD", run=run)
     on = git_or_none(checkout, "symbolic-ref", "--quiet", "--short", "HEAD", run=run)
     if on != branch:
@@ -432,7 +439,7 @@ def _plan(checkout: Path, branch: str, target: str, *, workspace: Path, run: Run
         if hotfixes := _hotfixes_on(checkout, branch, head, run=run):
             taken_back = _taken_back(checkout, head, run=run)
             if not taken_back and (unshipped := [hotfix for hotfix in hotfixes
-                                                 if not _has_shipped(hotfix, checkout, workspace, head, target,
+                                                 if not _has_shipped(hotfix, _Move(checkout, workspace, head, target),
                                                                      run=run)]):
                 return _kept_at_its_hotfix(head, target, unshipped, now=now)
             moves = taken_back or not is_ancestor(checkout, target, head, run=run)
@@ -521,17 +528,23 @@ def _hotfixes_on(checkout: Path, branch: str, head: str, *, run: Run) -> list[_H
     return hotfixes
 
 
-def _has_shipped(hotfix: _Hotfix, checkout: Path, workspace: Path, head: str, target: str, *, run: Run) -> bool:
+class _Move(NamedTuple):
+    checkout: Path
+    workspace: Path
+    head: str
+    target: str
+
+
+def _has_shipped(hotfix: _Hotfix, move: _Move, *, run: Run) -> bool:
     by_repo: dict[str, set[tuple[str, str]]] = {}
     for email, seconds, repo in hotfix.originals:
         by_repo.setdefault(repo, set()).add((email, seconds))
-    return all(originals & _shipped_in(repo, hotfix, checkout=checkout, workspace=workspace, head=head,
-                                        target=target, run=run)
+    return all(originals & _shipped_in(repo, hotfix, move, run=run)
                for repo, originals in by_repo.items())
 
 
-def _shipped_in(repo: str, hotfix: _Hotfix, *, checkout: Path, workspace: Path, head: str, target: str,
-                run: Run) -> set[tuple[str, str]]:
+def _shipped_in(repo: str, hotfix: _Hotfix, move: _Move, *, run: Run) -> set[tuple[str, str]]:
+    checkout, workspace, head, target = move
     if not repo:
         return _authors_in_effect(checkout, head, target, run=run)
     released = _pin_of(repo, checkout, target, run=run)
@@ -665,19 +678,29 @@ def _started(pid: int) -> int | None:
     return win32.process_started(pid) if os.name == "nt" else None
 
 
-def bring_up(checkout: Path, *, workspace: Path, run: Run = run, wait_s: float = SCHEDULED_WAIT_S,
-             in_use: InUse = running_from, previous: Outcome | None = None,
-             now: Callable[[], float] = time.time) -> Outcome:
+@dataclasses.dataclass(frozen=True)
+class Surroundings:
+    run: Run = run
+    in_use: InUse = running_from
+    now: Callable[[], float] = time.time
+
+
+_THIS_COMPUTER = Surroundings()
+
+
+def bring_up(checkout: Path, *, workspace: Path, surroundings: Surroundings = _THIS_COMPUTER,
+             wait_s: float = SCHEDULED_WAIT_S, previous: Outcome | None = None) -> Outcome:
+    run, now = surroundings.run, surroundings.now
     checkout, target = Path(checkout), None
     try:
-        branch, target = _branch_and_target(checkout, run=run)
+        heading = _branch_and_target(checkout, run=run)
+        target = heading.target
         if (previous is not None and previous.failed and previous.target == target
                 and now() - previous.at < RETRY_FAILED_AFTER_S
                 and not _libraries_off(checkout, _pyproject_at(checkout, "HEAD", run=run))
                 and not _taken_back(checkout, git(checkout, "rev-parse", "HEAD", run=run), run=run)):
             return previous
-        said = _bring_up_to(checkout, branch, target, workspace=workspace, run=run, wait_s=wait_s, in_use=in_use,
-                            now=now)
+        said = _bring_up_to(checkout, heading, workspace=workspace, surroundings=surroundings, wait_s=wait_s)
         return Outcome(said, now(), False, target)
     except _LeftAlone as left:
         return Outcome(_not_waiting(checkout, str(left)), now(), left.failed, target)
@@ -689,25 +712,25 @@ def bring_up(checkout: Path, *, workspace: Path, run: Run = run, wait_s: float =
 
 def heading_for(checkout: Path, *, run: Run = run) -> str:
     try:
-        branch, target = _branch_and_target(checkout, run=run)
+        heading = _branch_and_target(checkout, run=run)
     except _LeftAlone as left:
         raise StepFailed(f"{Path(checkout).name} {left}") from None
-    plan = _plan(checkout, branch, target, workspace=Path(checkout).parent, run=run, now=time.time)
+    plan = _plan(checkout, heading, workspace=Path(checkout).parent, surroundings=Surroundings(run=run))
     return plan.target if plan.moves else plan.head
 
 
-def _bring_up_to(checkout: Path, branch: str, target: str, *, workspace: Path, run: Run, wait_s: float,
-                 in_use: InUse, now: Callable[[], float]) -> str:
-    plan = _plan(checkout, branch, target, workspace=workspace, run=run, now=now)
+def _bring_up_to(checkout: Path, heading: _Heading, *, workspace: Path, surroundings: Surroundings,
+                 wait_s: float) -> str:
+    plan = _plan(checkout, heading, workspace=workspace, surroundings=surroundings)
     if plan.settled:
         return _settle(checkout, plan)
     with the_turn(checkout, wait_s=wait_s):
-        plan = _plan(checkout, branch, target, workspace=workspace, run=run, now=now)
+        plan = _plan(checkout, heading, workspace=workspace, surroundings=surroundings)
         if plan.settled:
             return _settle(checkout, plan)
-        if running := in_use(_venvs_watched(checkout, workspace)):
+        if running := surroundings.in_use(_venvs_watched(checkout, workspace)):
             return _waiting_for(checkout, running)
-        return _not_waiting(checkout, _carry_out(checkout, plan, workspace=workspace, run=run))
+        return _not_waiting(checkout, _carry_out(checkout, plan, workspace=workspace, run=surroundings.run))
 
 
 def _settle(checkout: Path, plan: _Plan) -> str:
@@ -808,9 +831,9 @@ def keep_the_claude_app_off(checkout: Path) -> None:
         attributes.write_text("\n".join([*held, HANDS_OFF_RULE]) + "\n", encoding="utf-8", newline="\n")
 
 
-def keep_up(workspace: Path, state: Path, *, fetch: bool = True, run: Run = run,
-            wait_s: float = SCHEDULED_WAIT_S, in_use: InUse = running_from,
-            now: Callable[[], float] = time.time) -> dict[str, Outcome]:
+def keep_up(workspace: Path, state: Path, *, fetch: bool = True, surroundings: Surroundings = _THIS_COMPUTER,
+            wait_s: float = SCHEDULED_WAIT_S) -> dict[str, Outcome]:
+    run, now = surroundings.run, surroundings.now
     status = _status(state)
     previous = _previous(status)
     outcomes = {}
@@ -829,15 +852,14 @@ def keep_up(workspace: Path, state: Path, *, fetch: bool = True, run: Run = run,
                 git(checkout, "fetch", "--quiet", "origin", branch, run=run)
             except StepFailed as unreachable:
                 _log.warning("%s: could not fetch: %s", checkout.name, unreachable)
-        outcomes[checkout.name] = bring_up(checkout, workspace=workspace, run=run, wait_s=wait_s,
-                                           in_use=in_use, previous=previous.get(checkout.name), now=now)
+        outcomes[checkout.name] = bring_up(checkout, workspace=workspace, surroundings=surroundings, wait_s=wait_s,
+                                           previous=previous.get(checkout.name))
     _record(state, outcomes, previous, finished=now(), github=github)
     return outcomes
 
 
-def before_launch(checkout: Path, workspace: Path, state: Path, *, run: Run = run,
-                  wait_s: float = LAUNCH_WAIT_S, in_use: InUse = running_from,
-                  now: Callable[[], float] = time.time) -> dict[str, Outcome]:
+def before_launch(checkout: Path, workspace: Path, state: Path, *, surroundings: Surroundings = _THIS_COMPUTER,
+                  wait_s: float = LAUNCH_WAIT_S) -> dict[str, Outcome]:
     previous = _previous(_status(state))
     checkout = Path(checkout)
     try:
@@ -845,8 +867,8 @@ def before_launch(checkout: Path, workspace: Path, state: Path, *, run: Run = ru
     except (ProductionSpecError, tomllib.TOMLDecodeError):
         also_runs = ()
     started_by_it = [checkout, *(Path(workspace) / name for name in also_runs)]
-    outcomes = {each.name: bring_up(each, workspace=workspace, run=run, wait_s=wait_s, in_use=in_use,
-                                    previous=previous.get(each.name), now=now)
+    outcomes = {each.name: bring_up(each, workspace=workspace, surroundings=surroundings, wait_s=wait_s,
+                                    previous=previous.get(each.name))
                 for each in started_by_it if (each / ".git").is_dir()}
     _record(state, outcomes, previous)
     return outcomes
@@ -868,10 +890,12 @@ def main(argv: list[str] | None = None, *, run: Run = run, in_use: InUse = runni
     try:
         if options.before_launch:
             checkout = options.before_launch.resolve()
-            before_launch(checkout, options.workspace or checkout.parent, state, run=run, in_use=in_use)
+            before_launch(checkout, options.workspace or checkout.parent, state,
+                          surroundings=Surroundings(run=run, in_use=in_use))
         else:
             with contextlib.suppress(Busy), _holding_alone(state / ONE_PASS, wait_s=0):
-                keep_up(options.workspace or workspace_of(here), state, run=run, in_use=in_use)
+                keep_up(options.workspace or workspace_of(here), state,
+                        surroundings=Surroundings(run=run, in_use=in_use))
     except Exception:
         _log.exception("the %s ended on an error", "update before a launch" if options.before_launch else "pass")
         return 1
