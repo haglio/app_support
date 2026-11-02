@@ -15,7 +15,7 @@ from typing import Any, NamedTuple
 from app_support.changed_tests import changed_test_ids
 from app_support.subprocess_utils import hidden_subprocess_kwargs, run_process_tree
 
-__all__ = ["Repeats", "assert_they_hold_up", "busy_machine", "main"]
+__all__ = ["Effort", "Repeats", "assert_they_hold_up", "busy_machine", "main"]
 
 
 @contextmanager
@@ -36,11 +36,16 @@ class Repeats(NamedTuple):
     skipped: list[str]
 
 
-def assert_they_hold_up(root: Path, ids: list[str], *, runs: int, python: str = sys.executable,
-                        load: Callable[[], AbstractContextManager] = nullcontext,
-                        budget: float | None = None) -> Repeats:
+class Effort(NamedTuple):
+    runs: int
+    budget: float | None = None
+
+
+def assert_they_hold_up(root: Path, ids: list[str], effort: Effort, *, python: str = sys.executable,
+                        load: Callable[[], AbstractContextManager] = nullcontext) -> Repeats:
     if not ids:
         return Repeats([], [])
+    runs, budget = effort
     command = [python, "-m", "pytest", "-q", "-p", "no:cacheprovider"]
     deadline = None if budget is None else monotonic() + budget
     pace = _Pace()
@@ -56,7 +61,7 @@ def assert_they_hold_up(root: Path, ids: list[str], *, runs: int, python: str = 
                     return Repeats(repeated, left)
                 started = monotonic()
                 within = None if deadline is None else deadline - started
-                if not _one_run(command, chunk, root, run=run, runs=runs, within=within):
+                if not _one_run([*command, *chunk], root, f"{run} of {runs}", within=within):
                     return Repeats(repeated, left)
                 pace.measured(monotonic() - started, len(chunk))
             repeated += chunk
@@ -64,16 +69,15 @@ def assert_they_hold_up(root: Path, ids: list[str], *, runs: int, python: str = 
     return Repeats(repeated, left)
 
 
-def _one_run(command: list[str], chunk: list[str], root: Path, *, run: int, runs: int,
-             within: float | None) -> bool:
+def _one_run(argv: list[str], root: Path, which: str, *, within: float | None) -> bool:
     try:
-        done = run_process_tree([*command, *chunk], cwd=root, text=True, errors="replace", timeout=within,
+        done = run_process_tree(argv, cwd=root, text=True, errors="replace", timeout=within,
                                 **hidden_subprocess_kwargs())
     except subprocess.TimeoutExpired:
         return False
     if done.returncode != 0:
         raise AssertionError(
-            f"a new or changed test failed on run {run} of {runs}; a test that fails "
+            f"a new or changed test failed on run {which}; a test that fails "
             f"even once is flaky and cannot land:\n{done.stdout}{done.stderr}")
     return True
 
@@ -151,9 +155,8 @@ def main(argv: list[str] | None = None) -> int:
     print("\n".join(share))
     try:
         held = assert_they_hold_up(
-            root, share, runs=args.runs, python=args.python,
-            load=_every_core_busy if args.dedicated_machine else nullcontext,
-            budget=None if args.budget_minutes is None else args.budget_minutes * 60)
+            root, share, Effort(args.runs, None if args.budget_minutes is None else args.budget_minutes * 60),
+            python=args.python, load=_every_core_busy if args.dedicated_machine else nullcontext)
     except AssertionError as refusal:
         print(refusal, file=sys.stderr)
         return 1

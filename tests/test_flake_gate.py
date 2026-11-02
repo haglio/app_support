@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from app_support import flake_gate
-from app_support.flake_gate import assert_they_hold_up, busy_machine
+from app_support.flake_gate import Effort, assert_they_hold_up, busy_machine
 
 windows_only = pytest.mark.skipif(sys.platform != "win32", reason="priority classes are Windows'")
 
@@ -31,7 +31,7 @@ def test_sometimes():
 def test_a_test_that_always_passes_holds_up(tmp_path: Path):
     (tmp_path / "test_steady.py").write_text("def test_steady():\n    assert True\n", encoding="utf-8")
 
-    assert_they_hold_up(tmp_path, ["test_steady.py::test_steady"], runs=3)
+    assert_they_hold_up(tmp_path, ["test_steady.py::test_steady"], Effort(3))
 
 
 def test_nothing_to_repeat_runs_nothing_at_all(tmp_path: Path):
@@ -43,7 +43,7 @@ def test_nothing_to_repeat_runs_nothing_at_all(tmp_path: Path):
         loads.append("busy")
         yield
 
-    assert_they_hold_up(tmp_path, [], runs=3, load=load)
+    assert_they_hold_up(tmp_path, [], Effort(3), load=load)
 
     assert loads == []
 
@@ -52,7 +52,7 @@ def test_a_test_that_fails_on_one_run_of_several_is_refused(tmp_path: Path):
     (tmp_path / "test_flaky.py").write_text(FAILS_ON_ITS_SECOND_RUN, encoding="utf-8")
 
     with pytest.raises(AssertionError):
-        assert_they_hold_up(tmp_path, ["test_flaky.py::test_sometimes"], runs=3)
+        assert_they_hold_up(tmp_path, ["test_flaky.py::test_sometimes"], Effort(3))
 
 
 def test_more_tests_than_one_windows_command_line_can_name_are_all_run(tmp_path: Path):
@@ -62,7 +62,7 @@ def test_more_tests_than_one_windows_command_line_can_name_are_all_run(tmp_path:
         f"    with Path(__file__).with_name('ran.txt').open('a') as ran:\n"
         f"        ran.write('{name}\\n')\n" for name in names), encoding="utf-8")
 
-    assert_they_hold_up(tmp_path, [f"test_many.py::{name}" for name in names], runs=1)
+    assert_they_hold_up(tmp_path, [f"test_many.py::{name}" for name in names], Effort(1))
 
     assert sorted((tmp_path / "ran.txt").read_text().split()) == names
 
@@ -83,7 +83,7 @@ def test_every_run_happens_while_the_machine_is_kept_busy(tmp_path: Path):
         with log.open("a") as f:
             f.write("idle\n")
 
-    assert_they_hold_up(tmp_path, ["test_logged.py::test_logged"], runs=2, load=load)
+    assert_they_hold_up(tmp_path, ["test_logged.py::test_logged"], Effort(2), load=load)
 
     assert log.read_text().split() == ["busy", "run", "run", "idle"]
 
@@ -92,7 +92,7 @@ def test_the_refusal_says_which_run_failed_and_carries_what_it_printed(tmp_path:
     (tmp_path / "test_flaky.py").write_text(FAILS_ON_ITS_SECOND_RUN, encoding="utf-8")
 
     with pytest.raises(AssertionError) as refused:
-        assert_they_hold_up(tmp_path, ["test_flaky.py::test_sometimes"], runs=3)
+        assert_they_hold_up(tmp_path, ["test_flaky.py::test_sometimes"], Effort(3))
 
     assert "run 2 of 3" in str(refused.value)
     assert "assert 2 != 2" in str(refused.value)
@@ -138,7 +138,7 @@ def test_a_cap_too_small_for_them_all_repeats_what_fits_and_names_the_rest(
     paced.install(monkeypatch)
     ids = _named(400)
 
-    held = assert_they_hold_up(tmp_path, ids, runs=10, budget=300)
+    held = assert_they_hold_up(tmp_path, ids, Effort(10, budget=300))
 
     assert paced.now <= 300
     assert held.repeated + held.skipped == ids
@@ -151,7 +151,7 @@ def test_a_run_that_would_end_past_the_cap_is_never_started(tmp_path: Path, monk
     paced = _Paced(seconds_a_test=1.0)
     paced.install(monkeypatch)
 
-    held = assert_they_hold_up(tmp_path, _named(400), runs=10, budget=150)
+    held = assert_they_hold_up(tmp_path, _named(400), Effort(10, budget=150))
 
     assert paced.now <= 150
     assert held.repeated == []
@@ -162,7 +162,7 @@ def test_a_run_slower_than_the_pace_promised_is_stopped_at_the_cap(tmp_path: Pat
     paced = _Paced(seconds_a_test=0.1, slow=frozenset(ids[20:]), seconds_a_slow_test=5.0)
     paced.install(monkeypatch)
 
-    held = assert_they_hold_up(tmp_path, ids, runs=10, budget=300)
+    held = assert_they_hold_up(tmp_path, ids, Effort(10, budget=300))
 
     assert paced.now <= 300
     assert held.repeated + held.skipped == ids
@@ -174,7 +174,7 @@ def test_a_cap_that_holds_them_all_leaves_nothing_out(tmp_path: Path, monkeypatc
     paced.install(monkeypatch)
     ids = _named(20)
 
-    held = assert_they_hold_up(tmp_path, ids, runs=10, budget=10_000)
+    held = assert_they_hold_up(tmp_path, ids, Effort(10, budget=10_000))
 
     assert held.repeated == ids
     assert held.skipped == []
@@ -185,7 +185,7 @@ def test_with_no_cap_at_all_every_test_is_repeated(tmp_path: Path, monkeypatch):
     paced.install(monkeypatch)
     ids = _named(400)
 
-    held = assert_they_hold_up(tmp_path, ids, runs=10)
+    held = assert_they_hold_up(tmp_path, ids, Effort(10))
 
     assert held.repeated == ids
     assert held.skipped == []
@@ -197,7 +197,7 @@ def test_a_cap_the_very_first_run_spends_leaves_every_test_unrepeated(
     paced.install(monkeypatch)
     ids = _named(400)
 
-    held = assert_they_hold_up(tmp_path, ids, runs=10, budget=300)
+    held = assert_they_hold_up(tmp_path, ids, Effort(10, budget=300))
 
     assert held.repeated == []
     assert held.skipped == ids
@@ -268,7 +268,7 @@ def test_on_a_machine_nobody_is_using_the_workers_compete_with_the_runs():
 def test_the_runs_keep_the_priority_the_gate_was_started_with(tmp_path: Path):
     (tmp_path / "test_own_priority.py").write_text(OWN_PRIORITY, encoding="utf-8")
 
-    assert_they_hold_up(tmp_path, ["test_own_priority.py::test_own_priority"], runs=1)
+    assert_they_hold_up(tmp_path, ["test_own_priority.py::test_own_priority"], Effort(1))
 
     assert int((tmp_path / "priority.txt").read_text()) == _priority_class(os.getpid())
 
@@ -284,7 +284,7 @@ def test_unless_told_otherwise_it_keeps_no_core_busy(monkeypatch, tmp_path: Path
     monkeypatch.setattr(flake_gate, "busy_machine", counting)
     (tmp_path / "test_steady.py").write_text("def test_steady():\n    assert True\n", encoding="utf-8")
 
-    assert_they_hold_up(tmp_path, ["test_steady.py::test_steady"], runs=1)
+    assert_they_hold_up(tmp_path, ["test_steady.py::test_steady"], Effort(1))
 
     assert asked_for == []
 
@@ -372,7 +372,7 @@ def test_the_runs_use_the_interpreter_they_are_given(tmp_path: Path, monkeypatch
 
     monkeypatch.setattr(flake_gate, "run_process_tree", run)
 
-    assert_they_hold_up(tmp_path, ["test_x.py::test_x"], runs=2, python=r"C:\elsewhere\python.exe")
+    assert_they_hold_up(tmp_path, ["test_x.py::test_x"], Effort(2), python=r"C:\elsewhere\python.exe")
 
     assert started == [r"C:\elsewhere\python.exe"] * 2
 
@@ -383,7 +383,7 @@ def test_the_command_runs_the_tests_with_the_interpreter_it_is_named(branch_from
     monkeypatch.chdir(branch.path)
     asked = {}
 
-    def holding_up(root, ids, **kwargs):
+    def holding_up(root, ids, _effort, **kwargs):
         asked.update(kwargs)
         return flake_gate.Repeats(ids, [])
 
@@ -465,6 +465,6 @@ def test_a_refusal_reads_a_run_that_writes_utf_8_on_a_machine_whose_code_page_is
     (tmp_path / "test_quoted.py").write_text(QUOTED_FAILURE, encoding="utf-8")
 
     with pytest.raises(AssertionError) as refused:
-        assert_they_hold_up(tmp_path, ["test_quoted.py::test_quoted"], runs=1)
+        assert_they_hold_up(tmp_path, ["test_quoted.py::test_quoted"], Effort(1))
 
     assert "test_quoted" in str(refused.value)
