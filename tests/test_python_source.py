@@ -81,3 +81,19 @@ class TestReferences:
 
         assert references(source, ("widgetlib",)) == {
             "widgetlib.colors.GRAY", "widgetlib.cli.main", "widgetlib.tools.serve"}
+
+
+def test_the_docstring_of_every_scope_is_taken_out_and_no_other_string():
+    import ast
+
+    from app_support.python_source import without_docstrings
+
+    source = (
+        '"""module"""\n\n\n'
+        'class Widget:\n    """class"""\n    "kept class string"\n\n    def method(self):\n        """method"""\n        return 1\n\n\n'
+        'async def later():\n    """async"""\n    "kept"\n'
+    )
+    strings = {node.value for node in ast.walk(without_docstrings(ast.parse(source)))
+               if isinstance(node, ast.Constant) and isinstance(node.value, str)}
+
+    assert strings == {"kept class string", "kept"}

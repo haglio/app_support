@@ -1,14 +1,3 @@
-"""Give a repository the guard's enforcement check by asking for it once.
-
-    # pyproject.toml
-    [tool.pytest.ini_options]
-    addopts = "-p app_support.sanitize.pytest_plugin"
-
-The unit tests of the guard itself belong here, once, and are not a consumer's
-business. What every checkout does need is the check whose subject is *that*
-checkout: no tracked file may carry a blocklisted term. ``app_support.shipped_tests``
-says how that check reaches the consumer's session.
-"""
 from __future__ import annotations
 
 from pathlib import Path

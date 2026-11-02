@@ -1,11 +1,3 @@
-"""The settings all of Haglio shares, written once in ``~/.haglio/settings.json``.
-
-What more than one app needs to know about this machine and its library is kept
-here rather than in each app's own overlay, so a change to it is made once and
-every app has it.  The file says where the library is, so it lives outside the
-library.  A public checkout, and every suite, runs on :data:`EXAMPLE` instead.
-Standard library only.
-"""
 from __future__ import annotations
 
 import copy

@@ -1,10 +1,3 @@
-"""Point this checkout's git hooks at ``tools/githooks``, for it and every worktree of it.
-
-    python -m app_support.githooks [--uninstall]
-
-The setting is written to the repository's shared config, which every worktree
-reads, and it is relative, so each worktree runs the hooks its own tree defines.
-"""
 from __future__ import annotations
 
 import subprocess

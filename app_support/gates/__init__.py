@@ -1,4 +1,3 @@
-"""The family's gates, which a repository asks for by naming ``app_support.gates.pytest_plugin`` once."""
 from __future__ import annotations
 
 import json

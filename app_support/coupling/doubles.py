@@ -1,9 +1,3 @@
-"""The test doubles a test file reaches for, read off its source.
-
-Each is followed through its aliases rather than matched as a word, so
-``from unittest.mock import patch as swap`` is still a patch and a class of the
-repo's own called ``Mock`` is not one.
-"""
 from __future__ import annotations
 
 import ast
@@ -40,8 +34,6 @@ class Doubles:
 
 
 class _Names:
-    """What each name in a file stands for: a dotted path, or text it holds."""
-
     def __init__(self, tree: ast.Module) -> None:
         self.dotted: dict[str, str] = {}
         self.text: dict[str, str] = {}
@@ -112,7 +104,6 @@ class _Names:
 
 
 def _references(tree: ast.Module) -> Iterator[ast.expr]:
-    """Every name read as a value: an annotation says what a thing is, and doubles nothing."""
     waiting: list[ast.AST] = [tree]
     while waiting:
         node = waiting.pop()

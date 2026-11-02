@@ -1,7 +1,3 @@
-"""What a module of Python defines, and what it uses of a package, read off its source.
-
-Standard library only.
-"""
 from __future__ import annotations
 
 import ast
@@ -12,7 +8,6 @@ _SCOPES = (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
 
 
 def without_docstrings(tree: ast.Module) -> ast.Module:
-    """Every scope's, not only the file's: nothing runs a docstring."""
     for node in ast.walk(tree):
         if isinstance(node, _SCOPES):
             node.body = _past_the_docstring(node.body)

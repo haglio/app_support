@@ -1,5 +1,3 @@
-"""Whether the OSR2 is switched on, in its own auto mode, or out of the
-computer's hearing, read the one way every app reads it."""
 from __future__ import annotations
 
 from enum import StrEnum

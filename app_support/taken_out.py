@@ -1,7 +1,3 @@
-"""What a change takes out of a library, and which open branch of another repo still uses it.
-
-Standard library only.
-"""
 from __future__ import annotations
 
 import argparse
