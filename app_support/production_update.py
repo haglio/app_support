@@ -1,30 +1,3 @@
-"""Each production checkout kept at what has shipped, never while something of his runs from it.
-
-``python -m app_support.production_update`` makes one pass over the checkouts
-beside this one, and a scheduled task runs it every couple of minutes:
-``--before-launch <checkout>`` brings one checkout up as a launcher is about to
-start its app, so an app closed and opened again between two passes still opens
-on what has shipped.  A pass asks GitHub once what every checkout's main is and
-fetches only the checkouts whose main moved, so the machine's agents are not
-competing with it for GitHub; a checkout the answer leaves out is fetched once
-its last fetch is half an hour old.
-
-A checkout follows origin's default branch, or, when the pyproject on that branch
-says so, only the commit a file of its own names.  A hotfix asked for at ``refs/haglio/hotfix``
-goes ahead of either, and the checkout keeps it until the same fix ships the usual way.  Its libraries go in at exactly the versions
-that commit pins, before its code, and neither moves while one of his programs
-runs out of its venv, or out of the venv of a checkout that declares it starts
-programs from this one.  Nor does it move to a commit whose pyproject says, in
-``[tool.haglio.opens-only-with]``, that its app will not open without every key
-one file documents in another, while the checkout's own copy of the other lacks
-one; it moves on the first pass once that copy has them all.  An update holds
-``.git/production-update.turn`` alone for as long as it runs, and the launchers
-of a checkout that declares ``[tool.haglio.production]`` hold it shared while
-they start its app, so a launch waits for an update rather than starting half
-way through one.
-
-Standard library only.
-"""
 from __future__ import annotations
 
 import argparse
@@ -55,8 +28,6 @@ from app_support.subprocess_utils import hidden_subprocess_kwargs, run_process_t
 TURN = "production-update.turn"
 WAITING = "production-update.waiting"
 PROGRESS = "production-update.progress"
-# Where every launcher finds the interpreter that runs this module, from the
-# folder holding the checkouts: this repo's own launcher runs out of it too.
 UPDATER = r"app_support\.venv\Scripts\pythonw.exe"
 HOTFIX_REF = "refs/haglio/hotfix"
 TAKEN_BACK_REF = "refs/haglio/taken-back"
@@ -64,9 +35,6 @@ HOTFIX_OF = "Hotfix-of"
 ONE_PASS = "production_update.pass"
 LOG_NAME = "production_update.log"
 STATUS_NAME = "production_update.json"
-# The mark a launcher of the machine's own upkeep puts on what it starts, so that
-# a long-running checker can run out of a checkout's venv without holding back
-# the update of the very checkout it checks.
 UPKEEP_MARK = "HAGLIO_UPKEEP"
 SCHEDULED_WAIT_S = 30.0
 LAUNCH_WAIT_S = 15 * 60.0
@@ -80,8 +48,6 @@ HANDS_OFF_RULE = "/.moved-only-by-the-production-updater moved-only-by-the-produ
 UP_BEFORE_AN_UPDATE_S = 10 * 60.0
 GIT_TIMEOUT_S = 120.0
 PIP_TIMEOUT_S = 15 * 60.0
-# How long each step of an update usually takes, so that a loading screen
-# waiting on one can move its bar: a library comes from GitHub as a clone.
 LIBRARY_S = 15.0
 MOVE_S = 2.0
 REINSTALL_S = 10.0
@@ -149,9 +115,6 @@ InUse = Callable[[list[Path]], list[processes.Process]]
 
 
 def declared(checkout: Path) -> Declaration | None:
-    """What *checkout*'s pyproject tells the updater, or None when it says nothing.
-    A checkout that declares the table at all has launchers that bring it up, and
-    wait out an update of it, before they start its app."""
     try:
         text = (Path(checkout) / "pyproject.toml").read_text(encoding="utf-8")
     except FileNotFoundError:
@@ -182,8 +145,6 @@ def _declared_in(pyproject_text: str) -> Declaration | None:
 
 
 def opens_only_with(pyproject_text: str) -> OpensOnlyWith | None:
-    """What a pyproject says its app will not open without: every key one file documents,
-    in another. None when it says nothing."""
     table = _haglio_table(pyproject_text, "opens-only-with")
     if table is None:
         return None
@@ -201,8 +162,6 @@ def _inside_the_checkout(path: object) -> bool:
 def _a_folder_name(name: object) -> bool:
     return isinstance(name, str) and bool(name) and len(PureWindowsPath(name).parts) == 1 and name != ".."
 
-
-# --- Running git and pip -------------------------------------------------------
 
 
 def run(arguments: Sequence[str], *, cwd: Path | None = None, timeout: float = GIT_TIMEOUT_S,
@@ -260,8 +219,6 @@ def default_branch(checkout: Path, *, run: Run) -> str | None:
                 None)
 
 
-# --- The libraries a commit pins ----------------------------------------------
-
 
 def _distribution(name: str) -> str:
     return re.sub(r"[-_.]+", "_", name).lower()
@@ -286,8 +243,6 @@ def libraries_off_their_pins(pyproject_text: str, installed: Mapping[str, str]) 
             if (have := installed.get(_distribution(pin.package))) is None
             or release_of(have) != release_of(pin.tag)]
 
-
-# --- The turn ------------------------------------------------------------------
 
 
 def _kernel32():
@@ -360,14 +315,10 @@ subprocess.run(["wscript.exe", sys.argv[2]])
 
 
 def start_again_after(pid: int, launcher: Path, *, popen=subprocess.Popen) -> None:
-    """Run *launcher* once the process *pid* has ended, from the plain interpreter:
-    its catch-up updates the checkout only while nothing runs out of the venv."""
     popen([str(Path(sys._base_executable).with_name("pythonw.exe")), "-c", _THEN_THE_LAUNCHER,
            str(pid), str(launcher)],
           creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP)
 
-
-# --- What runs from a venv -------------------------------------------------------
 
 
 def _spelled(text: object) -> str:
@@ -375,9 +326,6 @@ def _spelled(text: object) -> str:
 
 
 def running_from(venvs: Iterable[Path], *, whose=processes.whose_process) -> list[processes.Process]:
-    """His programs running out of any of *venvs*: not an agent's, not one on a
-    desktop of its own, not the machine's upkeep, and never this one or what
-    started it."""
     marks = [_spelled(venv).rstrip("\\") + "\\" for venv in venvs]
     among = {process.pid: process for process in processes.running()}
     own = processes.this_process_and_its_parents(among)
@@ -393,7 +341,6 @@ def running_from(venvs: Iterable[Path], *, whose=processes.whose_process) -> lis
 
 
 def _venvs_watched(checkout: Path, workspace: Path) -> list[Path]:
-    """This checkout's venv, and the venv of every checkout that starts programs out of it."""
     watched = [checkout / ".venv"]
     for other in checkouts_in(workspace):
         if other == checkout:
@@ -413,8 +360,6 @@ def checkouts_in(workspace: Path) -> list[Path]:
     return [entry for entry in sorted(Path(workspace).iterdir()) if (entry / ".git").is_dir()]
 
 
-# --- Bringing one checkout up --------------------------------------------------------
-
 
 class _LeftAlone(Exception):
     def __init__(self, said: str, *, failed: bool = False):
@@ -433,7 +378,6 @@ class _Plan:
 
     @property
     def settled(self) -> str | None:
-        """What to say when there is nothing to carry out."""
         if self.refusal or self.moves or self.libraries:
             return self.refusal
         return f"up to date at {self.head[:8]}"
@@ -706,7 +650,6 @@ def _saying_how_far(checkout: Path, steps: tuple[tuple[str, float], ...]):
 
 
 def progress_of(checkout: Path) -> UpdateProgress | None:
-    """How far the update of *checkout* under way has got, or None when none is."""
     try:
         document = json.loads((Path(checkout) / ".git" / PROGRESS).read_text(encoding="utf-8"))
         progress = UpdateProgress(
@@ -783,8 +726,6 @@ def _not_waiting(checkout: Path, said: str) -> str:
     (checkout / ".git" / WAITING).unlink(missing_ok=True)
     return said
 
-
-# --- A pass, and a launch ---------------------------------------------------------
 
 
 def _status(state: Path) -> dict:
