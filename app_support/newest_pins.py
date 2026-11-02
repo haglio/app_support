@@ -21,6 +21,8 @@ BRANCH = "take-the-newest-shared-code"
 PYPROJECT = "pyproject.toml"
 _RELEASE = re.compile(r"^v\d+(?:\.\d+)*$")
 _TAG_REF = re.compile(r"\trefs/tags/(\S+)$", re.MULTILINE)
+IN_MERGE_QUEUE = ("query($org: String!, $repo: String!, $number: Int!) "
+                   "{ repository(owner: $org, name: $repo) { pullRequest(number: $number) { isInMergeQueue } } }")
 
 
 @dataclass(frozen=True)
@@ -51,6 +53,7 @@ class GitHub(Protocol):
     def main_of(self, repo: str) -> tuple[str, str] | None: ...
     def file_at(self, repo: str, ref: str, path: str) -> str | None: ...
     def tags(self, repo: str) -> list[str]: ...
+    def in_merge_queue(self, repo: str, number: int) -> bool: ...
     def point(self, repo: str, branch: str, sha: str) -> None: ...
     def commit_pyproject(self, repo: str, parent: str, text: str, *, message: str) -> str: ...
     def open_pull(self, repo: str, branch: str) -> int | None: ...
@@ -104,6 +107,8 @@ def _bring_up_one(github: GitHub, project: _Project, newest: Mapping[str, str]) 
     offered = github.file_at(project.repo, BRANCH, PYPROJECT) if pull is not None else None
     if offered == taken:
         return f"{project.repo}: #{pull} already takes {_releases(moved)}"
+    if pull is not None and github.in_merge_queue(project.repo, pull):
+        return f"{project.repo}: #{pull} is on its way to main, so {_releases(moved)} waits for the next release"
     github.point(project.repo, BRANCH, github.commit_pyproject(project.repo, project.head, taken,
                                                                message=_subject(moved)))
     if pull is None:
@@ -169,6 +174,11 @@ class GhGitHub:
     def tags(self, repo: str) -> list[str]:
         return _TAG_REF.findall(self._run(["git", "ls-remote", "--tags", "--refs",
                                            f"https://github.com/{self.org}/{repo}.git"]))
+
+    def in_merge_queue(self, repo: str, number: int) -> bool:
+        said = self._api("graphql", "-f", f"query={IN_MERGE_QUEUE}", "-f", f"org={self.org}", "-f", f"repo={repo}",
+                         "-F", f"number={number}")
+        return said["data"]["repository"]["pullRequest"]["isInMergeQueue"]
 
     def point(self, repo: str, branch: str, sha: str) -> None:
         if self._found(f"repos/{self.org}/{repo}/git/ref/heads/{branch}") is None:
