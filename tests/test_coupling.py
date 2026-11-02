@@ -6,16 +6,11 @@ from textwrap import dedent
 
 import pytest
 
-from app_support.coupling import (
-    Measured,
-    assert_no_app_imports_another,
-    assert_within_ceilings,
-    measure,
-)
+from app_support.coupling import assert_no_app_imports_another, measured_sections
 from app_support.coupling.classes import measure_classes
 from app_support.coupling.doubles import Doubles, count_doubles
 from app_support.coupling.imports import ModuleTree, another_apps_imports
-from app_support.gates import Checkout
+from app_support.gates import Checkout, baseline
 
 
 def _surface(source: str, name: str = "Pane"):
@@ -306,7 +301,7 @@ class TestPatchingALibrarysInsides:
         assert _doubles("from unittest.mock import patch\npatch('player_core.engine.X')\n").library_patches == 1
 
 
-A_BIG_CLASS = "class Big:\n" + "".join(f"    def m{n}(self):\n        return self.a.b\n" for n in range(31))
+A_BIG_CLASS = "class Big:\n" + "".join(f"    def m{n}(self):\n        self.a{n} = 1\n" for n in range(31))
 
 
 def _checkout(root: Path, files: dict[str, str]) -> Checkout:
@@ -319,8 +314,8 @@ def _checkout(root: Path, files: dict[str, str]) -> Checkout:
 
 
 class TestMeasuringACheckout:
-    def test_its_code_gives_the_code_counts_and_its_tests_the_doubles(self, tmp_path):
-        measured = measure(_checkout(tmp_path, {
+    def test_its_code_gives_the_code_counts_and_its_tests_the_doubles_each_per_file(self, tmp_path):
+        measured = measured_sections(_checkout(tmp_path, {
             "someapp/__init__.py": "",
             "someapp/held.py": "TABLE = []\n",
             "someapp/user.py": ("from someapp.held import TABLE\n\n\nclass Pane:\n"
@@ -330,94 +325,87 @@ class TestMeasuringACheckout:
                                    "def test(monkeypatch):\n    monkeypatch.setattr('a.b', 1)\n"),
         }))
 
-        assert measured.totals == {"reach-chains": 1, "mutables-imported": 1, "mocks": 1, "patches": 1,
-                                   "monkeypatches": 1, "simple-namespaces": 1, "library-patches": 1}
+        assert measured["reach_chains"] == {"someapp/user.py": 1}
+        assert measured["mutables_imported"] == {"someapp/held.py": 1}
+        for doubles in ("mocks", "patches", "monkeypatches", "simple_namespaces", "library_patches"):
+            assert measured[doubles] == {"tests/test_user.py": 1}
 
-    def test_a_class_or_a_file_over_a_limit_is_named_with_what_it_is_over(self, tmp_path):
-        measured = measure(_checkout(tmp_path, {
+    def test_what_is_within_the_familys_limits_is_not_in_the_size_counts(self, tmp_path):
+        measured = measured_sections(_checkout(tmp_path, {
+            "someapp/__init__.py": "",
+            "someapp/small.py": "class Small:\n    def go(self):\n        return self.a.b.c\n",
+        }))
+
+        for size in ("methods", "class_attributes", "chain_length", "statements", "fan_out"):
+            assert measured[size] == {}
+
+    def test_a_class_or_a_file_past_a_limit_enters_its_size_count(self, tmp_path):
+        measured = measured_sections(_checkout(tmp_path, {
             "someapp/__init__.py": "",
             "someapp/big.py": A_BIG_CLASS,
+            "someapp/deep.py": "class Deep:\n    def go(self):\n        return self.a.b.c.d\n",
             "someapp/long.py": "x = 1\n" * 301,
             "someapp/wide.py": "".join(f"import someapp.m{n}\n" for n in range(16)),
             **{f"someapp/m{n}.py": "" for n in range(16)},
         }))
 
-        assert measured.over_the_limits == {
-            "someapp/big.py::Big": {"methods": 31, "chains": 31},
-            "someapp/long.py": {"statements": 301},
-            "someapp/wide.py": {"fan-out": 16},
-        }
+        assert measured["methods"] == {"someapp/big.py::Big": 31}
+        assert measured["class_attributes"] == {"someapp/big.py::Big": 31}
+        assert measured["chain_length"] == {"someapp/deep.py::Deep": 4}
+        assert measured["statements"] == {"someapp/long.py": 301}
+        assert measured["fan_out"] == {"someapp/wide.py": 16}
 
-    def test_a_chain_too_long_is_named_by_its_length(self, tmp_path):
-        measured = measure(_checkout(tmp_path, {
-            "someapp/__init__.py": "",
-            "someapp/deep.py": "class Deep:\n    def go(self):\n        return self.a.b.c.d\n",
-        }))
 
-        assert measured.over_the_limits == {"someapp/deep.py::Deep": {"chain-length": 4}}
-
-    def test_an_app_reaching_for_another_is_found_in_its_code_and_its_tests(self, tmp_path):
-        measured = measure(_checkout(tmp_path, {
+class TestOneAppImportingAnotherFromACheckout:
+    def test_it_is_refused_in_its_code_and_its_tests(self, tmp_path):
+        checkout = _checkout(tmp_path, {
             "someapp/__init__.py": "import origenerator\n",
             "tests/test_it.py": "from fun_time import x\n",
-        }))
+        })
 
-        assert measured.another_apps_imports == {"someapp/__init__.py": 1, "tests/test_it.py": 1}
+        with pytest.raises(AssertionError, match=r"someapp/__init__\.py imports another app.*tests/test_it\.py"):
+            assert_no_app_imports_another(checkout)
+
+    def test_a_checkout_that_keeps_to_itself_passes(self, tmp_path):
+        assert_no_app_imports_another(_checkout(tmp_path, {"someapp/__init__.py": "import shared_ui\n"}))
 
 
-class TestHoldingACheckoutToItsCeilings:
-    def _measured(self, **totals) -> Measured:
-        return Measured(totals={name.replace("_", "-"): count for name, count in totals.items()})
+class TestTheBaselineHoldsWhatIsCounted:
+    A_TEST = "from unittest.mock import MagicMock\nMagicMock()\n"
 
-    def test_counts_at_their_ceilings_stand(self):
-        assert_within_ceilings(self._measured(mocks=3), {"mocks": 3})
+    def _adopted(self, root: Path) -> Checkout:
+        checkout = _checkout(root, {"someapp/__init__.py": "", "tests/test_one.py": self.A_TEST})
+        baseline.main_in(checkout, said=lambda _line: None)
+        return checkout
 
-    def test_a_count_that_rose_is_refused_naming_it(self):
-        with pytest.raises(AssertionError, match="mocks rose to 4, over its ceiling of 3"):
-            assert_within_ceilings(self._measured(mocks=4), {"mocks": 3})
+    @pytest.mark.parametrize("section", [
+        "reach_chains", "mutables_imported", "mocks", "patches", "monkeypatches", "simple_namespaces",
+        "library_patches", "methods", "class_attributes", "chain_length", "statements", "fan_out",
+    ])
+    def test_every_count_is_a_section_of_the_baseline(self, section):
+        assert baseline.count_named(section).section == section
 
-    def test_a_count_with_no_ceiling_has_a_ceiling_of_nothing(self):
-        with pytest.raises(AssertionError, match="patches rose to 1, over its ceiling of 0"):
-            assert_within_ceilings(self._measured(patches=1), {"mocks": 0})
+    def test_adopting_writes_what_it_measures(self, tmp_path):
+        assert self._adopted(tmp_path).sections["mocks"] == {"tests/test_one.py": 1}
 
-    def test_a_count_that_fell_has_its_ceiling_lowered_with_it(self):
-        with pytest.raises(AssertionError, match="mocks fell to 2: lower its ceiling from 3 to 2"):
-            assert_within_ceilings(self._measured(mocks=2), {"mocks": 3})
+    def test_a_double_added_to_a_file_is_refused_though_another_file_lost_one(self, tmp_path):
+        checkout = self._adopted(tmp_path)
+        (tmp_path / "tests/test_one.py").write_text("", encoding="utf-8")
+        (tmp_path / "tests/test_two.py").write_text(self.A_TEST, encoding="utf-8")
 
-    def test_a_class_newly_over_a_limit_is_refused(self):
-        measured = Measured(over_the_limits={"a.py::Big": {"methods": 31}})
+        with pytest.raises(AssertionError, match=r"tests/test_two\.py holds 1 mocks, over its entry of 0"):
+            baseline.assert_count_holds(checkout, baseline.count_named("mocks"))
 
-        with pytest.raises(AssertionError, match=r"a.py::Big has 31 methods, over the family's limit of 30"):
-            assert_within_ceilings(measured, {"mocks": 0})
+    def test_a_class_grown_past_the_limit_is_refused_with_no_entry_naming_it(self, tmp_path):
+        checkout = self._adopted(tmp_path)
+        (tmp_path / "someapp/big.py").write_text(A_BIG_CLASS, encoding="utf-8")
 
-    def test_one_already_over_may_not_grow(self):
-        measured = Measured(over_the_limits={"a.py::Big": {"methods": 270}})
+        with pytest.raises(AssertionError, match=r"someapp/big\.py::Big holds 31 methods, over its entry of 0"):
+            baseline.assert_count_holds(checkout, baseline.count_named("methods"))
 
-        with pytest.raises(AssertionError, match=r"a.py::Big rose to 270 methods, over its ceiling of 269"):
-            assert_within_ceilings(measured, {"held": {"a.py::Big": {"methods": 269}}})
+    def test_a_class_a_repo_lists_stays_held_below_the_limit(self, tmp_path):
+        checkout = _checkout(tmp_path, {"someapp/__init__.py": "", "someapp/one.py": "class One:\n    def a(self): pass\n"})
 
-    def test_one_held_where_it_stands_is_let_stand(self):
-        measured = Measured(over_the_limits={"a.py::Big": {"methods": 269}})
+        measured = baseline.count_named("methods").measure(checkout, {"someapp/one.py::One": 1})
 
-        assert_within_ceilings(measured, {"held": {"a.py::Big": {"methods": 269}}})
-
-    def test_one_that_shrank_has_its_ceiling_lowered(self):
-        measured = Measured(over_the_limits={"a.py::Big": {"methods": 200}})
-
-        with pytest.raises(AssertionError, match=r"a.py::Big fell to 200 methods: lower its ceiling from 269 to 200"):
-            assert_within_ceilings(measured, {"held": {"a.py::Big": {"methods": 269}}})
-
-    def test_one_no_longer_over_comes_off_the_list(self):
-        with pytest.raises(AssertionError, match=r"a.py::Big is within the family's limit for methods: take it off"):
-            assert_within_ceilings(Measured(), {"held": {"a.py::Big": {"methods": 269}}})
-
-    def test_another_app_imported_is_refused_whatever_the_numbers_say(self):
-        with pytest.raises(AssertionError, match=r"a.py imports another app"):
-            assert_no_app_imports_another(Measured(another_apps_imports={"a.py": 1}))
-
-    def test_every_problem_is_named_at_once(self):
-        with pytest.raises(AssertionError) as raised:
-            assert_within_ceilings(self._measured(mocks=4, patches=1), {"mocks": 3})
-
-        assert "mocks rose" in str(raised.value)
-        assert "patches rose" in str(raised.value)
+        assert measured == {"someapp/one.py::One": 1}
