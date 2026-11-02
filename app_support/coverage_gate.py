@@ -23,7 +23,6 @@ class NotUnitTested(NamedTuple):
 
 
 UNCOVERED = "uncovered_lines"
-_EXCLUDED_LINES = ("if TYPE_CHECKING:", 'if __name__ == "__main__":')
 
 _STOOD_DOWN = pytest.StashKey[str]()
 
@@ -49,7 +48,7 @@ _NOT_WHAT_A_REPO_SHIPS = (
 def render_config(not_unit_tested=(), floor=0.0) -> str:
     omitted = "".join(f"    # {shell.because}\n    {shell.path}\n"
                       for shell in (*_NOT_WHAT_A_REPO_SHIPS, *not_unit_tested))
-    excluded = "".join(f"    {line}\n" for line in _EXCLUDED_LINES)
+    excluded = "".join(f"    {line}\n" for line in ("if TYPE_CHECKING:", 'if __name__ == "__main__":'))
     return (
         "[run]\n"
         "source =\n"
@@ -96,12 +95,12 @@ def pytest_collection_modifyitems(config, items) -> None:
         measuring.no_cov_on_fail = True
 
 
-def uncovered_in_report(covering, root: Path) -> dict[str, int]:
+def unreached_lines_in_report(covering, root: Path) -> dict[str, list[int]]:
     with tempfile.TemporaryDirectory() as folder, contextlib.chdir(root):
         report = Path(folder) / "coverage.json"
         covering.json_report(outfile=str(report))
         files = json.loads(report.read_text(encoding="utf-8"))["files"]
-    measured = {Path(name).as_posix(): file["summary"]["missing_lines"] for name, file in files.items()}
+    measured = {Path(name).as_posix(): file["missing_lines"] for name, file in files.items()}
     return {key: lines for key, lines in measured.items() if lines}
 
 
@@ -109,8 +108,11 @@ def uncovered_rises(root: Path, covering) -> list[str]:
     entries = (Checkout(root).sections or {}).get(UNCOVERED)
     if entries is None:
         return []
-    return [f"{key} leaves {held} {UNCOVERED}, over its entry of {entry}: test them, or take them out"
-            for key, (held, entry) in over(entries, uncovered_in_report(covering, root)).items()]
+    unreached = unreached_lines_in_report(covering, root)
+    return [f"{key} leaves {held} {UNCOVERED}, over its entry of {entry}, at lines {', '.join(map(str, unreached[key]))}: "
+            "if this change did not touch the file, one of them is reached only some of the time, so find what decides that; "
+            "if it did, ask what keeps a test from them and change how that code is built, or take them out"
+            for key, (held, entry) in over(entries, {key: len(lines) for key, lines in unreached.items()}).items()]
 
 
 def risen_floor(total: float, floor: float) -> float | None:

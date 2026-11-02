@@ -264,7 +264,8 @@ A rename git cannot follow, of a class or of a file changed too far, is stated i
 raise one, since a name still holding its count stands against an entry of zero.
 
 Uncovered lines are read at the end of a whole run, from the same measurement as the
-floor. A file under its entry passes, since a line can be reached by chance; the
+floor, and a rise names the lines, the one record a CI run keeps of them. A file
+under its entry passes, since a line can be reached by chance; the
 command takes the fall when someone runs it. A suite run in parts is held by its
 verdict job, with `python -m app_support.gates.baseline --hold-uncovered`.
 
