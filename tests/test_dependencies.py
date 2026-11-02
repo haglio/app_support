@@ -154,7 +154,7 @@ class TestUnimportedDependencies:
 
         assert unimported_dependencies(root, [root / "someapp"], root / "pyproject.toml") == []
 
-    def test_an_extra_is_not_read(self, tmp_path: Path):
+    def test_a_dev_extras_test_runner_is_not_reported_as_unimported(self, tmp_path: Path):
         root = _repo(tmp_path, source="import examplelib\nimport other_thing\n")
         (root / "pyproject.toml").write_text(
             '[project]\nname = "someapp"\ndependencies = ["examplelib"]\n'
