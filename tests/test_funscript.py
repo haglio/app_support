@@ -103,7 +103,7 @@ def test_a_script_read_while_it_is_being_replaced_reads_whole(tmp_path: Path, be
         assert read(path) == built
 
 
-def test_a_script_is_written_the_way_the_players_that_read_one_write_it(tmp_path: Path):
+def test_a_script_is_written_minified_on_one_line_as_other_players_write_it(tmp_path: Path):
     path = tmp_path / "clip.funscript"
 
     write(path, document([{"at": 0, "pos": 10}], duration_seconds=1))
