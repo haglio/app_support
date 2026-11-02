@@ -307,7 +307,7 @@ def _retirement(lnk: Path, place: str, owner: str) -> Change:
 
 
 def _write(path: Path, shortcut: win32.Shortcut) -> None:
-    win32.write_shortcut(str(path), **dataclasses.asdict(shortcut))
+    win32.write_shortcut(str(path), shortcut)
 
 
 def _task_changes(checkouts: dict[str, tuple[Path, Declarations]], run) -> list[Change]:

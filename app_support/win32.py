@@ -368,31 +368,27 @@ class Shortcut:
     app_id: str | None = None
 
 
-def write_shortcut(lnk_path: str, *, target: str, arguments: str = "",
-                   working_directory: str = "", icon: str = "", icon_index: int = 0,
-                   description: str = "", app_id: str | None = None, ole32=_ole32) -> None:
+def write_shortcut(lnk_path: str, shortcut: Shortcut | None = None, *, ole32=_ole32, **described) -> None:
     """Make the shortcut at *lnk_path* exactly the one described, the identity
     in the same save.  One already there is changed in place, as the shell's
     Properties dialog changes one, so what this call does not name survives."""
+    shortcut = shortcut or Shortcut(**described)
     with _apartment(ole32) as com:
         shell_link = _shell_link_to_rewrite(com, lnk_path)
         try:
-            for index, method, value in (
-                (_VTBL_ISL_SET_PATH, "SetPath", target),
-                (_VTBL_ISL_SET_ARGUMENTS, "SetArguments", arguments),
-                (_VTBL_ISL_SET_WORKING_DIRECTORY, "SetWorkingDirectory", working_directory),
-                (_VTBL_ISL_SET_DESCRIPTION, "SetDescription", description),
+            text = (wintypes.LPCWSTR,)
+            for index, method, kinds, values in (
+                (_VTBL_ISL_SET_PATH, "SetPath", text, (shortcut.target,)),
+                (_VTBL_ISL_SET_ARGUMENTS, "SetArguments", text, (shortcut.arguments,)),
+                (_VTBL_ISL_SET_WORKING_DIRECTORY, "SetWorkingDirectory", text, (shortcut.working_directory,)),
+                (_VTBL_ISL_SET_DESCRIPTION, "SetDescription", text, (shortcut.description,)),
+                (_VTBL_ISL_SET_ICON_LOCATION, "SetIconLocation", (wintypes.LPCWSTR, ctypes.c_int),
+                 (shortcut.icon, shortcut.icon_index)),
             ):
-                hr = _vtbl_call(shell_link, index, ctypes.HRESULT, wintypes.LPCWSTR)(
-                    shell_link, value)
+                hr = _vtbl_call(shell_link, index, ctypes.HRESULT, *kinds)(shell_link, *values)
                 if hr < 0:
                     raise _hresult(f"IShellLinkW::{method}", hr)
-            hr = _vtbl_call(shell_link, _VTBL_ISL_SET_ICON_LOCATION,
-                            ctypes.HRESULT, wintypes.LPCWSTR, ctypes.c_int)(
-                shell_link, icon, icon_index)
-            if hr < 0:
-                raise _hresult("IShellLinkW::SetIconLocation", hr)
-            _store_app_id(shell_link, app_id)
+            _store_app_id(shell_link, shortcut.app_id)
             _save(shell_link, lnk_path)
         finally:
             _release(shell_link)

@@ -24,6 +24,7 @@ from app_support.win32 import (
     _VT_LPWSTR,
     _VTBL_IPS_GET_VALUE,
     JobObject,
+    Shortcut,
     TaskbarApp,
     _IID_IPropertyStore,
     _PKEY_AppUserModel_ID,
@@ -353,8 +354,7 @@ class TestWriteShortcut:
         ole32 = _FakeOle32(init=RPC_E_CHANGED_MODE)
 
         with pytest.raises(OSError, match="CoInitializeEx failed"):
-            write_shortcut("C:/example/Example.lnk", target="C:/example/pythonw.exe",
-                           ole32=lambda: ole32)
+            write_shortcut("C:/example/Example.lnk", Shortcut(target="C:/example/pythonw.exe"), ole32=lambda: ole32)
 
         assert ole32.CoUninitialize.calls == []
         assert ole32.CoCreateInstance.calls == []
@@ -363,8 +363,7 @@ class TestWriteShortcut:
         ole32 = _FakeOle32(init=0, create=E_INVALIDARG)
 
         with pytest.raises(OSError, match=r"CoCreateInstance\(ShellLink\) failed"):
-            write_shortcut("C:/example/Example.lnk", target="C:/example/pythonw.exe",
-                           ole32=lambda: ole32)
+            write_shortcut("C:/example/Example.lnk", Shortcut(target="C:/example/pythonw.exe"), ole32=lambda: ole32)
 
         assert len(ole32.CoUninitialize.calls) == 1
 
@@ -375,8 +374,7 @@ class TestAShortcutWrittenOnWindows:
         lnk = tmp_path / "Example.lnk"
         target = pathlib.Path(os.environ.get("COMSPEC", r"C:\Windows\System32\cmd.exe"))
 
-        write_shortcut(str(lnk), target=str(target), arguments='-m example --flag "a b"',
-                       working_directory=str(tmp_path), icon=str(target))
+        write_shortcut(str(lnk), Shortcut(target=str(target), arguments='-m example --flag "a b"', working_directory=str(tmp_path), icon=str(target)))
 
         read = _what_the_shell_reads_off(tmp_path, lnk)
         # The shell hands a path back in the case the file system spells it.
@@ -389,23 +387,21 @@ class TestAShortcutWrittenOnWindows:
     def test_the_identity_it_was_given_reads_back(self, tmp_path: pathlib.Path):
         lnk = tmp_path / "Example.lnk"
 
-        write_shortcut(str(lnk), target=os.environ.get("COMSPEC", "cmd.exe"),
-                       app_id="Example.App")
+        write_shortcut(str(lnk), Shortcut(target=os.environ.get("COMSPEC", "cmd.exe"), app_id="Example.App"))
 
         assert read_shortcut(str(lnk)).app_id == "Example.App"
 
     def test_one_written_without_an_identity_carries_none(self, tmp_path: pathlib.Path):
         lnk = tmp_path / "Example.lnk"
 
-        write_shortcut(str(lnk), target=os.environ.get("COMSPEC", "cmd.exe"))
+        write_shortcut(str(lnk), Shortcut(target=os.environ.get("COMSPEC", "cmd.exe")))
 
         assert read_shortcut(str(lnk)).app_id is None
 
     def test_writing_over_a_shortcut_replaces_it(self, tmp_path: pathlib.Path):
         lnk = _a_shortcut(tmp_path)
 
-        write_shortcut(str(lnk), target=os.environ.get("COMSPEC", "cmd.exe"),
-                       arguments="/c exit", app_id="Example.App")
+        write_shortcut(str(lnk), Shortcut(target=os.environ.get("COMSPEC", "cmd.exe"), arguments="/c exit", app_id="Example.App"))
 
         assert _what_the_shell_reads_off(tmp_path, lnk)["arguments"] == "/c exit"
         assert read_shortcut(str(lnk)).app_id == "Example.App"
@@ -421,15 +417,15 @@ class TestAShortcutWrittenOnWindows:
             "link.Save\n",
             LNK_PATH=str(lnk), LNK_TARGET=os.environ.get("COMSPEC", "cmd.exe"))
 
-        write_shortcut(str(lnk), target=os.environ.get("COMSPEC", "cmd.exe"), arguments="/c exit")
+        write_shortcut(str(lnk), Shortcut(target=os.environ.get("COMSPEC", "cmd.exe"), arguments="/c exit"))
 
         assert _what_the_shell_reads_off(tmp_path, lnk)["window"] == "7"
 
     def test_an_identity_left_out_of_a_rewrite_is_taken_off(self, tmp_path: pathlib.Path):
         lnk = tmp_path / "Example.lnk"
-        write_shortcut(str(lnk), target=os.environ.get("COMSPEC", "cmd.exe"), app_id="Example.App")
+        write_shortcut(str(lnk), Shortcut(target=os.environ.get("COMSPEC", "cmd.exe"), app_id="Example.App"))
 
-        write_shortcut(str(lnk), target=os.environ.get("COMSPEC", "cmd.exe"))
+        write_shortcut(str(lnk), Shortcut(target=os.environ.get("COMSPEC", "cmd.exe")))
 
         assert read_shortcut(str(lnk)).app_id is None
 
@@ -439,7 +435,7 @@ class TestAShortcutWrittenOnWindows:
         lnk = tmp_path / "Example.lnk"
         lnk.write_bytes(b"not a shortcut")
 
-        write_shortcut(str(lnk), target=os.environ.get("COMSPEC", "cmd.exe"), arguments="/c exit")
+        write_shortcut(str(lnk), Shortcut(target=os.environ.get("COMSPEC", "cmd.exe"), arguments="/c exit"))
 
         assert read_shortcut(str(lnk)).arguments == "/c exit"
 
@@ -447,9 +443,7 @@ class TestAShortcutWrittenOnWindows:
         lnk = tmp_path / "Example.lnk"
         target = os.environ.get("COMSPEC", r"C:\Windows\System32\cmd.exe")
 
-        write_shortcut(str(lnk), target=target, arguments='"C:\\an example\\launch.vbs" --flag',
-                       working_directory=str(tmp_path), icon=target, icon_index=2,
-                       description="Example, written by a test", app_id="Example.App")
+        write_shortcut(str(lnk), Shortcut(target=target, arguments='"C:\\an example\\launch.vbs" --flag', working_directory=str(tmp_path), icon=target, icon_index=2, description="Example, written by a test", app_id="Example.App"))
 
         read = read_shortcut(str(lnk))
         assert pathlib.PureWindowsPath(read.target) == pathlib.PureWindowsPath(target)

@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from app_support import scheduled_tasks, windows_settings
-from app_support.win32 import read_shortcut, write_shortcut
+from app_support.win32 import Shortcut, read_shortcut, write_shortcut
 from app_support.windows_settings import (
     ShortcutSpec,
     TaskSpec,
@@ -240,8 +240,8 @@ class TestMakingTheMachineMatch:
         pin = places["taskbar"] / "Example.lnk"
         (spec,) = declared(checkout).shortcuts
         wanted = windows_settings.shortcut_for(checkout, spec)
-        write_shortcut(str(pin), **{**dataclasses.asdict(wanted),
-                                    "arguments": '"C:\\old\\launch_example.vbs"'})
+        write_shortcut(str(pin), Shortcut(**{**dataclasses.asdict(wanted),
+                                    "arguments": '"C:\\old\\launch_example.vbs"'}))
 
         (change,) = _made(windows_settings.changes(tmp_path / "workspace", run=_TaskScheduler()))
 
@@ -253,8 +253,7 @@ class TestMakingTheMachineMatch:
         checkout = _checkout(tmp_path / "workspace", SHORTCUT.replace(', "checkout"', ""))
         (spec,) = declared(checkout).shortcuts
         wanted = windows_settings.shortcut_for(checkout, spec)
-        write_shortcut(str(places["taskbar"] / "Example.lnk"),
-                       **{**dataclasses.asdict(wanted), "arguments": wanted.arguments.upper()})
+        write_shortcut(str(places["taskbar"] / "Example.lnk"), Shortcut(**{**dataclasses.asdict(wanted), "arguments": wanted.arguments.upper()}))
 
         assert windows_settings.changes(tmp_path / "workspace", run=_TaskScheduler()) == []
 
@@ -263,7 +262,7 @@ class TestMakingTheMachineMatch:
         workspace = tmp_path / "workspace"
         _checkout(workspace, "")
         retired = places[place] / "Retired.lnk"
-        write_shortcut(str(retired), target=str(WSCRIPT), description=KEPT_BY_EXAMPLE)
+        write_shortcut(str(retired), Shortcut(target=str(WSCRIPT), description=KEPT_BY_EXAMPLE))
 
         (change,) = _made(windows_settings.changes(workspace, run=_TaskScheduler()))
 
@@ -275,7 +274,7 @@ class TestMakingTheMachineMatch:
     ):
         checkout = _checkout(tmp_path / "workspace", "")
         retired = checkout / "Retired.lnk"
-        write_shortcut(str(retired), target=str(WSCRIPT), description=KEPT_BY_EXAMPLE)
+        write_shortcut(str(retired), Shortcut(target=str(WSCRIPT), description=KEPT_BY_EXAMPLE))
 
         _made(windows_settings.changes(tmp_path / "workspace", run=_TaskScheduler()))
 
@@ -284,8 +283,7 @@ class TestMakingTheMachineMatch:
     def test_a_shortcut_someone_else_made_is_left_alone(self, tmp_path: Path, places):
         workspace = tmp_path / "workspace"
         _checkout(workspace, "")
-        write_shortcut(str(places["startup"] / "Theirs.lnk"), target=str(WSCRIPT),
-                       description="Starts something of someone else's")
+        write_shortcut(str(places["startup"] / "Theirs.lnk"), Shortcut(target=str(WSCRIPT), description="Starts something of someone else's"))
 
         assert windows_settings.changes(workspace, run=_TaskScheduler()) == []
 
@@ -294,8 +292,7 @@ class TestMakingTheMachineMatch:
     ):
         checkout = _checkout(tmp_path / "workspace", "")
         dead = checkout / "Retired Mode.lnk"
-        write_shortcut(str(dead), target=str(WSCRIPT), arguments=f'"{checkout / "launch_old.vbs"}"',
-                       working_directory=str(checkout))
+        write_shortcut(str(dead), Shortcut(target=str(WSCRIPT), arguments=f'"{checkout / "launch_old.vbs"}"', working_directory=str(checkout)))
 
         (change,) = windows_settings.changes(tmp_path / "workspace", run=_TaskScheduler())
 
@@ -308,8 +305,7 @@ class TestMakingTheMachineMatch:
     ):
         _checkout(tmp_path / "workspace", "")
         gone = tmp_path / "workspace" / "retired_app"
-        write_shortcut(str(places["taskbar"] / "Old App.lnk"), target=str(WSCRIPT),
-                       arguments=f'"{gone / "launch.vbs"}"', working_directory=str(gone))
+        write_shortcut(str(places["taskbar"] / "Old App.lnk"), Shortcut(target=str(WSCRIPT), arguments=f'"{gone / "launch.vbs"}"', working_directory=str(gone)))
 
         (change,) = windows_settings.changes(tmp_path / "workspace", run=_TaskScheduler())
 
@@ -321,8 +317,7 @@ class TestMakingTheMachineMatch:
     ):
         _checkout(tmp_path / "workspace", "")
         updated_away = tmp_path / "Other Program" / "app-1.0"
-        write_shortcut(str(places["taskbar"] / "Other Program.lnk"), target=str(WSCRIPT),
-                       working_directory=str(updated_away))
+        write_shortcut(str(places["taskbar"] / "Other Program.lnk"), Shortcut(target=str(WSCRIPT), working_directory=str(updated_away)))
 
         assert windows_settings.changes(tmp_path / "workspace", run=_TaskScheduler()) == []
 
@@ -330,17 +325,14 @@ class TestMakingTheMachineMatch:
         self, tmp_path: Path, places,
     ):
         checkout = _checkout(tmp_path / "workspace", "")
-        write_shortcut(str(checkout / "Console.lnk"), target=str(WSCRIPT),
-                       working_directory="%SystemRoot%\\System32")
+        write_shortcut(str(checkout / "Console.lnk"), Shortcut(target=str(WSCRIPT), working_directory="%SystemRoot%\\System32"))
 
         assert windows_settings.changes(tmp_path / "workspace", run=_TaskScheduler()) == []
 
     def test_a_shortcut_that_starts_what_is_there_is_not_named(self, tmp_path: Path, places):
         checkout = _checkout(tmp_path / "workspace", "")
         (checkout / "launch_example.vbs").write_text("", encoding="ascii")
-        write_shortcut(str(places["start-menu"] / "Theirs.lnk"), target=str(WSCRIPT),
-                       arguments=f'"{checkout / "launch_example.vbs"}" --flag "a b"',
-                       working_directory=str(checkout))
+        write_shortcut(str(places["start-menu"] / "Theirs.lnk"), Shortcut(target=str(WSCRIPT), arguments=f'"{checkout / "launch_example.vbs"}" --flag "a b"', working_directory=str(checkout)))
 
         assert windows_settings.changes(tmp_path / "workspace", run=_TaskScheduler()) == []
 
@@ -349,16 +341,14 @@ class TestMakingTheMachineMatch:
     ):
         workspace = tmp_path / "workspace"
         _checkout(workspace, "")
-        write_shortcut(str(places["startup"] / "Elsewhere.lnk"), target=str(WSCRIPT),
-                       description=KEPT_BY_EXAMPLE.replace("example", "moved"))
+        write_shortcut(str(places["startup"] / "Elsewhere.lnk"), Shortcut(target=str(WSCRIPT), description=KEPT_BY_EXAMPLE.replace("example", "moved")))
 
         assert windows_settings.changes(workspace, run=_TaskScheduler()) == []
 
     def test_a_pin_its_list_no_longer_has_is_for_a_person_to_unpin(self, tmp_path: Path, places):
         workspace = tmp_path / "workspace"
         _checkout(workspace, "")
-        write_shortcut(str(places["taskbar"] / "Retired.lnk"), target=str(WSCRIPT),
-                       description=KEPT_BY_EXAMPLE)
+        write_shortcut(str(places["taskbar"] / "Retired.lnk"), Shortcut(target=str(WSCRIPT), description=KEPT_BY_EXAMPLE))
 
         (change,) = windows_settings.changes(workspace, run=_TaskScheduler())
 
@@ -478,8 +468,7 @@ class TestTheCommandLine:
     def test_what_only_a_person_can_do_is_named_for_one(self, tmp_path: Path, places, capsys):
         workspace = tmp_path / "workspace"
         _checkout(workspace, "")
-        write_shortcut(str(places["taskbar"] / "Retired.lnk"), target=str(WSCRIPT),
-                       description=KEPT_BY_EXAMPLE)
+        write_shortcut(str(places["taskbar"] / "Retired.lnk"), Shortcut(target=str(WSCRIPT), description=KEPT_BY_EXAMPLE))
 
         assert windows_settings.main(["--workspace", str(workspace), "--write"],
                                      run=_TaskScheduler()) == 1
