@@ -97,8 +97,8 @@ def assert_what_a_shortcut_or_a_task_starts_runs_on_its_own_venv(checkout: Path)
     assert not wrong, f"a shortcut or a scheduled task starts these, so each runs on its own checkout's venv: {wrong}"
 
 
-def assert_a_branch_can_be_tried(checkout: Path) -> None:
+def assert_a_branch_can_be_tried(checkout: Path, *, is_a_library: bool = False) -> None:
     __tracebackhide__ = True
     found = launchers(checkout)
-    assert not found or any(launcher.preview for launcher in found), (
+    assert is_a_library or not found or any(launcher.preview for launcher in found), (
         "this repo's launchers include no preview, so a branch of it can be looked at only as a diff")
