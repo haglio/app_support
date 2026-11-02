@@ -1,24 +1,3 @@
-"""What is written and never read: the blind spots vulture has, scanned by the AST.
-
-vulture counts an assignment as a use, so it never reports a module constant nothing
-measures against, a constructor parameter stored on ``self`` and never read, a
-dataclass field every build writes and nobody reads, or an ``argparse`` option the
-parser declares and the app never consults. It is pointed at packages, so a helper
-left over in a test file accumulates unseen. Two repos wrote these scans for
-themselves; they are published here so every repo asks the same questions::
-
-    from app_support import unread
-
-    PACKAGES = (ROOT / "the_package",)
-
-    def test_no_module_level_constant_goes_unread():
-        unread.assert_no_module_constant_goes_unread(ROOT, PACKAGES)
-
-Every scan is a floor, not a proof: reads are matched by name across the whole
-tree, plus every string literal (a ``getattr(obj, "name")`` counts), so a name that
-collides with a live one elsewhere is not reported. That is the direction a gate
-should err in.
-"""
 from __future__ import annotations
 
 import ast
@@ -30,7 +9,6 @@ _GETATTRS_NAME = 1
 
 
 def python_files(root) -> list[Path]:
-    """Every ``.py`` under *root* that is the repo's own."""
     found: list[Path] = []
     for folder, subfolders, files in os.walk(root):
         subfolders[:] = [name for name in subfolders if name not in _NOT_THE_REPOS]
@@ -50,8 +28,6 @@ def _where(root, path: Path, lineno: int) -> str:
 
 
 def _names_read_anywhere(root) -> set[str]:
-    """Every plain name and attribute read in the tree, its strings, and the
-    first segment of everything it imports."""
     names: set[str] = set()
     for path in python_files(root):
         tree = _parse(path)
@@ -74,8 +50,6 @@ def _package_modules(packages) -> list[Path]:
 
 
 def not_allowed(found: dict[str, str], allowing) -> list[str]:
-    """The reports in *found*, each keyed to the name a repo would allow it by,
-    less the names it allows, and every allowed name nothing is reported for."""
     return ([report for report, name in found.items() if name not in allowing]
             + [f"allowed, and no longer reported -- take it off the list: {name}"
                for name in allowing if name not in found.values()])
@@ -89,13 +63,10 @@ _NAMES_PYTEST_READS_OFF_A_MODULE = frozenset({"pytestmark", "pytest_plugins"})
 
 
 def _read_by_the_language_or_its_tools(name: str) -> bool:
-    """``__all__``, ``__version__``, a test module's ``pytestmark``: read by
-    Python or pytest, never by name."""
     return (name.startswith("__") and name.endswith("__")) or name in _NAMES_PYTEST_READS_OFF_A_MODULE
 
 
 def module_constants(root, packages) -> list[str]:
-    """Module-level names assigned in *packages* and read nowhere in the tree."""
     read_anywhere = _names_read_anywhere(root)
     found: list[str] = []
     for path in _package_modules(packages):
@@ -118,13 +89,11 @@ def module_constants(root, packages) -> list[str]:
 
 
 def assert_no_module_constant_goes_unread(root, packages, *, allowing=()) -> None:
-    """A constant nobody measures against is a number with no meaning left."""
     found = _not_allowed(module_constants(root, packages), allowing)
     assert not found, "Assigned and never read:\n" + "\n".join(found)
 
 
 def _attribute_names_read_anywhere(root) -> set[str]:
-    """Every ``x.<name>`` read in the tree, plus every string literal."""
     names: set[str] = set()
     for path in python_files(root):
         tree = _parse(path)
@@ -154,12 +123,6 @@ def _attributes_read_by_the_other_methods(cls: ast.ClassDef) -> set[str]:
 
 
 def stored_parameters(root, packages) -> list[str]:
-    """``self.x = x`` in an ``__init__`` where nothing ever reads ``.x``.
-
-    Unread by every other method of its own class, and unread under that name
-    anywhere in the tree -- both, so an attribute a collaborator reads from
-    outside does not count as dead.
-    """
     read_anywhere = _attribute_names_read_anywhere(root)
     found: list[str] = []
     for path in _package_modules(packages):
@@ -188,13 +151,11 @@ def stored_parameters(root, packages) -> list[str]:
 
 
 def assert_no_constructor_parameter_is_stored_and_never_read(root, packages, *, allowing=()) -> None:
-    """A signature that asks for something it does not use is a lie."""
     found = _not_allowed(stored_parameters(root, packages), allowing)
     assert not found, "Stored and never read:\n" + "\n".join(found)
 
 
 def _is_collected_by_pytest(node: ast.FunctionDef) -> bool:
-    """A test, a fixture or a hook is called by pytest, not by a name in the file."""
     if node.name.startswith(("test", "pytest_")):
         return True
     return any("fixture" in ast.unparse(d) or "hookimpl" in ast.unparse(d)
@@ -213,12 +174,6 @@ def _names_imported_from_anywhere(root) -> set[str]:
 
 
 def test_helpers(root, tests_dir) -> list[str]:
-    """Functions in *tests_dir* that their own file never calls and no file imports.
-
-    The gates that scan the packages do not scan the suite -- pointing vulture
-    at tests reports every fake collaborator's methods -- so this is where a
-    leftover helper accumulates unseen.
-    """
     imported = _names_imported_from_anywhere(root)
     found: list[str] = []
     for path in sorted(Path(tests_dir).rglob("*.py")):
@@ -245,8 +200,6 @@ def assert_no_test_helper_is_written_and_never_called(root, tests_dir, *, allowi
 
 
 def _attributes_read_or_named_in(packages) -> set[str]:
-    """Every ``x.<name>`` in *packages*, plus the literal name of any
-    ``getattr(x, "name", ...)``."""
     read: set[str] = set()
     for path in _package_modules(packages):
         tree = _parse(path)
@@ -263,8 +216,6 @@ def _attributes_read_or_named_in(packages) -> set[str]:
 
 
 def _argparse_dests(tree: ast.Module):
-    """Every option an ``add_argument`` call in *tree* declares, as the attribute
-    the parsed namespace will carry it under."""
     for node in ast.walk(tree):
         if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
                 and node.func.attr == "add_argument"):
@@ -282,8 +233,6 @@ def _argparse_dests(tree: ast.Module):
 
 
 def argparse_options(root, packages) -> list[str]:
-    """Options a parser in *packages* declares that no attribute read in
-    *packages* consults -- a launcher surface that does nothing."""
     declared: dict[str, str] = {}
     for path in _package_modules(packages):
         tree = _parse(path)
@@ -306,8 +255,6 @@ def _is_a_dataclass(cls: ast.ClassDef) -> bool:
 
 
 def dataclass_fields(root, packages) -> list[str]:
-    """Fields a dataclass in *packages* declares that nothing in *packages*
-    reads -- state written on every build for nobody."""
     read = _attributes_read_or_named_in(packages)
     found: list[str] = []
     for path in _package_modules(packages):
