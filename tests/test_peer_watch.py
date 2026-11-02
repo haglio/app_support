@@ -11,6 +11,7 @@ import pytest
 from app_support.peer_watch import (
     DEFAULT_INTERVAL_SECONDS,
     PeerWatch,
+    Surroundings,
     clear_stand_down,
     is_stood_down,
     stand_down,
@@ -41,9 +42,7 @@ def _watch(*, up, launches, environ, clock=None, interval=None):
         peer_key="Widget",
         is_up=up,
         launch=lambda: launches.append("launched"),
-        now=clock or _Clock(),
-        environ=environ,
-        **kwargs,
+        surroundings=Surroundings(now=clock or _Clock(), environ=environ, **kwargs),
     )
 
 
@@ -212,7 +211,7 @@ def test_a_launcher_that_raises_does_not_reach_the_caller(environ, caplog):
 
     watch = PeerWatch(
         peer_key="Widget", is_up=lambda: False, launch=explode,
-        now=_Clock(), environ=environ,
+        surroundings=Surroundings(now=_Clock(), environ=environ),
     )
 
     with caplog.at_level(logging.ERROR):
@@ -231,7 +230,7 @@ def test_a_launcher_that_always_fails_is_retried_on_the_interval_not_every_beat(
 
     watch = PeerWatch(
         peer_key="Widget", is_up=lambda: False, launch=explode,
-        interval_seconds=60.0, now=clock, environ=environ,
+        surroundings=Surroundings(interval_seconds=60.0, now=clock, environ=environ),
     )
 
     watch.tick()

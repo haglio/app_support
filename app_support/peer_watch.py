@@ -4,6 +4,7 @@ import logging
 import os
 import time
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
 
 DEFAULT_INTERVAL_SECONDS = 900.0
@@ -46,6 +47,16 @@ def is_stood_down(key: str, *, environ: Mapping[str, str] = os.environ) -> bool:
         return False
 
 
+@dataclass(frozen=True)
+class Surroundings:
+    interval_seconds: float = DEFAULT_INTERVAL_SECONDS
+    now: Callable[[], float] = time.monotonic
+    environ: Mapping[str, str] = field(default_factory=lambda: os.environ)
+
+
+_THIS_COMPUTER = Surroundings()
+
+
 class PeerWatch:
     def __init__(
         self,
@@ -53,18 +64,16 @@ class PeerWatch:
         peer_key: str,
         is_up: Callable[[], bool],
         launch: Callable[[], None],
-        interval_seconds: float = DEFAULT_INTERVAL_SECONDS,
-        now: Callable[[], float] = time.monotonic,
         logger: logging.Logger | None = None,
-        environ: Mapping[str, str] = os.environ,
+        surroundings: Surroundings = _THIS_COMPUTER,
     ):
         self._peer_key = peer_key
         self._is_up = is_up
         self._launch = launch
-        self._interval = interval_seconds
-        self._now = now
+        self._interval = surroundings.interval_seconds
+        self._now = surroundings.now
         self._log = logger or log
-        self._environ = environ
+        self._environ = surroundings.environ
         self._checked_at: float | None = None
 
     def _is_due(self) -> bool:
