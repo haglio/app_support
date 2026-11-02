@@ -329,3 +329,13 @@ def test_a_publish_keeps_its_temp_file_to_itself_and_never_dies_tidying_it(tmp_p
 
     assert landed is False
     assert not shared.exists(), "the temp file is named for the file, not for the writer"
+
+
+def test_a_queue_a_writer_holds_this_instant_is_left_intact_for_the_next_drain(tmp_path: Path):
+    path = tmp_path / "cmd.txt"
+    path.write_text("NEXT", encoding="utf-8")
+
+    with patch("app_support.file_channel.os.replace", side_effect=PermissionError(32, "in use")):
+        assert consume_command_file(path) == []
+
+    assert consume_command_file(path) == ["NEXT"]

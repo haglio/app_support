@@ -1,26 +1,3 @@
-"""The file channel one process steers another through, and the files it publishes back.
-
-Every Funestra in this family is a separate process that an orchestrator steers
-without a socket: it appends verbs to a *command file* the Funestra drains each
-tick, and owns pause through a *flag file* the Funestra simply obeys.  The broker
-is steered the same way, and it publishes what it knows -- a mode, a heartbeat,
-when the device last spoke -- through files of its own that the orchestrator
-polls.  Reading is best-effort by design: a missing file, a half-written one, or
-one being replaced mid-read must never raise into a run loop, because the next
-tick is milliseconds away and will see the settled value.  Writing is whole or
-not at all, for that reader's sake.
-
-Pause rides its own file rather than the command channel so that being paused is
-a *state* the Funestra converges on, not an event it can miss: a Funestra that
-starts late, restarts, or drops a verb still reads the flag and lands correctly.
-
-This was ``funestra.file_channel``, which re-exports it so the Funestras are
-untouched.  It moved because the broker, which is no Funestra, had grown its own
-consumer that read the file and then truncated it -- a gap one verb wide that a
-verb written into it fell through -- and because the files' names were spelled
-by hand in four repos (see :mod:`app_support.state_files`).  Standard library
-only.
-"""
 from __future__ import annotations
 
 import contextlib
@@ -56,25 +33,9 @@ def publish_whole(
     attempts: int = _ATTEMPTS_WHILE_HELD,
     delay_s: float = _DELAY_WHILE_HELD_S,
 ) -> bool:
-    """Write *text* to *path* so a concurrent poller reads all of it or none.
+    """Rename-over publish; retried because Windows refuses to replace a file another process holds open.
 
-    The reader polls several times a second while the writer republishes several
-    times a second, so an ordinary truncate-and-write leaves a window in which
-    the file is empty — and a poller cannot tell "I caught it mid-write" from
-    "there is nothing here", so it acts on the blank.  Writing a sibling temp
-    file and renaming it over closes that window.
-
-    The rename itself is retried: Windows refuses to replace a file another
-    process holds open, so a publish landing inside one of those reads fails
-    with a sharing violation.  Retrying turns that into a sub-millisecond wait;
-    a file locked for longer reports False, leaving the previous whole record in
-    place for the next tick to replace — never a half-published one.
-
-    *newline* is the line-ending rule, passed through to ``open``: None
-    translates a newline to the platform's, "" leaves the text exactly as
-    given.  A format that terminates its own lines — the comma-separated one
-    the standard library's ``csv`` writes — asks for the second, because
-    translating those a second time doubles every one of them.
+    *newline* goes to ``open``: a ``csv`` writer terminates its own lines, so it passes "".
     """
     mine = path.with_suffix(f".{os.getpid()}.tmp")
     try:
@@ -100,14 +61,6 @@ def write_whole(
     attempts: int = _ATTEMPTS_WHILE_HELD,
     delay_s: float = _DELAY_WHILE_HELD_S,
 ) -> None:
-    """:func:`publish_whole` for a caller that must not miss a failed write.
-
-    The same write, and the opposite contract on failure.  ``publish_whole``
-    answers a run loop, which has a frame to draw and nothing useful to do
-    about a file held open for a moment; a stage rewriting a document — its
-    own, or another app's — is the opposite case, and a False it forgot to
-    read is a rewrite everybody downstream believes happened.
-    """
     if not publish_whole(
         path, text, newline=newline, attempts=attempts, delay_s=delay_s
     ):
@@ -125,24 +78,6 @@ def append_command(
     attempts: int = _ATTEMPTS_WHILE_HELD,
     delay_s: float = _DELAY_WHILE_HELD_S,
 ) -> bool:
-    """Queue one verb on *path*, keeping whatever is already waiting there.
-
-    The channel is a queue and this is how a verb joins it.  Writing the file
-    whole instead silently drops any verb queued since the last drain, which is
-    how an edge-triggered command that fires once and is never re-asserted goes
-    missing for good.
-
-    The verb is put on a line of its own even when what is already queued does not
-    end in a newline.  A writer that replaces the file whole rarely bothers with a
-    trailing one, and appending straight onto that welds the two into a single word
-    matching neither, which loses both.
-
-    The reader drains this ~20x/s by rewriting it, so a write that overlaps a
-    drain hits a transient Windows sharing violation.  Retrying briefly turns
-    that into a millisecond's delay instead of a lost verb; a file locked for
-    longer drops the line (the next one lands) rather than raising into a run
-    loop that has a frame to draw.
-    """
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         retried_while_held(lambda: _append_line(path, line), attempts=attempts, delay_s=delay_s)
@@ -164,29 +99,13 @@ def _append_line(path: Path, line: str) -> None:
 
 
 def _read_text(path: Path) -> str:
-    """*path*'s text, trimmed and without a leading byte-order mark.
-
-    These files are written by whatever tool is nearest — a shell here, an AHK
-    script there, PowerShell somewhere else — and a Windows one that writes
-    UTF-8 leads with a BOM, which would otherwise be part of the first verb, or
-    glue itself to a flag's one character and hide it.
-    """
+    """The text trimmed, without the BOM that Windows tools writing UTF-8 lead with."""
     return read_whole(path).replace("﻿", "").strip()
 
 
 def consume_command_file(
     path: Path, *, logger: logging.Logger | None = None, uppercase: bool = True
 ) -> list[str]:
-    """Take every queued command line, emptying the file so none replays.
-
-    *uppercase* folds the whole payload, which suits a Funestra whose verbs carry
-    no arguments.  A Funestra whose commands take a case-sensitive argument (a
-    path) passes ``uppercase=False`` and folds just the keyword itself.
-
-    The queue is CLAIMED by renaming it aside and read from the claimed copy.
-    A rename is atomic against appenders: the writer lands either in the claimed
-    file (drained now) or in a fresh queue (drained next tick), never in between.
-    """
     claimed = path.with_suffix(path.suffix + ".consuming")
     try:
         if not path.exists():
@@ -194,8 +113,7 @@ def consume_command_file(
         try:
             os.replace(path, claimed)
         except OSError:
-            # A writer holds the file this instant (Windows sharing violation).
-            # The queue is intact; next tick is milliseconds away.
+            # Windows sharing violation: a writer holds the file.
             return []
         text = _read_text(claimed)
         claimed.unlink(missing_ok=True)
@@ -211,14 +129,6 @@ def consume_command_file(
 
 
 def read_flag(path: Path, *, default: bool, logger: logging.Logger | None = None) -> bool:
-    """A one-character flag file: ``"1"`` is True, ``"0"`` is False, and anything
-    else is *default* -- no file, a blank one, a torn one, one nobody here can read.
-
-    *default* is the caller's word for what the flag means when it says nothing:
-    a paused flag is off until somebody sets it, so a missing or half-written one
-    reads as running.  The test is always for the character that means the switch
-    was thrown, never for the absence of the other.
-    """
     try:
         if not path.exists():
             return default
@@ -241,17 +151,10 @@ def write_flag(
     attempts: int = _ATTEMPTS_WHILE_HELD,
     delay_s: float = _DELAY_WHILE_HELD_S,
 ) -> bool:
-    """Set *path* to ``"1"`` or ``"0"``, published whole.
-
-    Even a one-character file has a truncate-and-write window in which it is
-    blank -- and blank reads as the flag's default, which for an enabled-flag
-    being turned off is a flicker of *enabled* at the exact moment it was not.
-    """
     return publish_whole(path, "1" if value else "0", attempts=attempts, delay_s=delay_s)
 
 
 def read_paused_state(path: Path, *, logger: logging.Logger | None = None) -> bool:
-    """Whether the orchestrator has the Funestra paused; no file means running."""
     return read_flag(path, default=False, logger=logger)
 
 
@@ -262,22 +165,11 @@ def publish_stamp(
     attempts: int = _ATTEMPTS_WHILE_HELD,
     delay_s: float = _DELAY_WHILE_HELD_S,
 ) -> bool:
-    """Set *path* to the wall clock as text: a heartbeat, or when a device last spoke.
-
-    The wall clock -- ``time.time()`` -- and not the monotonic clock a loop times
-    itself with, because the process that reads the stamp is not the one that
-    wrote it, and the two share no other clock.
-    """
     stamp = time.time() if now is None else now
     return publish_whole(path, str(stamp), attempts=attempts, delay_s=delay_s)
 
 
 def stamp_age(path: Path, now: float | None = None) -> float | None:
-    """Seconds since *path* was stamped, or None when it never was or cannot be read.
-
-    None rather than infinity so a caller can tell "stale" from "never", and
-    None for a torn read too: a stamp read mid-publish is not an old one.
-    """
     try:
         if not path.exists():
             return None
