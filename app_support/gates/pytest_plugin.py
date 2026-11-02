@@ -20,7 +20,7 @@ pytest_plugins = ["app_support.repo_checks"]
 
 _HERE = Path(__file__).resolve().parent
 _EVERY_REPOSITORYS = ("test_clocks.py", "test_coupling.py", "test_dead_code.py", "test_dependencies.py", "test_lint.py",
-                      "test_launchers.py")
+                      "test_launchers.py", "test_quality_baseline.py")
 
 
 def pytest_configure(config) -> None:
@@ -31,5 +31,3 @@ def pytest_configure(config) -> None:
     checkout = Checkout(Path(config.inipath).parent) if config.inipath else None
     if checkout and checkout.is_a_library:
         ship(config, _HERE / "test_a_shared_package.py")
-    if checkout and checkout.baseline.is_file():
-        ship(config, _HERE / "test_quality_baseline.py")

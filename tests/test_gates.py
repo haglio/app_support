@@ -33,7 +33,7 @@ jobs:
         with:
           python-version: "3.14"
 """
-EVERY_REPOSITORYS_GATES = 21
+EVERY_REPOSITORYS_GATES = 37
 
 
 def _checkout(root: Path, *files: str, project: str = "example") -> Checkout:
@@ -97,6 +97,7 @@ def _repo(root: Path, *, options: str = GATED, numbers: str = "", name: str = "e
                            + f'[tool.pytest.ini_options]\naddopts = "{options}"\n'),
         "ruff.toml": lint.render_config(),
         ".github/workflows/merge-gate.yml": A_GATE,
+        "tools/quality_baseline.json": "{}",
         "example/__init__.py": "",
         "example/app.py": 'def main():\n    return 1\n\n\nif __name__ == "__main__":\n    main()\n',
         "tests/test_example.py": "from example.app import main\n\n\ndef test_main():\n    assert main() == 1\n",

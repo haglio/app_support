@@ -169,7 +169,8 @@ def _write_sections(root: Path, sections: dict[str, dict[str, int]]) -> None:
 
 
 def assert_count_holds(checkout: Checkout, count: Count) -> None:
-    entries = (checkout.sections or {}).get(count.section)
+    assert checkout.sections is not None, f"{checkout.root} has no {BASELINE_PATH}: run {_COMMAND}"
+    entries = checkout.sections.get(count.section)
     if entries is None:
         return
     live = count.measure(checkout, entries)
@@ -212,8 +213,8 @@ def _lists_a_class_nothing_held(section: str, entry_at_main: int, held: int) -> 
 
 
 def assert_nothing_stands_above_main(checkout: Checkout) -> None:
-    here, at_main = checkout.sections, _sections_at_main(checkout.root)
-    if here is None or at_main is None:
+    here, at_main = checkout.sections or {}, _sections_at_main(checkout.root)
+    if at_main is None:
         return
     renames = renamed_since_main(checkout.root)
     told = [f"{section} {key} stands at {held}, above the {entry} main holds"
