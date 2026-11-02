@@ -137,8 +137,8 @@ def _refuse_unknown(refuse, table: dict, known: frozenset[str], prefix: str) -> 
 
 
 def _refuse_unreadable_text(refuse, value, key: str = "") -> None:
-    """The script host reads a launcher in the ANSI code page rather than as UTF-8,
-    and a control character inside a VBScript string hides in whatever it names."""
+    """The script host reads a launcher in the ANSI code page, not UTF-8,
+    and a control character hides inside a VBScript string."""
     if isinstance(value, dict):
         for inner_key, inner in value.items():
             _refuse_unreadable_text(refuse, inner_key, key)

@@ -50,19 +50,12 @@ def _as_spelled(path: Path) -> Path:
 
 
 def _as_folded(path: Path) -> Path:
-    """The spelling with its case folded.
-
-    A root configured with a capital in it is the same place on the disks these
-    libraries live on -- though not to ``relative_to``, which compares the text.
-    A whole report came back empty over exactly that.
-    """
+    """Case folded: `relative_to` compares text, though a root with a capital is the same place on these disks."""
     return Path(str(_as_spelled(path)).lower())
 
 
 def _as_the_disk_has_it(path: Path) -> Path:
-    """The path with every junction and link followed: a trip to the disk, which
-    on a drive busy syncing can block for minutes, so it is what the two cheap
-    spellings fall through to rather than where they start."""
+    """Follows junctions and links; on a drive busy syncing that can block for minutes."""
     try:
         return Path(path).resolve()
     except OSError:

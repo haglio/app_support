@@ -59,11 +59,7 @@ def test_no_blocklisted_terms_in_the_tracked_tree(pytestconfig):
     terms = load_blocklist(blocklist) if blocklist.exists() else []
     if not terms:
         _say_the_tree_was_not_scanned(blocklist)
-    # NUL-separated, and never split on whitespace: a tracked name carrying a
-    # space became two paths that way, neither of which exists -- and a path
-    # that cannot be read is skipped in silence, so the file was invisible to
-    # the scan while the run stayed green.  `-z` also drops git's own quoting
-    # of such a name, which would have been the next way to miss it.
+    # -z: a tracked name with a space would otherwise split into two unreadable paths, skipped silently.
     listed = subprocess.run(
         ["git", "-C", str(repo), "ls-files", "-z"],
         capture_output=True, text=True, check=True,

@@ -16,8 +16,7 @@ from app_support.process_identity import (
     read_version_field,
 )
 
-# IMAGE_SUBSYSTEM_WINDOWS_GUI and _CUI: what a copy inherits from the launcher it
-# was made from, and the one thing the file name cannot tell.
+# IMAGE_SUBSYSTEM_WINDOWS_GUI and _CUI.
 _WINDOWED, _CONSOLE = 2, 3
 _RT_ICON = 3
 _LOAD_LIBRARY_AS_DATAFILE = 0x00000002
@@ -111,9 +110,7 @@ def assert_the_app_names_its_process(
         assert _resource(expected, _RT_ICON, 1) == images[0], (
             f"the copy does not carry {Path(icon).name}")
 
-    # Python could not say what it is running under -- sys.executable is
-    # documented to be empty then -- so there is nothing to copy from.  That
-    # costs the name and nothing else: the call comes back.
+    # sys.executable is documented to be empty then.
     with _running_under(""):
         try:
             name_this_process()

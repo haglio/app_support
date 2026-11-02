@@ -12,14 +12,7 @@ from pathlib import Path
 
 
 def _load(name: str):
-    """The one line only Windows can run: open a system DLL.
-
-    ``use_last_error`` makes ctypes save and restore the per-thread error code
-    around every call through this handle, so ``ctypes.get_last_error()`` reads
-    what the call set rather than whatever ran next -- Python's own runtime, or
-    a DLL injected into the process that calls Win32 functions of its own inside
-    a hook.  It costs nothing on the calls that never read it.
-    """
+    """Open a system DLL with ``use_last_error``, so ``ctypes.get_last_error()`` reads what this call set, not what a runtime or an injected DLL ran next."""
     return ctypes.WinDLL(name, use_last_error=True)
 
 
@@ -40,27 +33,12 @@ def _user32():
 
 
 def _last_error() -> int:
-    """The error code the last call through a ``use_last_error`` handle set.
-
-    Read through a seam of its own because it is not a call on any DLL, and
-    because ``ctypes.get_last_error`` is another of the names that exists only
-    on Windows.
-    """
+    """The code the last call through a ``use_last_error`` handle set; ``ctypes.get_last_error`` exists only on Windows."""
     return ctypes.get_last_error()
 
 
 def _declare(dll, name: str, restype, *argtypes):
-    """Give *dll*'s *name* an explicit prototype, and hand the function back.
-
-    ctypes will convert a Python ``str`` and read a C ``int`` back without being
-    told, which is why most of the copies this module replaces never said
-    anything.  But an undeclared return is ``c_int`` by luck rather than by
-    declaration -- a handle is twice that wide, and comes back truncated -- and
-    an undeclared argument is converted by the value's Python type rather than
-    by the parameter's C one.  Saying it makes the call mean the same thing on
-    every build, and makes the wrong argument an error here instead of a fault
-    inside Windows.
-    """
+    """Give *dll*'s *name* a prototype: ctypes takes an undeclared return as ``c_int``, which truncates a handle, and converts arguments by their Python type."""
     function = getattr(dll, name)
     function.argtypes = list(argtypes)
     function.restype = restype
@@ -72,26 +50,12 @@ def _close_handle(dll):
 
 
 def _hresult(call: str, hr: int) -> OSError:
-    """The failure of *call*, spelled the way its HRESULT is written down.
-
-    ``0x{hr:08x}`` on a signed value prints ``0x-7ffefefa`` for the ``0x80010106``
-    a reader would look up.  These failures are the ones nobody can reproduce on
-    demand, so the message is the whole record.
-    """
+    """The failure of *call*, spelled as its HRESULT is written: ``0x{hr:08x}`` on a signed value prints ``0x-7ffefefa``."""
     return OSError(f"{call} failed: HRESULT 0x{hr & 0xFFFFFFFF:08x}")
 
 
 def set_app_user_model_id(app_id: str, *, shell32=_shell32) -> None:
-    """Claim *app_id* as this process's taskbar identity.
-
-    Must run before any window exists: Windows reads the identity as a window is
-    created, so a call afterwards leaves the windows already on the bar where
-    they were.
-
-    Raises ``OSError`` when Windows refuses.  Callers have treated that as
-    cosmetic and carried on, because an icon is never worth failing to start
-    over -- but that is their call to make and not this one's.
-    """
+    """Claim *app_id* as this process's taskbar identity. Windows reads it as a window is created, so it must run before any window exists. Raises ``OSError`` when Windows refuses."""
     set_id = _declare(shell32(), "SetCurrentProcessExplicitAppUserModelID",
                       ctypes.c_long, wintypes.LPCWSTR)
     hr = set_id(app_id)
@@ -99,12 +63,7 @@ def set_app_user_model_id(app_id: str, *, shell32=_shell32) -> None:
         raise _hresult("SetCurrentProcessExplicitAppUserModelID", hr)
 
 
-# --- A shortcut and the identity it carries, through COM ---------------------
-#
-# The vtable indices below are each interface's methods counted in the order
-# its header declares them, which is the one thing here Windows reports no
-# error for getting wrong -- so every call is proven by the tests that write a
-# real shortcut and read it back.
+# The vtable indices are each interface's methods in header order; Windows reports no error for a wrong one.
 
 _COINIT_APARTMENTTHREADED = 0x2
 _CLSCTX_ALL = 0x17
@@ -129,9 +88,7 @@ class _PROPERTYKEY(ctypes.Structure):
     _fields_ = [("fmtid", _GUID), ("pid", ctypes.c_ulong)]
 
 
-# ``System.AppUserModel.*``.  The one failure in this module that Windows
-# reports no error for: a wrong key here writes a real value into the shortcut,
-# answers S_OK, and leaves the duplicate taskbar button in place.
+# ``System.AppUserModel.*``. A wrong key writes a real value, answers S_OK, and leaves the duplicate taskbar button.
 _APP_USER_MODEL = "9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"
 _PKEY_AppUserModel_RelaunchCommand = _PROPERTYKEY(_make_guid(_APP_USER_MODEL), 2)
 _PKEY_AppUserModel_RelaunchIconResource = _PROPERTYKEY(_make_guid(_APP_USER_MODEL), 3)
@@ -204,17 +161,7 @@ def _query_interface(obj_addr: int, iid: _GUID) -> int:
 
 @contextlib.contextmanager
 def _apartment(ole32):
-    """The COM apartment a shortcut is written or read in, given back after.
-
-    Only an initialization that succeeded gets undone.  ``CoInitializeEx``
-    answers ``S_OK`` when it opened the apartment and ``S_FALSE`` when the thread
-    already had one -- both took a reference this thread owes back -- and a
-    failure HRESULT when it took none, which here means ``RPC_E_CHANGED_MODE``:
-    something else put this thread in the other concurrency model first.
-    Uninitializing anyway would decrement *that* initialization's count, and the
-    apartment its owner is holding objects in can close under them -- while the
-    work inside would be asking for a shell link with no apartment of its own.
-    """
+    """The COM apartment a shortcut is written or read in. ``CoInitializeEx`` answers ``S_OK`` or ``S_FALSE`` when it took a reference to give back and ``RPC_E_CHANGED_MODE`` when it took none; uninitializing then would decrement another initialization's count."""
     com = ole32()
     hr = com.CoInitializeEx(None, _COINIT_APARTMENTTHREADED)
     if hr < 0:
@@ -435,13 +382,7 @@ class TaskbarApp:
 
 def dress_window(hwnd: int, app_id: str, app: TaskbarApp | None = None, *,
                  shell32=_shell32) -> None:
-    """Put *app_id* on *hwnd*, and with *app* what a shortcut carrying *app_id*
-    would give its taskbar button: without either, the button wears the icon of
-    the process's executable whenever the window is too busy to say its own.
-
-    Windows reads them as it makes the button, so they go on before the window
-    is first shown, and it uses the name and the relaunch command only together.
-    """
+    """Put *app_id* on *hwnd*, and with *app* what a shortcut would give its taskbar button. Windows reads them as it makes the button, so they go on before the window is first shown, and it uses the name and relaunch command only together."""
     get_store = _declare(shell32(), "SHGetPropertyStoreForWindow", ctypes.c_long,
                          wintypes.HWND, ctypes.POINTER(_GUID), ctypes.POINTER(ctypes.c_void_p))
     prop_store = ctypes.c_void_p()
@@ -495,22 +436,7 @@ def mutex_name(base: str, identity: str | Path) -> str:
 
 
 def try_acquire_mutex(name: str, *, kernel32=_kernel32, last_error=_last_error) -> int | None:
-    """Claim *name*, and hand back the handle that holds it -- or ``None``.
-
-    **The caller must keep the handle for as long as it means to hold the
-    mutex.**  Windows releases a named mutex when the last handle to it closes,
-    and a handle nothing refers to is closed by the interpreter at its leisure:
-    a guard whose handle was dropped stops guarding some time later, silently,
-    and the second instance it exists to refuse then starts.  That is the shape
-    of the defect this replaces, which is why the handle is the return value
-    rather than a ``bool`` -- a caller can ignore a return, but it has to go out
-    of its way to.
-
-    ``None`` means "do not run": either another process holds the mutex, or
-    Windows would not make one.  Those are not the same thing, and one of the
-    copies this replaces starts anyway on the second -- the caller that cares
-    about the difference should ask before it decides.
-    """
+    """Claim *name* and return the handle holding it, or ``None`` for "do not run" (held elsewhere, or Windows would not make one). Windows releases a named mutex when its last handle closes, so the caller must keep the handle."""
     dll = kernel32()
     create = _declare(dll, "CreateMutexW", ctypes.c_void_p,
                       ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR)
@@ -520,9 +446,7 @@ def try_acquire_mutex(name: str, *, kernel32=_kernel32, last_error=_last_error) 
     if not handle:
         return None
     if last_error() == _ERROR_ALREADY_EXISTS:
-        # The handle is real and refers to somebody else's mutex. Letting it go
-        # is not optional: held to exit, it keeps the mutex alive past the death
-        # of the process that owns it.
+        # Held to exit, the handle would keep somebody else's mutex alive past its owner's death.
         close(handle)
         return None
     return handle
@@ -533,14 +457,7 @@ def release_mutex(handle: int, *, kernel32=_kernel32) -> None:
 
 
 def is_mutex_held(name: str, *, kernel32=_kernel32) -> bool:
-    """Report whether some process is holding *name*.
-
-    Opens rather than creates, so probing a free name cannot leave a mutex
-    in place -- a created-then-closed handle would, for those few microseconds,
-    make an instance starting alongside believe another one was already up.
-    ``SYNCHRONIZE`` is asked for because it is the least this can ask for and
-    still be told whether the name exists.
-    """
+    """Opens rather than creates, so probing cannot leave a mutex briefly in place. ``SYNCHRONIZE`` is the least access that still reports whether the name exists."""
     dll = kernel32()
     open_mutex = _declare(dll, "OpenMutexW", ctypes.c_void_p,
                           wintypes.DWORD, wintypes.BOOL, wintypes.LPCWSTR)
@@ -750,25 +667,7 @@ _MB_TOPMOST = 0x00040000
 
 
 def show_error_popup(title: str, message: str, *, user32=_user32) -> None:
-    """Put *message* on the screen under *title*, in front of everything.
-
-    For the process that has nowhere else to say it: launched hidden from a
-    shortcut, no console to print to, no window of its own yet.  Such a process
-    has no claim on the foreground, so a plain message dialog opens *underneath*
-    whatever the user is looking at -- and a hidden process that exits having
-    shown nothing is indistinguishable from one that crashed.
-    ``MB_SETFOREGROUND`` and ``MB_TOPMOST`` are what make the dialog the thing
-    the user sees; they are the whole reason to reach for this rather than for
-    ``MessageBoxW`` directly.
-
-    Alone in this module it raises nothing.  It is the last thing a dying
-    process does, and an exception thrown from the error reporter would replace
-    an error nobody has been shown yet with one nobody will see either.
-
-    It is also the name a test suite gags.  One unguarded call blocks on a human
-    for as long as the run lasts, so there has to be a name to patch that does
-    not resolve a Windows-only dotted path to reach.
-    """
+    """Put *message* on the screen under *title*, in front of everything. A hidden process has no claim on the foreground, so a plain message dialog opens underneath; ``MB_SETFOREGROUND`` and ``MB_TOPMOST`` prevent that. Raises nothing, being the last thing a dying process does."""
     show = _declare(user32(), "MessageBoxW", ctypes.c_int,
                     wintypes.HWND, wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.UINT)
     show(None, message, title,
@@ -776,12 +675,7 @@ def show_error_popup(title: str, message: str, *, user32=_user32) -> None:
 
 
 def window_exists(hwnd: int, *, user32=_user32) -> bool:
-    """Whether *hwnd* still names a live window.
-
-    A handle outlives the window it named -- closing the window leaves the
-    number, and Windows may give it to another window later -- so anything that
-    must reach *that* window and no other asks first.
-    """
+    """Whether *hwnd* still names a live window; Windows may give a closed window's number to another."""
     return bool(hwnd) and bool(_declare(user32(), "IsWindow", wintypes.BOOL, wintypes.HWND)(hwnd))
 
 
@@ -803,16 +697,7 @@ def seconds_since_input(*, user32=_user32, kernel32=_kernel32) -> float:
 
 
 def force_foreground_window(hwnd: int, *, user32=_user32, kernel32=_kernel32) -> bool:
-    """Put *hwnd* in front with the keyboard, from a process Windows would refuse.
-
-    ``SetForegroundWindow`` is refused, silently, to a process that neither owns
-    the foreground window nor received the last input: the window opens under
-    whatever the user is looking at, its taskbar button flashing.  A thread
-    sharing the foreground thread's input queue is one of the cases the rule
-    accepts, so the queues are attached for the call and parted after it.
-
-    Returns whether the window ended up in front.
-    """
+    """Put *hwnd* in front from a process Windows would refuse: ``SetForegroundWindow`` is silently refused unless the process owns the foreground or got the last input, and sharing the foreground thread's input queue is accepted, so the queues are attached for the call. Returns whether the window ended up in front."""
     if not window_exists(hwnd, user32=user32):
         return False
     user = user32()
@@ -831,8 +716,7 @@ def force_foreground_window(hwnd: int, *, user32=_user32, kernel32=_kernel32) ->
 
 @contextlib.contextmanager
 def _input_queue_shared(user, other_thread: int, this_thread: int):
-    """*this_thread* reading *other_thread*'s input queue for as long as the block
-    runs: left joined, the two programs' keyboard focus would move together."""
+    """*this_thread* reading *other_thread*'s input queue for the block; left joined, the two programs' keyboard focus would move together."""
     attach = _declare(user, "AttachThreadInput",
                       wintypes.BOOL, wintypes.DWORD, wintypes.DWORD, wintypes.BOOL)
     attached = bool(other_thread and other_thread != this_thread
