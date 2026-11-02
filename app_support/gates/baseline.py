@@ -25,7 +25,7 @@ STATED_RENAMES_PATH = "tools/quality_baseline_renames.json"
 EXTERNALITY_COMMENTS = "externality_comments"
 _NAMES_AN_EXTERNALITY = re.compile(
     r"\b(Qt|PyQt\d?|Q[A-Z][a-z]\w+|mpv|libmpv|Win32|Windows|ctypes|pywin32|pCloud|ComfyUI|pygame|OpenXR|ffmpeg|ffprobe|FFmpeg"
-    r"|CPython|pytest|pip|git|GitHub|Chrome|SQLite|sqlite3|Pillow|PIL|vosk|Whisper|Ollama|ruff|vulture|VBScript|PowerShell)\b")
+    r"|CPython|pytest|pip|git|GitHub|Chrome|SQLite|sqlite3|Pillow|PIL|vosk|Whisper|Ollama|ruff|vulture|VBScript|PowerShell|COM|HRESULT|PE|psutil|wscript|TOML|Task Scheduler|Claude app)\b")
 _MARKER_FOR_A_TOOL = re.compile(r"#\s*(noqa|type:|pragma:|pylint:|ruff:|fmt:|nosec|isort:|mypy:|pyright:)")
 
 
