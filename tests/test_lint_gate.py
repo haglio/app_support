@@ -1,6 +1,7 @@
 """The family's ruff config and lint gate, `app_support.lint`."""
 from __future__ import annotations
 
+import subprocess
 import tomllib
 from pathlib import Path
 
@@ -141,3 +142,22 @@ def test_only_the_named_trees_and_the_root_files_are_scanned(tmp_path):
     (repo / "launch.py").write_text("import os\n", encoding="utf-8")
     with pytest.raises(AssertionError, match=r"launch\.py:1:8: F401"):
         lint.assert_lint_is_clean(repo, repo / "pkg")
+
+
+def test_a_ruff_that_is_not_installed_is_not_an_answer(tmp_path, monkeypatch):
+    monkeypatch.setattr(lint, "_ruff", lambda root, *args: subprocess.CompletedProcess(args, 1, "", "No module"))
+    with pytest.raises(lint.LintDidNotRun, match="not installed"):
+        lint.ruff_version(tmp_path)
+
+
+def test_a_rule_ruff_refuses_is_not_a_clean_scan(tmp_path):
+    repo = _repo(tmp_path, "x = 1\n")
+    with pytest.raises(lint.LintDidNotRun, match="exited 2"):
+        lint.findings_for_rules(repo, ["NOT-A-RULE"], repo / "pkg")
+
+
+def test_findings_for_named_rules_hold_whatever_the_repos_config_excludes(tmp_path):
+    repo = _repo(tmp_path, "import os\n")
+    with (repo / "ruff.toml").open("a", encoding="utf-8") as config:
+        config.write('\nforce-exclude = true\nexclude = ["pkg"]\n')
+    assert [line.split()[1] for line in lint.findings_for_rules(repo, ["F401"], repo / "pkg")] == ["F401"]
