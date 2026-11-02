@@ -815,18 +815,26 @@ class TestTheTurn:
         checkout = machine.checkout()
         machine.ship(checkout, {"feature.txt": "new\n"})
         holding = threading.Event()
+        session_finished_its_first_look = threading.Event()
 
         def the_other_update():
             with production_update.the_turn(checkout, wait_s=5):
                 holding.set()
-                time.sleep(0.5)
+                session_finished_its_first_look.wait(60)
                 git("merge", "-q", "--ff-only", "origin/main", cwd=checkout)
+
+        def session_run(arguments, **keywords):
+            answer = machine.run(arguments, **keywords)
+            if "status" in arguments:
+                session_finished_its_first_look.set()
+            return answer
 
         other = threading.Thread(target=the_other_update)
         other.start()
         holding.wait(5)
 
-        outcome = machine.bring_up(checkout)
+        outcome = production_update.bring_up(checkout, workspace=machine.workspace, run=session_run,
+                                             in_use=lambda venvs: [], wait_s=60.0)
         other.join()
 
         assert outcome.said.startswith("up to date")
