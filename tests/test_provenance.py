@@ -67,13 +67,6 @@ class TestStamp:
         assert (recorded[provenance.METHOD], recorded[provenance.METHOD_VERSION]) == (
             "wan22_i2v", "v007")
 
-    def test_an_app_pinned_to_an_older_release_still_names_what_ran_its_way(self, tmp_path: Path):
-        recorded = provenance.stamp("origenerator", anchor=tmp_path / "app.py",
-                                    recipe="wan22_i2v", recipe_version="v007")
-
-        assert (recorded[provenance.METHOD], recorded[provenance.METHOD_VERSION]) == (
-            "wan22_i2v", "v007")
-
     def test_keeps_what_ran_under_the_keys_every_file_on_disk_already_holds(self):
         assert (provenance.METHOD, provenance.METHOD_VERSION) == ("recipe", "recipe_version")
 

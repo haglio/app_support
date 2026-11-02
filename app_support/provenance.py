@@ -38,11 +38,8 @@ def _code_version(directory: str) -> tuple[str | None, bool | None]:
     return commit, any(not line.startswith("#") for line in lines)
 
 
-def stamp(app: str, *, anchor: str | Path,
-          method: str | None = None, method_version: str | None = None,
-          recipe: str | None = None, recipe_version: str | None = None) -> dict:
+def stamp(app: str, *, anchor: str | Path, method: str | None = None, method_version: str | None = None) -> dict:
     commit, dirty = _code_version(str(Path(anchor).parent))
     return {"schema": SCHEMA, "app": app, "app_commit": commit, "app_dirty": dirty,
-            METHOD: method if method is not None else recipe,
-            METHOD_VERSION: method_version if method_version is not None else recipe_version,
+            METHOD: method, METHOD_VERSION: method_version,
             "stamped_at": datetime.now(UTC).isoformat()}
