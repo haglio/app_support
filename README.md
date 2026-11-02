@@ -245,7 +245,11 @@ that is what a public clone and a fresh CI checkout both look like.
 `tools/quality_baseline.json` holds, per file, a repo's prose lines, private
 reaches (a read of another object's private name, through any handle), private
 imports (charged to the module that defines the name, through any re-export) and
-uncovered lines, and per listed class (`path::Class`) its methods. A number over its
+uncovered lines, and per listed class (`path::Class`) its methods. It holds too what
+`app_support.coupling` counts: per file `self.a.b` reach-through chains, mutable containers
+another module imports, and in tests the mocks, patches, monkeypatches, `SimpleNamespace`
+bags and patches of a library's insides; and past the family's limits a class's methods,
+attributes and longest chain, a file's statements and fan-out. A number over its
 entry fails, and a file the section does not name enters at zero, so a total can no
 longer hide one file growing while another shrinks. A prose, reach, import or method
 number under its entry fails too, until `python -m app_support.gates.baseline` lowers

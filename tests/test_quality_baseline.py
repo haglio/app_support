@@ -157,6 +157,14 @@ class TestHoldingACount:
     def test_nothing_above_main_holds_with_no_history_to_read(self, tmp_path: Path):
         baseline.assert_nothing_stands_above_main(_checkout(tmp_path, {}, {"prose_lines": {"pkg/a.py": 9}}))
 
+    def test_a_section_main_holds_cannot_be_dropped(self, tmp_path: Path):
+        checkout = _checkout(tmp_path, {"pkg/a.py": "# why\n"}, {"prose_lines": {"pkg/a.py": 1}})
+        _with_a_main(tmp_path)
+        _files(tmp_path, {baseline.BASELINE_PATH: json.dumps({})})
+
+        with pytest.raises(AssertionError, match=r"prose_lines is gone from the file, and main holds it"):
+            baseline.assert_nothing_stands_above_main(checkout)
+
     def test_an_entry_above_mains_is_told(self, tmp_path: Path):
         checkout = _checkout(tmp_path, {}, {"prose_lines": {"pkg/a.py": 1}})
         _with_a_main(tmp_path)
@@ -285,7 +293,7 @@ class TestTheCommand:
         code, _ = self._main(checkout)
 
         assert code == 0
-        assert self._written(checkout) == {"methods": {}, "private_imports": {},
+        assert self._written(checkout) == {**{count.section: {} for count in baseline.COUNTS},
                                            "private_reaches": {"pkg/a.py": 1}, "prose_lines": {"pkg/a.py": 1}}
 
     def test_it_lowers_what_fell(self, tmp_path: Path):
@@ -333,7 +341,7 @@ class TestTheCommand:
         self._main(checkout)
 
         written = (tmp_path / baseline.BASELINE_PATH).read_text(encoding="utf-8")
-        assert '  "prose_lines": {\n    "pkg/a.py": 1,\n    "pkg/b.py": 1\n  }\n}\n' in written
+        assert '  "prose_lines": {\n    "pkg/a.py": 1,\n    "pkg/b.py": 1\n  },\n' in written
 
 
 class TestUncoveredLines:

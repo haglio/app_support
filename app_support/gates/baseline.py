@@ -8,7 +8,6 @@ measurements a suite run in parts has gathered into ``.coverage`` to their entri
 """
 from __future__ import annotations
 
-import ast
 import io
 import json
 import subprocess
@@ -20,6 +19,8 @@ from typing import NamedTuple
 
 import coverage
 
+from app_support.coupling import measured_sections
+from app_support.coupling.classes import measure_classes
 from app_support.coverage_gate import UNCOVERED, uncovered_in_report, uncovered_rises
 from app_support.gates import BASELINE_PATH, Checkout, over
 from app_support.private_reach import private_imports, reaches_in
@@ -47,22 +48,9 @@ def prose_lines(source: str) -> int:
     return len(prose)
 
 
-def _defined_directly(body: list[ast.stmt]) -> Iterator[ast.stmt]:
-    for statement in body:
-        if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            yield statement
-        elif not isinstance(statement, ast.ClassDef):
-            for field in ("body", "orelse", "finalbody"):
-                yield from _defined_directly(getattr(statement, field, []))
-            for handler in getattr(statement, "handlers", []):
-                yield from _defined_directly(handler.body)
-
-
 def methods_of(source: str, class_name: str) -> int:
-    for node in ast.walk(ast.parse(source)):
-        if isinstance(node, ast.ClassDef) and node.name == class_name:
-            return sum(1 for _ in _defined_directly(node.body))
-    return 0
+    surface = measure_classes(source).get(class_name)
+    return surface.methods if surface else 0
 
 
 def _python_under(paths: tuple[Path, ...]) -> Iterator[Path]:
@@ -110,7 +98,7 @@ def _imports(checkout: Checkout, _entries: dict[str, int]) -> dict[str, int]:
 
 
 def _methods(checkout: Checkout, entries: dict[str, int]) -> dict[str, int]:
-    measured = {}
+    measured = dict(measured_sections(checkout)["methods"])
     for key in entries:
         file, class_name = key.split(_CLASS_MARK)
         path = checkout.root / file
@@ -118,6 +106,10 @@ def _methods(checkout: Checkout, entries: dict[str, int]) -> dict[str, int]:
         if methods:
             measured[key] = methods
     return measured
+
+
+def _counted(section: str) -> Callable[[Checkout, dict[str, int]], dict[str, int]]:
+    return lambda checkout, _entries: measured_sections(checkout)[section]
 
 
 class Count(NamedTuple):
@@ -133,6 +125,17 @@ COUNTS = (
           _reach_listing),
     Count("private_imports", _imports, "make the name public, or stop reading it from outside", _import_listing),
     Count("methods", _methods, "give the new method to a collaborator, or to a new one"),
+    Count("reach_chains", _counted("reach_chains"), "ask what you hold for what you need rather than walking through it"),
+    Count("mutables_imported", _counted("mutables_imported"), "pass it, or freeze it, rather than sharing it from a module"),
+    Count("mocks", _counted("mocks"), "write a named fake with the role's methods and no others"),
+    Count("patches", _counted("patches"), "cut a parameter and hand the test's double in"),
+    Count("monkeypatches", _counted("monkeypatches"), "cut a parameter and hand the test's double in"),
+    Count("simple_namespaces", _counted("simple_namespaces"), "write a named fake or a dataclass"),
+    Count("library_patches", _counted("library_patches"), "use what the library's testing module offers, or add it there"),
+    Count("class_attributes", _counted("class_attributes"), "give the new state to a collaborator, or to a new one"),
+    Count("chain_length", _counted("chain_length"), "ask the nearest object for what you need"),
+    Count("statements", _counted("statements"), "give the new code a module of its own"),
+    Count("fan_out", _counted("fan_out"), "split what this file does, so each part needs fewer others"),
 )
 
 
@@ -212,6 +215,7 @@ def assert_nothing_stands_above_main(checkout: Checkout) -> None:
     told = [f"{section} {key} stands at {held}, above the {entry} main holds"
             for section, entries in here.items() if section in at_main
             for key, (held, entry) in over(carried(at_main[section], renames), entries).items()]
+    told += [f"{section} is gone from the file, and main holds it" for section in at_main if section not in here]
     assert not told, "\n".join([*told, "An entry only comes down: bring the number down rather than the bar up."])
 
 
