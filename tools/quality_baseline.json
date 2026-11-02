@@ -206,7 +206,7 @@
     "app_support/launcher.py": 424,
     "app_support/loading_screen.py": 327,
     "app_support/production_update.py": 584,
-    "app_support/win32.py": 463
+    "app_support/win32.py": 462
   },
   "uncovered_lines": {
     "app_support/changed_tests.py": 3,
