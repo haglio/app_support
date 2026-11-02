@@ -19,7 +19,7 @@ from typing import NamedTuple
 
 import coverage
 
-from app_support.coupling import measured_sections
+from app_support.coupling import METHODS_LIMIT, measured_sections
 from app_support.coupling.classes import measure_classes
 from app_support.coverage_gate import UNCOVERED, uncovered_in_report, uncovered_rises
 from app_support.gates import BASELINE_PATH, Checkout, over
@@ -207,6 +207,10 @@ def _sections_at_main(root: Path) -> dict[str, dict[str, int]] | None:
     return json.loads(held) if held else None
 
 
+def _lists_a_class_nothing_held(section: str, entry_at_main: int, held: int) -> bool:
+    return section == "methods" and not entry_at_main and held <= METHODS_LIMIT
+
+
 def assert_nothing_stands_above_main(checkout: Checkout) -> None:
     here, at_main = checkout.sections, _sections_at_main(checkout.root)
     if here is None or at_main is None:
@@ -214,7 +218,8 @@ def assert_nothing_stands_above_main(checkout: Checkout) -> None:
     renames = renamed_since_main(checkout.root)
     told = [f"{section} {key} stands at {held}, above the {entry} main holds"
             for section, entries in here.items() if section in at_main
-            for key, (held, entry) in over(carried(at_main[section], renames), entries).items()]
+            for key, (held, entry) in over(carried(at_main[section], renames), entries).items()
+            if not _lists_a_class_nothing_held(section, entry, held)]
     told += [f"{section} is gone from the file, and main holds it" for section in at_main if section not in here]
     assert not told, "\n".join([*told, "An entry only comes down: bring the number down rather than the bar up."])
 

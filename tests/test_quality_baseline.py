@@ -165,6 +165,29 @@ class TestHoldingACount:
         with pytest.raises(AssertionError, match=r"prose_lines is gone from the file, and main holds it"):
             baseline.assert_nothing_stands_above_main(checkout)
 
+    def test_listing_a_class_under_the_familys_limit_raises_nothing(self, tmp_path: Path):
+        checkout = _checkout(tmp_path, {}, {"methods": {}})
+        _with_a_main(tmp_path)
+        _files(tmp_path, {baseline.BASELINE_PATH: json.dumps({"methods": {"pkg/a.py::A": 20}})})
+
+        baseline.assert_nothing_stands_above_main(checkout)
+
+    def test_listing_a_class_past_the_familys_limit_is_a_raise(self, tmp_path: Path):
+        checkout = _checkout(tmp_path, {}, {"methods": {}})
+        _with_a_main(tmp_path)
+        _files(tmp_path, {baseline.BASELINE_PATH: json.dumps({"methods": {"pkg/a.py::A": 31}})})
+
+        with pytest.raises(AssertionError, match=r"methods pkg/a.py::A stands at 31, above the 0 main holds"):
+            baseline.assert_nothing_stands_above_main(checkout)
+
+    def test_a_listed_class_already_at_main_is_held_there(self, tmp_path: Path):
+        checkout = _checkout(tmp_path, {}, {"methods": {"pkg/a.py::A": 20}})
+        _with_a_main(tmp_path)
+        _files(tmp_path, {baseline.BASELINE_PATH: json.dumps({"methods": {"pkg/a.py::A": 21}})})
+
+        with pytest.raises(AssertionError, match=r"methods pkg/a.py::A stands at 21, above the 20 main holds"):
+            baseline.assert_nothing_stands_above_main(checkout)
+
     def test_an_entry_above_mains_is_told(self, tmp_path: Path):
         checkout = _checkout(tmp_path, {}, {"prose_lines": {"pkg/a.py": 1}})
         _with_a_main(tmp_path)
