@@ -27,9 +27,7 @@ _EXCLUDED_LINES = ("if TYPE_CHECKING:", 'if __name__ == "__main__":')
 
 _STOOD_DOWN = pytest.StashKey[str]()
 
-# Read with `getattr`, not off a settled namespace: the last four are the cache
-# plugin's options and every repo here runs `-p no:cacheprovider`, so they are not
-# options at all and asking the run for them would raise.
+# The last four are the cache plugin's options, absent under `-p no:cacheprovider`, so they are read with `getattr`.
 _NARROWINGS = (
     ("keyword", "-k {}"),
     ("markexpr", "-m {}"),
@@ -88,8 +86,7 @@ def pytest_configure(config) -> None:
 
 
 def pytest_collection_modifyitems(config, items) -> None:
-    # pytest-cov reads its settings off the namespace it was handed before the
-    # conftests loaded, which is not the one `config.option` ends up being.
+    # pytest-cov reads the namespace it was handed before the conftests loaded, not `config.option`.
     measuring = config.pluginmanager.get_plugin("_cov").options
     why = why_this_is_not_the_whole_suite(config)
     if why is not None:

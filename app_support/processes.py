@@ -9,9 +9,7 @@ from ctypes import wintypes
 OFFSCREEN = "offscreen"
 AGENT = "agent"
 HIS = "his"
-# Claude Code sets it in every shell it opens and a child inherits it, so it outlives
-# the parent chain Git Bash breaks whenever it runs a program through env, a pipe or a
-# subshell.
+# Claude Code sets it in every shell and children inherit it; Git Bash breaks the parent chain via env, pipes and subshells.
 SESSION_MARK = "CLAUDECODE"
 
 _QUERY_LIMITED_INFORMATION = 0x1000
@@ -43,9 +41,7 @@ _DUP_HANDLE = 0x0040
 _DUPLICATE_SAME_ACCESS = 0x2
 _FILE_TYPE_DISK = 1
 _LONGEST_PATH = 32768
-# Git Bash runs its programs on a POSIX runtime, which hands a program it starts the
-# environment through the runtime's exported `environ` and gives Windows only the few
-# names a process needs to start.
+# Git Bash's POSIX runtime passes the environment through its exported `environ`; Windows gets only a few names.
 _POSIX_RUNTIMES = frozenset({"msys-2.0.dll", "cygwin1.dll"})
 _LIST_ALL_MODULES = 0x3
 _MOST_MODULES = 1024
