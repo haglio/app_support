@@ -240,6 +240,24 @@ and `#` comments are skipped.
 A checkout with no blocklist beside it enforces nothing and commits normally —
 that is what a public clone and a fresh CI checkout both look like.
 
+## The numbers a repo keeps per file
+
+`tools/quality_baseline.json` holds, per file, a repo's prose lines, private
+reaches (a read of another object's private name, through any handle), private
+imports (charged to the module that defines the name, through any re-export) and
+uncovered lines, and per listed class (`path::Class`) its methods. A number over its
+entry fails, and a file the section does not name enters at zero, so a total can no
+longer hide one file growing while another shrinks. A prose, reach, import or method
+number under its entry fails too, until `python -m app_support.gates.baseline` lowers
+it; run from the checkout, that command also carries a renamed file's entry, enters a
+section the file does not have, and refuses to raise anything. An entry above what main
+held where the branch left it fails as well, so no number can be raised by hand.
+
+Uncovered lines are read at the end of a whole run, from the same measurement as the
+floor. A file under its entry passes, since a line can be reached by chance; the
+command takes the fall when someone runs it. A suite run in parts is held by its
+verdict job, with `python -m app_support.gates.baseline --hold-uncovered`.
+
 ## The family's gates
 
 Every repository of the family holds its own tree to the same checks: a clock on

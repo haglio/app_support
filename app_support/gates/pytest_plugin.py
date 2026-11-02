@@ -28,5 +28,8 @@ def pytest_configure(config) -> None:
         ship(config, _HERE / gate)
     if config.pluginmanager.has_plugin("app_support.coverage_gate"):
         ship(config, _HERE / "test_coverage.py")
-    if config.inipath and Checkout(Path(config.inipath).parent).is_a_library:
+    checkout = Checkout(Path(config.inipath).parent) if config.inipath else None
+    if checkout and checkout.is_a_library:
         ship(config, _HERE / "test_a_shared_package.py")
+    if checkout and checkout.baseline.is_file():
+        ship(config, _HERE / "test_quality_baseline.py")

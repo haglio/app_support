@@ -1,6 +1,7 @@
 """The family's gates, which a repository asks for by naming ``app_support.gates.pytest_plugin`` once."""
 from __future__ import annotations
 
+import json
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -9,6 +10,11 @@ from app_support.dead_code import packages_under
 from app_support.dependencies import is_a_family_sibling
 
 _WHITELISTS = ("vulture_whitelist.py", "vulture_whitelist.txt")
+BASELINE_PATH = "tools/quality_baseline.json"
+
+
+def over(entries: dict[str, int], live: dict[str, int]) -> dict[str, tuple[int, int]]:
+    return {key: (held, entries.get(key, 0)) for key, held in live.items() if held > entries.get(key, 0)}
 
 
 @dataclass(frozen=True)
@@ -23,6 +29,14 @@ class Checkout:
     @property
     def pyproject(self) -> Path:
         return self.root / "pyproject.toml"
+
+    @property
+    def baseline(self) -> Path:
+        return self.root / BASELINE_PATH
+
+    @property
+    def sections(self) -> dict[str, dict[str, int]] | None:
+        return json.loads(self.baseline.read_text(encoding="utf-8")) if self.baseline.is_file() else None
 
     @property
     def is_a_library(self) -> bool:
