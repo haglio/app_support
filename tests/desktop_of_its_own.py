@@ -3,6 +3,7 @@ from __future__ import annotations
 import ctypes
 import subprocess
 import uuid
+from ctypes import wintypes
 
 from app_support import processes
 
@@ -13,8 +14,6 @@ class DesktopOfItsOwn:
     _TERMINATE, _SYNCHRONIZE = 0x0001, 0x00100000
 
     def __init__(self):
-        from ctypes import wintypes
-
         class StartupInfo(ctypes.Structure):
             _fields_ = [
                 ("cb", wintypes.DWORD), ("lpReserved", wintypes.LPWSTR), ("lpDesktop", wintypes.LPWSTR),
@@ -76,8 +75,6 @@ class DesktopOfItsOwn:
         return self._kernel32.WaitForSingleObject(started.hProcess, int(seconds * 1000)) == 0
 
     def shows_a_window_over_every_other(self) -> bool | None:
-        from ctypes import wintypes
-
         each_window = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
         self._user32.EnumDesktopWindows.argtypes = [wintypes.HANDLE, each_window, wintypes.LPARAM]
         self._user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import ctypes
 import os
 import subprocess
 import sys
 from contextlib import contextmanager
+from ctypes import wintypes
 from pathlib import Path
 
 import pytest
@@ -210,11 +212,6 @@ def test_a_busy_machine_keeps_its_workers_spinning_until_it_is_left():
 
 
 def _priority_class(pid: int) -> int:
-    # Local: `ctypes.wintypes` raises on import off Windows, and this module
-    # is collected there -- only these two helpers are Windows-only.
-    import ctypes
-    from ctypes import wintypes
-
     kernel32 = ctypes.WinDLL("kernel32")
     kernel32.OpenProcess.restype = wintypes.HANDLE
     kernel32.GetPriorityClass.argtypes = [wintypes.HANDLE]
@@ -240,11 +237,6 @@ OWN_PRIORITY = (
 
 
 def _image_of(pid: int) -> str:
-    # Local: `ctypes.wintypes` raises on import off Windows, and this module
-    # is collected there -- only these two helpers are Windows-only.
-    import ctypes
-    from ctypes import wintypes
-
     kernel32 = ctypes.WinDLL("kernel32")
     kernel32.OpenProcess.restype = wintypes.HANDLE
     kernel32.QueryFullProcessImageNameW.argtypes = [
