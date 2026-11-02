@@ -20,7 +20,8 @@ own modules and every package under it, which a list of package names does not -
 root module is neither a package nor a directory, and coverage drops one silently,
 which is how a repo's entry point stops being part of its own number. Coverage skips
 dot-directories as it walks, so the agents' worktrees under `.claude`, the venv, the
-caches and the temporary roots a suite writes are all passed over without being named.
+caches and the temporary roots a suite writes are all passed over without being named,
+and it takes any folder holding a `pyvenv.cfg` for somebody else's code wherever it sits.
 
 The measuring rides the unit suite rather than a second pass over the tree: pytest-cov
 collects while the suite runs and this plugin decides whether the floor applies, which
@@ -235,7 +236,9 @@ def _lines_excused_where_they_stand(repo: Path, unmeasured) -> list[str]:
 def _python_files_coverage_walks(repo: Path) -> list[str]:
     found = []
     for folder, folders, files in os.walk(repo):
-        folders[:] = sorted(name for name in folders if not name.startswith("."))
+        folders[:] = sorted(name for name in folders
+                            if not name.startswith(".")
+                            and not Path(folder, name, "pyvenv.cfg").exists())
         found += [Path(folder, name).relative_to(repo).as_posix()
                   for name in sorted(files) if name.endswith(".py")]
     return found
