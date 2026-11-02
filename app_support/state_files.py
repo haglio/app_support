@@ -1,77 +1,25 @@
-"""The names of the files two repos meet at, spelled once.
-
-Each is a wire format: a writer in one repo, a reader in another, and a file
-under a state directory both are told about.  Until now every config module
-that built one of these paths spelled the name itself -- four of them, and
-clipper's copy pointed at the wrong directory -- with no shared constant, no
-schema and no test that ran both sides.
-
-A name cannot change.  A broker started before the change, by the scheduled task
-that revives it every couple of minutes, keeps writing the old one while an
-orchestrator started after it reads the new, and neither knows.  So these are
-constants in the one package every repo installs, each saying who writes it,
-who reads it and what it holds -- the schema the files never had -- and
-``tests/test_state_files.py`` runs each one's writer against its reader through
-the :mod:`app_support.file_channel` calls both sides use.
-
-A file one repo alone spells -- the satellites' channels, the Main Funestra's, the hosted
-Origenerator's -- stays in that repo's config: one owner already.
-"""
 from __future__ import annotations
 
-# --- The broker's, under its own state directory -----------------------------
-
 BROKER_CMD = "broker_cmd.txt"
-"""Every app -> broker.  A queue of :mod:`app_support.osr2_hold`'s verbs, joined
-with ``ask_the_broker`` and drained whole each tick with ``consume_command_file``."""
 
 BROKER_HEARTBEAT = "broker_heartbeat.txt"
-"""Broker -> Fun Time.  The wall clock as text (``publish_stamp``), every half
-second while the broker holds the serial port; read as an age (``stamp_age``)."""
 
 BROKER_MODE = "broker_mode.txt"
-"""Broker -> Fun Time and Origenerator.  ``"1"`` while the OSR2 runs its own auto
-mode, which the broker reads off what the device says, ``"0"`` while the broker
-passes the apps' commands to it (``write_flag`` / ``read_flag`` with a default of
-False; ``osr2_device.mode`` reads it)."""
 
 OSR2_SERIAL_RX = "osr2_serial_rx.txt"
-"""Broker -> Fun Time and Origenerator.  A stamp of the device's last word: how
-the session knows the OSR2 is powered on."""
 
 OSR2_SERIAL_ANSWER = "osr2_serial_answer.txt"
-"""Broker -> Fun Time and Origenerator.  A stamp of the device's last answer to
-the question the broker keeps asking it, which a switched-off OSR2 cannot
-answer."""
 
 OSR2_SERIAL_TX = "osr2_serial_tx.txt"
-"""Broker -> Fun Time.  A stamp of the last word TO the device: a driver sending
-is a device in use even while it says nothing back."""
 
 OSR2_NOT_FOUND = "osr2_not_found.txt"
-"""Broker -> Fun Time, Origenerator and the broker's tray.  A stamp the broker
-renews about once a second while it runs and finds no USB adapter it can take
-for the OSR2's: none plugged in, or two it cannot tell apart."""
 
 OSR2_NOT_ANSWERING = "osr2_not_answering.txt"
-"""Broker -> Fun Time, Origenerator and the broker's tray.  A stamp the broker
-renews about once a second once Fun Time, Origenerator or MFP has been driving
-the OSR2 for minutes since it last heard a word from it.  A switched-off OSR2
-and one whose words no longer reach the computer both say nothing, so this is
-the most the computer can know of the second."""
-
-# --- Genau's channel, under the orchestrator's state directory ---------------
 
 GENAU_CMD = "genau_cmd.txt"
-"""Fun Time -> Genau.  A queue of verbs."""
 
 GENAU_PAUSED = "genau_paused.txt"
-"""Fun Time -> Genau.  ``"1"`` while paused (``read_paused_state``)."""
 
 GENAU_DRIVE = "genau_drive.txt"
-"""Genau -> the Main Funestra.  The drive readout, published whole; its lines are
-``funestra.drive_readout``'s."""
 
 GENAU_STATUS = "genau_status.txt"
-"""Genau -> Fun Time.  ``key=value`` lines, published whole (``read_key_values``);
-the keys are ``funestra.genau_status``'s."""

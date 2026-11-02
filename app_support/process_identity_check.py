@@ -1,38 +1,3 @@
-"""That an app names its own process -- run against a throwaway venv, not read off its source.
-
-Every app in the family starts through a copy of its interpreter that says the
-app's name (:mod:`app_support.process_identity`), and its own process is the one
-it cannot name on the way in -- so each run makes the copy for the run after, and
-the launcher starts through it once it is there.  Six suites asserted that half by
-reading the entry point as text and looking for the lines: the call, the app name,
-the role, the ``with_name("python.exe")``, the ``except Exception:``.  A rename or
-a line wrap turned those red with the behavior unchanged, and the call moving into
-a branch that never runs left them green with the behavior gone.
-
-So this runs the app's own naming instead.  Hand it the function the entry point
-calls and a directory to work in; it stands up a venv's ``Scripts`` directory there
-with the real launchers copied in, points ``sys.executable`` into it, calls the
-function, and reads what appeared: one copy, named for the app and the role,
-described as the row should read, a console image when the launcher runs the
-console interpreter, carrying the app's own icon.  Then it calls the function once
-more where Python could not say what it is running under, and checks it came back
--- the name is lost there, and nothing else may be::
-
-    from app_support.process_identity_check import assert_the_app_names_its_process
-
-    def test_the_app_prepares_the_copy_its_launcher_starts_through(tmp_path):
-        assert_the_app_names_its_process(
-            _name_this_process, tmp_path, app_name="Highdeas", role="Highdeas",
-            interpreter="python.exe", row="Highdeas", icon=PROJECT_DIR / "icon.ico")
-
-The launcher's side -- that the ``.vbs`` looks for that copy, ahead of the plain
-interpreter -- stays a text assertion in each repo: a ``.vbs`` really is a text
-file and really does contain the literal.
-
-Windows only, like the naming itself: the copy is described with UpdateResource
-and read back with VerQueryValue.  Standard library only, and no pytest: plain
-functions raising ``AssertionError``.
-"""
 from __future__ import annotations
 
 import ctypes
@@ -59,13 +24,6 @@ _LOAD_LIBRARY_AS_DATAFILE = 0x00000002
 
 
 def _a_venv_with_the_real_launchers(where: Path) -> Path:
-    """A ``Scripts`` directory under *where* holding copies of the two launchers
-    beside the running interpreter, ``python.exe`` and ``pythonw.exe``.
-
-    Copies of the real ones rather than stubs: the copy the app makes is
-    described by rewriting its version resource, which only a real image can
-    carry, so a stub would make every naming fall back and prove nothing.
-    """
     scripts = where / ".venv" / "Scripts"
     scripts.mkdir(parents=True)
     running = Path(sys.executable)
@@ -76,7 +34,6 @@ def _a_venv_with_the_real_launchers(where: Path) -> Path:
 
 @contextmanager
 def _running_under(executable: str) -> Iterator[None]:
-    """``sys.executable`` set to *executable* for the duration."""
     was = sys.executable
     sys.executable = executable
     try:
@@ -86,7 +43,6 @@ def _running_under(executable: str) -> Iterator[None]:
 
 
 def _subsystem(exe: Path) -> int:
-    """The subsystem *exe* is linked for: console or windowed."""
     with exe.open("rb") as image:
         (pe_offset,) = struct.unpack_from("<I", image.read(0x40), 0x3C)
         image.seek(pe_offset)
@@ -100,7 +56,6 @@ def _subsystem(exe: Path) -> int:
 
 
 def _resource(exe: Path, kind: int, name: int) -> bytes | None:
-    """The bytes of one resource in *exe*, or None if it carries none by that id."""
     k32 = ctypes.WinDLL("kernel32", use_last_error=True)
     k32.LoadLibraryExW.restype = wintypes.HMODULE
     k32.LoadLibraryExW.argtypes = [wintypes.LPCWSTR, wintypes.HANDLE, wintypes.DWORD]
@@ -130,23 +85,6 @@ def assert_the_app_names_its_process(
     name_this_process: Callable[[], object], where: Path, *, app_name: str, role: str,
     interpreter: str = "pythonw.exe", row: str | None = None, icon: Path | None = None,
 ) -> None:
-    """*name_this_process*, the call at the top of the app's ``main()``, run
-    against a venv stood up under *where*, leaves exactly the copy the app's
-    launcher starts it through -- and survives having nothing to copy.
-
-    *interpreter* is the launcher the app's ``.vbs`` or shortcut runs:
-    ``python.exe`` when it redirects the app's output into a log, ``pythonw.exe``
-    for a shortcut.  The copy has to have been made from that one -- a windowed
-    copy for a console launcher is a copy nothing ever starts -- and it is told
-    apart by the subsystem the copy inherits, the one thing its name cannot say.
-    The run is pointed at the OTHER launcher on purpose: an app that copies
-    whatever it happens to be running under names a copy after a copy on every
-    run after the first, and here it also makes the wrong kind of image.
-
-    *row* is what the Processes tab should show -- the app's name alone, for an
-    app with one window -- and *icon* the mark the copy should carry, if the app
-    has one.
-    """
     namer = ProcessNamer(app_name)
     scripts = _a_venv_with_the_real_launchers(where)
     before = set(scripts.iterdir())

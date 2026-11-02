@@ -1,23 +1,3 @@
-"""The family's Windows launchers, each rendered from a spec in its checkout's pyproject.
-
-A launcher is the ``.vbs`` a pinned shortcut, a scheduled task or another app runs
-to start an app hidden.  The decisions every launcher makes are made here, once:
-the interpreter is the venv's, never one found on ``PATH``; nothing goes on
-``PYTHONPATH``, so the siblings resolve through the venv's editable installs;
-``Option Explicit`` holds every variable; a dialog raised under the console host
-is printed rather than shown; and ``HAGLIO_LAUNCHER_DRY_RUN=1`` makes a launcher
-report what it would run and stop, which is how a suite runs one on Windows
-without starting an app.
-
-    [tool.haglio.launchers."launch_example.vbs"]
-    app = "Example"
-    run = "-m example"
-
-``python -m app_support.launcher --write`` renders a checkout's launchers from
-its specs; without ``--write`` it names every launcher that differs from one.
-
-Standard library only.
-"""
 from __future__ import annotations
 
 import argparse
@@ -48,7 +28,7 @@ _SCRIPT_ERROR = "Microsoft VBScript"
 
 
 class LauncherSpecError(ValueError):
-    """A launcher spec that cannot be rendered, named by its file and key."""
+    pass
 
 
 @dataclass(frozen=True)
@@ -89,11 +69,8 @@ class Launcher:
         return 1 + len(self.also_runs) if self.waits_for_updates else 0
 
 
-# --- Reading the specs --------------------------------------------------------
-
 
 def launchers(checkout: Path) -> list[Launcher]:
-    """Every launcher *checkout*'s pyproject declares, checked and in file order."""
     document = tomllib.loads((Path(checkout) / "pyproject.toml").read_text(encoding="utf-8"))
     specs = document.get("tool", {}).get("haglio", {}).get("launchers", {})
     production = production_update.declared(checkout)
@@ -220,7 +197,6 @@ def _flags(launcher: Launcher) -> tuple[Flag, ...]:
 
 
 def _variables(launcher: Launcher) -> dict[str, str]:
-    """The placeholders a launcher's text may name, and the variable each becomes."""
     variables = {"root": "root"}
     if launcher.checkout_argument:
         variables["checkout"] = "checkout"
@@ -229,11 +205,8 @@ def _variables(launcher: Launcher) -> dict[str, str]:
     return variables
 
 
-# --- Rendering ----------------------------------------------------------------
-
 
 def render(launcher: Launcher) -> str:
-    """The launcher *launcher* specifies, as the ``.vbs`` text to write."""
     sections = [
         _header(launcher),
         ["Option Explicit", "", _declarations(launcher), ""],
@@ -307,8 +280,6 @@ End If
 
 
 def _text(value: str, variables: Mapping[str, str] | None = None) -> str:
-    """*value* as a VBScript expression: quotes doubled, each newline a vbCrLf,
-    each ``{placeholder}`` the variable holding it."""
     tokens: list[str] = []
     for index, piece in enumerate(_PLACEHOLDER.split(value)):
         if index % 2:
@@ -382,8 +353,6 @@ def _decide(launcher: Launcher) -> list[str]:
 
 
 def _gates_decided(launcher: Launcher) -> list[str]:
-    """The checkout whose update a launch waits for -- the one whose venv it runs --
-    and every checkout that one starts programs from."""
     if not launcher.waits_for_updates:
         return []
     turn = f".git\\{production_update.TURN}"
@@ -506,8 +475,6 @@ def _once_the_app_runs(launcher: Launcher) -> list[str]:
 
 
 def _refusal_of_a_launch_that_never_came_up(launcher: Launcher) -> list[str]:
-    """The log's last lines say where the app gave up; a note says why it could not
-    start at all, so a note that is there is the whole message and the log is a path."""
     if not launcher.note:
         return ["    Refuse FailedStart(), vbCritical"]
     return [
@@ -785,11 +752,8 @@ End Sub
 """
 
 
-# --- The launchers on disk ----------------------------------------------------
-
 
 def differences(checkout: Path) -> list[str]:
-    """What stands between *checkout*'s launchers and its specs, one line each."""
     checkout = Path(checkout)
     specs = {launcher.file: launcher for launcher in launchers(checkout)}
     problems = []
@@ -805,7 +769,6 @@ def differences(checkout: Path) -> list[str]:
 
 
 def write(checkout: Path) -> list[str]:
-    """Render every launcher *checkout* declares; the files that changed."""
     written = []
     for launcher in launchers(checkout):
         path = Path(checkout) / launcher.file
@@ -818,8 +781,6 @@ def write(checkout: Path) -> list[str]:
 
 
 def assert_launchers_match_their_specs(checkout: Path) -> None:
-    """A launcher that differs from its spec is a hand edit the next render erases,
-    or a spec change nobody rendered -- either way not what the shortcut runs."""
     __tracebackhide__ = True
     problems = differences(checkout)
     assert not problems, (
@@ -827,13 +788,9 @@ def assert_launchers_match_their_specs(checkout: Path) -> None:
         + "\nRender them from the checkout: python -m app_support.launcher --write")
 
 
-# --- Running one under the script host ------------------------------------------
-
 
 @dataclass(frozen=True)
 class ScriptHostRun:
-    """What the console script host printed and returned for one launcher."""
-
     returncode: int
     output: str
 
@@ -849,9 +806,6 @@ class ScriptHostRun:
 
 
 def run_under_script_host(launcher: Path, *arguments: str, dry_run: bool = True) -> ScriptHostRun:
-    """Run *launcher* under Windows' own console script host, as its shortcut
-    would run it with *arguments* -- told to report rather than launch unless
-    *dry_run* is false."""
     host = Path(os.environ.get("SYSTEMROOT", r"C:\Windows")) / "System32" / "cscript.exe"
     env = {name: value for name, value in os.environ.items() if name.upper() != DRY_RUN}
     if dry_run:
@@ -862,9 +816,6 @@ def run_under_script_host(launcher: Path, *arguments: str, dry_run: bool = True)
 
 
 def dry_run(launcher: Path, *arguments: str) -> ScriptHostRun:
-    """Run *launcher* through its decisions under the script host, and fail on
-    anything short of a whole report: a VBScript error on the way, a refusal, or
-    no command at the end."""
     __tracebackhide__ = True
     run = run_under_script_host(launcher, *arguments)
     failure = (f"{Path(launcher).name} did not report a launch under the script host "

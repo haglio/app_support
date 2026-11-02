@@ -1,14 +1,3 @@
-"""Give a repository the family's gates by asking for them once.
-
-    # pyproject.toml
-    [tool.pytest.ini_options]
-    addopts = "-p app_support.gates.pytest_plugin --timeout=60 --timeout-method=thread"
-
-Every repository gets the clocks, the dead-code, dependency, lint and launcher
-checks; one that names ``app_support.coverage_gate`` gets the check of its
-coverage config too, and a package every app installs gets the check of its
-version. ``app_support.shipped_tests`` says how they reach the run.
-"""
 from __future__ import annotations
 
 from pathlib import Path

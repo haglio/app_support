@@ -1,53 +1,3 @@
-"""What a windowed Python process on Windows has to say about itself.
-
-Nothing here knows anything about an application's subject matter.  These are
-the Win32 jobs a windowed process does *about itself*, which every app in a
-family ends up doing and had all grown its own spelling of:
-
-  * **claiming a taskbar identity.**  Windows groups taskbar buttons by
-    AppUserModelID, and takes the icon and the name from whichever pinned
-    shortcut carries the same one.  A process that never claims one is given an
-    identity derived from its executable -- which for a family of apps sharing
-    one interpreter means they land under whatever unrelated application
-    registered that path first, wearing its icon and its name.
-  * **dressing a window as an app that no shortcut carries**: on the window
-    itself, the name, icon and relaunch command a shortcut would have given its
-    taskbar button, and in the registry for a window of another process that
-    wears the same identity.
-  * **stamping that identity onto a shortcut**, or writing a shortcut that
-    carries it, and reading one back whole.  A ``.lnk`` written by ``WScript.Shell`` carries no
-    ``System.AppUserModel.ID``, so clicking the pin starts a process Windows
-    treats as a different application, and a second taskbar button opens beside
-    the pin it was launched from.  Nothing but COM can write that property.
-  * **asking whether it is the only instance**, through a named mutex -- and
-    holding the handle that is the answer, because Windows lets the mutex go
-    when the last handle to it closes.
-  * **putting an error where the user will see it**, for a process that was
-    launched hidden and has no console and no window to put one in.
-  * **putting a window in front with the keyboard**, which Windows refuses to a
-    process the user is not looking at -- the one that was started for him a
-    moment ago included.
-  * **naming a process for good**: Windows gives a finished process's number to
-    the next one it starts, so a pid names one process only together with the
-    moment that process started.
-  * **ending a child together with every process it started**, which ending the
-    child alone leaves running -- at once, or whenever this process ends -- and
-    counting the processor time they spent.
-  * **asking whether the user is at the computer**: how long ago the mouse or
-    the keyboard was last touched, anywhere in the session.
-
-Every call raises ``OSError`` when Windows refuses -- ``show_error_popup``
-excepted, which says why at its own docstring -- and none of them decide what
-that means: an app that cannot group its taskbar button is still an app that
-runs, while an app that cannot claim its single-instance mutex must not.  Each
-caller keeps the ``try``/``except`` that says which of those it is.
-
-Nothing Windows-only is looked up while this module is imported.  ``WinDLL`` and
-the rest of the Windows half of ``ctypes`` exist only on Windows, and this
-package installs into every app's venv -- including on the machine a developer
-collects a suite on.  Each call loads what it needs when it is called, through a
-keyword-only seam a test hands a fake to and no consumer ever passes.
-"""
 from __future__ import annotations
 
 import contextlib
@@ -315,7 +265,6 @@ def _store_app_id(shell_link: int, app_id: str | None) -> None:
 
 
 def _store_values(prop_store: int, values: Iterable[tuple[_PROPERTYKEY, str | None]]) -> None:
-    """Write each value under its key, ``None`` taking the key off, then commit."""
     set_value = _vtbl_call(prop_store, _VTBL_IPS_SET_VALUE, ctypes.HRESULT,
                            ctypes.POINTER(_PROPERTYKEY), ctypes.POINTER(_PROPVARIANT))
     for key, value in values:
@@ -369,9 +318,6 @@ class Shortcut:
 
 
 def write_shortcut(lnk_path: str, shortcut: Shortcut, *, ole32=_ole32) -> None:
-    """Make the shortcut at *lnk_path* exactly the one described, the identity
-    in the same save.  One already there is changed in place, as the shell's
-    Properties dialog changes one, so what this call does not name survives."""
     with _apartment(ole32) as com:
         shell_link = _shell_link_to_rewrite(com, lnk_path)
         try:
@@ -456,21 +402,12 @@ def _app_id_of(shell_link: int, com) -> str | None:
 
 
 def taskbar_pins() -> Path:
-    """The folder the taskbar keeps its own copy of every pinned shortcut in."""
     return (Path(os.environ.get("APPDATA", "")) / "Microsoft" / "Internet Explorer"
             / "Quick Launch" / "User Pinned" / "TaskBar")
 
 
 def stamp_pinned_shortcuts(app_id: str, names: Iterable[str], *, pins: Path | None = None,
                            stamp=set_shortcut_app_user_model_id) -> dict[Path, OSError | None]:
-    """Stamp *app_id* onto each taskbar pin called one of *names*, case aside.
-
-    A whole name, never a prefix: a retired pin beside the live one would
-    otherwise be kept looking live.  Each pin answers for itself -- the refusal
-    Windows gave one is returned against it and the rest are still stamped --
-    because whether an unstamped pin matters is the app's to say, and every app
-    here goes on launching without one.
-    """
     wanted = {name.lower() for name in names}
     folder = taskbar_pins() if pins is None else pins
     if not folder.is_dir():
@@ -488,13 +425,9 @@ def stamp_pinned_shortcuts(app_id: str, names: Iterable[str], *, pins: Path | No
     return results
 
 
-# --- A window that wears an identity no shortcut carries ---------------------
-
 
 @dataclass(frozen=True)
 class TaskbarApp:
-    """What a shortcut tells the taskbar about the identity it carries."""
-
     name: str
     icon: Path
     relaunch: str
@@ -535,7 +468,6 @@ def _winreg():
 
 
 def describe_taskbar_app(app_id: str, app: TaskbarApp, *, registry=_winreg) -> None:
-    """Leave *app* where a window of another process that wears *app_id* finds it."""
     reg = registry()
     with reg.CreateKey(reg.HKEY_CURRENT_USER, rf"{_TASKBAR_APPS}\{app_id}") as key:
         for name, value in (("Name", app.name), ("Icon", str(app.icon)), ("Relaunch", app.relaunch)):
@@ -553,26 +485,11 @@ def described_taskbar_app(app_id: str, *, registry=_winreg) -> TaskbarApp | None
     return TaskbarApp(name=name, icon=Path(icon), relaunch=relaunch)
 
 
-# --- May I run?  A named mutex, and the handle that answers ------------------
-
 _ERROR_ALREADY_EXISTS = 183
 _SYNCHRONIZE = 0x00100000
 
 
 def mutex_name(base: str, identity: str | Path) -> str:
-    """The mutex name for *base* and *identity*.
-
-    *identity* is whatever makes one session different from another -- a config
-    path, a profile directory.  The same identity always gives the same name, so
-    one identity blocks its own duplicates while a session started on another
-    runs beside it untroubled.
-
-    The digest is not a hash of anything secret; it is here because a mutex name
-    is a flat namespace shared with every other process on the machine, and a
-    path cannot go in one (``\\`` is the namespace separator).  What matters is
-    that it never changes: a name spelled differently does not refuse a second
-    launch, it lets it through beside the first.
-    """
     suffix = hashlib.md5(str(identity).encode()).hexdigest()[:12]
     return f"{base}.{suffix}"
 
@@ -636,8 +553,6 @@ def is_mutex_held(name: str, *, kernel32=_kernel32) -> bool:
     return True
 
 
-# --- Which process a pid names, by when it started --------------------------
-
 _PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 _STILL_ACTIVE = 259
 
@@ -668,8 +583,6 @@ def process_started(pid: int, *, kernel32=_kernel32) -> int | None:
 def _ticks(filetime: wintypes.FILETIME) -> int:
     return filetime.dwHighDateTime << 32 | filetime.dwLowDateTime
 
-
-# --- Ending a process together with every process it started ----------------
 
 _ACCOUNTING = 1
 _PROCESS_ID_LIST = 3
@@ -829,8 +742,6 @@ def busy_seconds_of_the_job_this_process_runs_in(*, kernel32=_kernel32) -> float
     times_of(this_process(), *map(ctypes.byref, (created, ended, kernel, user)))
     return (_ticks(kernel) + _ticks(user)) / _TICKS_A_SECOND
 
-
-# --- Putting an error where the user will actually see it -------------------
 
 _MB_OK = 0x0
 _MB_ICONERROR = 0x10

@@ -1,8 +1,3 @@
-"""Binding a Win32 DLL at import, in a process whose ctypes may have no Windows half.
-
-Where there is none, the handle is a stand-in that takes argtypes like the real one
-and raises :class:`Win32Unavailable`, naming the entry point, when anything calls it.
-"""
 from __future__ import annotations
 
 import ctypes

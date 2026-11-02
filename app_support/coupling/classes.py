@@ -1,9 +1,3 @@
-"""What a class is made of and how far it reaches, read off its source.
-
-A chain is ``self.a.b``: a method reaching through what it holds into what that
-holds. Handing the first hop to a local first is still the chain, so a local is
-followed through every way of binding one.
-"""
 from __future__ import annotations
 
 import ast

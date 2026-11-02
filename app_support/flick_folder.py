@@ -1,8 +1,3 @@
-"""The folder Genau's flicks live in, laid out the same for every app that meets it.
-
-What the folder is called is the library's own vocabulary, which no tracked file
-may spell, so it is found by its shape rather than its name.
-"""
 from __future__ import annotations
 
 from pathlib import Path

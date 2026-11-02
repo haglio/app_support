@@ -1,8 +1,3 @@
-"""What the modules of a repository take from one another, read off their source.
-
-A name taken through a package that only re-exports it counts against the module
-that defines it, so a gathering ``__init__.py`` hides nothing and owes nothing.
-"""
 from __future__ import annotations
 
 import ast

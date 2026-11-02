@@ -1,23 +1,3 @@
-"""The Windows settings each app relies on, declared in its own pyproject and
-made true on this machine by one command.
-
-    [tool.haglio.shortcuts."Example"]
-    launcher = "launch_example.vbs"
-    icon = "example.ico"
-    app-id = "Example.App"
-    places = ["taskbar", "checkout"]
-
-    [tool.haglio.scheduled-tasks."Example Tray"]
-    launcher = "launch_example.vbs"
-    every-minutes = 2
-
-``python -m app_support.windows_settings`` names what on this machine differs
-from what the checkouts beside this one list; ``--write`` makes it match.
-Windows lets no program pin to the taskbar, so a pin is only ever corrected, and
-the copy kept in the checkout is the one to pin from.
-
-Standard library only.
-"""
 from __future__ import annotations
 
 import argparse
@@ -174,8 +154,6 @@ def _kept_by(checkout: Path) -> str:
 
 
 def kept_by(description: str) -> str | None:
-    """The checkout whose list put a shortcut or task where it is, or None
-    when nothing this module wrote is there."""
     found = _KEPT_BY.fullmatch(description)
     return found["checkout"] if found else None
 
@@ -220,8 +198,6 @@ class Change:
 
 
 def changes(workspace: Path, *, run=scheduled_tasks.schtasks) -> list[Change]:
-    """What would make this machine hold what every checkout in *workspace* lists.
-    A change with nothing to make it is one only a person can make."""
     checkouts = _lists(workspace)
     return _shortcut_changes(checkouts, Path(workspace)) + _task_changes(checkouts, run)
 
@@ -270,8 +246,6 @@ def _shortcut_changes(checkouts: dict[str, tuple[Path, Declarations]],
 
 
 def _not_there(shortcut: win32.Shortcut, within: Path | None) -> list[str]:
-    """What *shortcut* starts that is gone -- only inside *within*, unless None:
-    another program's pin is that program's to keep."""
     started = [shortcut.target]
     started += [quoted or bare for quoted, bare in _ABSOLUTE_PATH.findall(shortcut.arguments)]
     started.append(shortcut.working_directory)

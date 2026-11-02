@@ -1,14 +1,3 @@
-"""The four files an Origenerator opened on its own and a Fun Time session hand
-that Origenerator over through, spelled, written and read once for both apps.
-
-The Origenerator offers itself (OFFER) and says the shape of the slideshow it
-shows (SHOWING); a session hands the copy it finds its launch (TAKEOVER), taken
-once, rather than starting a second, and claims the OSR2 for as long as it runs
-(SESSION).  A pid names a process only beside the time it started, since
-Windows gives a freed pid out again within seconds.  Copies of the two apps can
-run different releases of this module, so what one release writes, every later
-one reads.
-"""
 from __future__ import annotations
 
 import json

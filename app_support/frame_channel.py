@@ -1,12 +1,3 @@
-"""A window's pixels, written by the process that draws them and read by the one
-that shows them.
-
-One memory-mapped file per channel, its header carrying a sequence number that
-is odd while a frame is being written, so a reader that looks mid-write is told
-to come back rather than handed half a frame.  The *token* is whoever the frame
-was drawn for: a reader asks for its own, so a frame left over from an earlier
-opening is never shown for this one.
-"""
 from __future__ import annotations
 
 import mmap
@@ -15,7 +6,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-_HEADER = struct.Struct("<QIII")  # sequence (odd while writing), token, width, height
+_HEADER = struct.Struct("<QIII")
 _SEQUENCE = struct.Struct("<Q")
 _BYTES_PER_PIXEL = 4
 

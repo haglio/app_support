@@ -1,4 +1,3 @@
-"""Run the tests a branch added or changed many times, and refuse any that fail once."""
 from __future__ import annotations
 
 import argparse
@@ -33,8 +32,6 @@ def busy_machine(*, workers: int) -> Iterator[list[subprocess.Popen]]:
 
 
 class Repeats(NamedTuple):
-    """The tests the gate put through all of its runs, and the ones it left out."""
-
     repeated: list[str]
     skipped: list[str]
 
@@ -42,14 +39,6 @@ class Repeats(NamedTuple):
 def assert_they_hold_up(root: Path, ids: list[str], *, runs: int, python: str = sys.executable,
                         load: Callable[[], AbstractContextManager] = nullcontext,
                         budget: float | None = None) -> Repeats:
-    """Repeat *ids* *runs* times each, within *budget* seconds if one is given.
-
-    Without a cap, a branch that renames a module can schedule thousands of runs
-    and take the job past its own ceiling, which reports nothing at all and turns
-    a green branch away.  So the tests are taken in chunks, each chunk repeated to
-    the end before the next is started, no run is begun that the measured pace
-    says would end past the cap, a run that goes on past it anyway is stopped
-    there, and what there is no room for comes back named rather than dropped."""
     if not ids:
         return Repeats([], [])
     command = [python, "-m", "pytest", "-q", "-p", "no:cacheprovider"]
@@ -93,10 +82,6 @@ _LONGEST_COMMAND_LINE = 32_766  # CreateProcessW's limit, less its terminating n
 
 
 class _Pace:
-    """What one run of one test has been costing, measured as the gate goes."""
-
-    # Tests enough to pace the rest by, few enough to lose to a cap too small for
-    # them: what the first chunk holds, there being nothing yet to measure on.
     _TO_MEASURE_ON = 20
 
     def __init__(self) -> None:
@@ -113,8 +98,6 @@ class _Pace:
         return max(0, int(seconds * self.test_runs / (self.spent * runs)))
 
     def seconds_for(self, chunk: list[str]) -> float:
-        """What one more run of *chunk* looks like costing -- nothing at all until
-        a run has been timed, there being no ground yet to refuse one on."""
         return 0.0 if not self.spent else self.spent * len(chunk) / self.test_runs
 
 
@@ -179,7 +162,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _what_it_got_through(held: Repeats, *, runs: int, cap: float | None) -> str:
-    """A repeat the cap left out is named, never silently not run."""
     total = len(held.repeated) + len(held.skipped)
     said = [f"repeated {len(held.repeated)} of {total} tests, {runs} times each"]
     if held.skipped:

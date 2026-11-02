@@ -1,4 +1,3 @@
-"""Reads of another object's private name through any handle, and imports of a private name charged to the module that defines it."""
 from __future__ import annotations
 
 import ast
