@@ -61,6 +61,9 @@ include = ["app_support*"]
 # all of them every two minutes. The launcher is rendered from this by
 # `python -m app_support.launcher --write`, and
 # `python -m app_support.windows_settings --write` registers the task.
+[tool.haglio.launcher-gate]
+without-a-log = ["launch_production_updater.vbs"]
+
 [tool.haglio.launchers."launch_production_updater.vbs"]
 app = "Production updater"
 interpreter = "pythonw.exe"
