@@ -8,8 +8,10 @@ measurements a suite run in parts has gathered into ``.coverage`` to their entri
 """
 from __future__ import annotations
 
+import ast
 import io
 import json
+import re
 import subprocess
 import sys
 import tokenize
@@ -28,6 +30,11 @@ from app_support.private_reach import private_imports, reaches_in
 _COMMAND = "python -m app_support.gates.baseline"
 _CLASS_MARK = "::"
 STATED_RENAMES_PATH = "tools/quality_baseline_renames.json"
+EXTERNALITY_COMMENTS = "externality_comments"
+_NAMES_AN_EXTERNALITY = re.compile(
+    r"\b(Qt|PyQt\d?|Q[A-Z][a-z]\w+|mpv|libmpv|Win32|Windows|ctypes|pywin32|pCloud|ComfyUI|pygame|OpenXR|ffmpeg|ffprobe|FFmpeg"
+    r"|CPython|pytest|pip|git|GitHub|Chrome|SQLite|sqlite3|Pillow|PIL|vosk|Whisper|Ollama|ruff|vulture|VBScript|PowerShell)\b")
+_MARKER_FOR_A_TOOL = re.compile(r"#\s*(noqa|type:|pragma:|pylint:|ruff:|fmt:|nosec|isort:|mypy:|pyright:)")
 
 
 def prose_lines(source: str) -> int:
@@ -47,6 +54,63 @@ def prose_lines(source: str) -> int:
         if token.type not in (tokenize.COMMENT, tokenize.NL):
             before = token.type
     return len(prose)
+
+
+def _is_on_a_line_of_code(token: tokenize.TokenInfo) -> bool:
+    return bool(token.line[:token.start[1]].strip())
+
+
+def _comments(source: str) -> Iterator[tokenize.TokenInfo]:
+    return (token for token in tokenize.generate_tokens(io.StringIO(source).readline) if token.type == tokenize.COMMENT)
+
+
+def _comment_blocks(source: str) -> Iterator[list[int]]:
+    block: list[int] = []
+    for token in _comments(source):
+        if _is_on_a_line_of_code(token):
+            continue
+        if block and token.start[0] != block[-1] + 1:
+            yield block
+            block = []
+        block.append(token.start[0])
+    if block:
+        yield block
+
+
+def _docstring_blocks(source: str) -> Iterator[list[int]]:
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
+            yield list(range(node.lineno, node.end_lineno + 1))
+
+
+def _trailing(source: str) -> list[str]:
+    return [token.string for token in _comments(source)
+            if _is_on_a_line_of_code(token) and not _MARKER_FOR_A_TOOL.match(token.string)]
+
+
+def trailing_comments(source: str) -> int:
+    try:
+        return sum(not _NAMES_AN_EXTERNALITY.search(comment) for comment in _trailing(source))
+    except (tokenize.TokenError, IndentationError):
+        return 0
+
+
+def _named_whole_lines(source: str) -> list[int]:
+    lines = source.splitlines()
+    try:
+        blocks = [*_comment_blocks(source), *_docstring_blocks(source)]
+    except (tokenize.TokenError, IndentationError, SyntaxError):
+        return []
+    return [row for block in blocks if _NAMES_AN_EXTERNALITY.search("\n".join(lines[row - 1] for row in block))
+            for row in block if lines[row - 1].strip()]
+
+
+def externality_lines(source: str) -> int:
+    try:
+        trailing = _trailing(source)
+    except (tokenize.TokenError, IndentationError):
+        trailing = []
+    return len(_named_whole_lines(source)) + sum(bool(_NAMES_AN_EXTERNALITY.search(comment)) for comment in trailing)
 
 
 def methods_of(source: str, class_name: str) -> int:
@@ -70,10 +134,27 @@ def _key(path: Path, checkout: Checkout) -> str:
     return path.relative_to(checkout.root).as_posix()
 
 
-def _prose(checkout: Checkout, _entries: dict[str, int]) -> dict[str, int]:
-    counted = {_key(path, checkout): prose_lines(_text(path))
+def _measured_over_code_and_tests(checkout: Checkout, measure: Callable[[str], int]) -> dict[str, int]:
+    counted = {_key(path, checkout): measure(_text(path))
                for path in _python_under((*checkout.code, *checkout.own_tests))}
     return {key: lines for key, lines in counted.items() if lines}
+
+
+def _other_prose_lines(source: str) -> int:
+    return prose_lines(source) - sum(1 for _ in _named_whole_lines(source))
+
+
+def _prose(checkout: Checkout, _entries: dict[str, int]) -> dict[str, int]:
+    keeps_them_apart = EXTERNALITY_COMMENTS in (checkout.sections or {})
+    return _measured_over_code_and_tests(checkout, _other_prose_lines if keeps_them_apart else prose_lines)
+
+
+def _externalities(checkout: Checkout, _entries: dict[str, int]) -> dict[str, int]:
+    return _measured_over_code_and_tests(checkout, externality_lines)
+
+
+def _trailing_counts(checkout: Checkout, _entries: dict[str, int]) -> dict[str, int]:
+    return _measured_over_code_and_tests(checkout, trailing_comments)
 
 
 def _reach_listing(checkout: Checkout) -> dict[str, list[str]]:
@@ -122,6 +203,8 @@ class Count(NamedTuple):
 
 COUNTS = (
     Count("prose_lines", _prose, "say it in a name or a test, or delete it"),
+    Count(EXTERNALITY_COMMENTS, _externalities, f"keep it only if it names what forces this shape, and run {_COMMAND}"),
+    Count("trailing_comments", _trailing_counts, "say it in a name or a test, or delete it"),
     Count("private_reaches", _reaches, "ask the object for what you need rather than reading its private name",
           _reach_listing),
     Count("private_imports", _imports, "make the name public, or stop reading it from outside", _import_listing),
@@ -226,7 +309,7 @@ def assert_nothing_stands_above_main(checkout: Checkout) -> None:
         return
     renames = _renames(checkout.root)
     told = [f"{section} {key} stands at {held}, above the {entry} main holds"
-            for section, entries in here.items() if section in at_main
+            for section, entries in here.items() if section in at_main and section != EXTERNALITY_COMMENTS
             for key, (held, entry) in over(carried(at_main[section], renames), entries).items()
             if not _lists_a_class_nothing_held(section, entry, held)]
     told += [f"{section} is gone from the file, and main holds it" for section in at_main if section not in here]
@@ -274,7 +357,7 @@ def main_in(checkout: Checkout, *, said: Callable[[str], None] = print) -> int:
     sections = dict(on_file)
     refusals = 0
     for section, live in _measures(checkout, on_file, said):
-        if section not in on_file:
+        if section not in on_file or section == EXTERNALITY_COMMENTS:
             sections[section] = live
             continue
         entries = carried(on_file[section], renames)
