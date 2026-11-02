@@ -327,3 +327,23 @@ def test_a_whitelist_entry_one_package_alone_reports_is_live(tmp_path):
     with pytest.raises(AssertionError, match="helper"):
         assert_whitelist_is_live(a, b, whitelist=whitelist)
     assert_whitelist_is_live(a, b, whitelist=whitelist, each_alone=True)
+
+
+def test_a_private_package_is_not_one_the_gate_must_name(tmp_path):
+    (tmp_path / "_scratch").mkdir()
+    (tmp_path / "_scratch" / "__init__.py").write_text("", encoding="utf-8")
+    assert_every_package_is_scanned(tmp_path, ())
+
+
+def test_a_directory_without_an_init_is_not_a_package_the_gate_must_name(tmp_path):
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "a.py").write_text("", encoding="utf-8")
+    assert_every_package_is_scanned(tmp_path, ())
+
+
+def test_an_argument_a_method_never_reads_is_left_alone_by_default(tmp_path):
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "__init__.py").write_text("", encoding="utf-8")
+    (tmp_path / "pkg" / "a.py").write_text(
+        "class A:\n    def paint(self, event):\n        return 1\n", encoding="utf-8")
+    assert_no_function_takes_an_argument_it_never_reads(tmp_path, tmp_path / "pkg")

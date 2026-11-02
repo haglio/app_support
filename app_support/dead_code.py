@@ -11,10 +11,8 @@ from pathlib import Path
 
 from app_support import lint, unread
 
-# vulture's exit codes: 0 nothing to report, 3 the report is not empty. Every
-# other code means it did not get as far as an answer -- 1 for input it could
-# not read, 2 for arguments it could not parse, and 1 again from the interpreter
-# when vulture is not installed at all.
+# vulture exits 0 for nothing to report and 3 for a report; 1 (unreadable input, or the interpreter
+# when vulture is not installed) and 2 (unparsable arguments) mean it gave no answer.
 _NOTHING_TO_REPORT = 0
 _REPORT_IS_NOT_EMPTY = 3
 
@@ -24,14 +22,7 @@ class ScanDidNotRun(RuntimeError):
 
 
 def _refuse_a_target_with_nothing_to_read(targets: tuple[Path | str, ...]) -> None:
-    """The failure no exit code reports: a target with no Python under it.
-
-    vulture is content to be handed a directory holding nothing it can read and
-    exits 0 for it, which is the same answer a scanned-and-clean tree gets. A
-    gate whose target has moved, been renamed, or been swallowed by an
-    ``--exclude`` that matched more than its author meant then passes for the
-    rest of its life while scanning nothing at all.
-    """
+    """vulture exits 0 for a directory holding no Python, the same as for a clean tree."""
     for target in targets:
         path = Path(target)
         if not path.exists():
@@ -43,14 +34,7 @@ def _refuse_a_target_with_nothing_to_read(targets: tuple[Path | str, ...]) -> No
 def _refuse_a_whitelist_inside_the_scan(
     targets: tuple[Path | str, ...], whitelist: Path | str
 ) -> None:
-    """Where a whitelist may not live.
-
-    vulture reads the file by unioning the names it uses with the names the
-    scanned tree uses, so one kept inside a scanned directory is read as part of
-    that tree whether or not it was handed over -- and the gate then reports
-    nothing at all, whatever the tree holds. Keep it beside the repo root, the
-    way every repo in this family already does.
-    """
+    """vulture unions the names a whitelist mentions with the scanned tree, even for one inside it."""
     kept = Path(whitelist).resolve()
     for target in targets:
         directory = Path(target).resolve()
@@ -135,13 +119,7 @@ def tracked_python(checkout: Path | str) -> list[Path]:
 
 
 def _reports(targets, whitelist, min_confidence, each_alone, callers) -> str:
-    """vulture's report over *targets* -- one run, or one run per target.
-
-    Scanned together, packages hide each other's corpses: vulture matches by
-    bare name across everything it is handed, so a function dead in one package
-    is invisible while any other has a live name like it. One run each is
-    narrower, and costs the cross-package readers, which the whitelist names.
-    """
+    """vulture matches names across everything it is handed, so packages scanned together hide each other's dead code."""
     callers = tuple(callers)
     if not each_alone:
         return scan(*targets, whitelist=whitelist, min_confidence=min_confidence, callers=callers)
@@ -164,18 +142,12 @@ def assert_no_dead_code(
     )
 
 
-# `vulture --make-whitelist` spells an attribute `_.name`, so `_` is the file's
-# placeholder for "some object" and never an entry of its own.
+# `vulture --make-whitelist` spells an attribute `_.name`; `_` is a placeholder, not a name.
 _WHITELIST_PLACEHOLDER = "_"
 
 
 def _names_the_whitelist_suppresses(whitelist: Path | str) -> set[str]:
-    """Every name mentioned in the whitelist file, however it is spelled.
-
-    vulture takes the file as source and unions the names it uses with the ones
-    the scanned tree uses, so a mention is the whole mechanism -- ``_.name`` for
-    an attribute or method, a bare name for anything else.
-    """
+    """vulture counts any mention in the whitelist file: `_.name` for an attribute, a bare name otherwise."""
     tree = ast.parse(Path(whitelist).read_text(encoding="utf-8"))
     names = set()
     for node in ast.walk(tree):
