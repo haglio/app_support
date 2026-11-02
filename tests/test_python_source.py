@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from app_support.python_source import names_defined, references
+import ast
+
+from app_support.python_source import names_defined, references, without_docstrings
 
 
 class TestNamesDefined:
@@ -82,10 +84,6 @@ class TestReferences:
 
 
 def test_the_docstring_of_every_scope_is_taken_out_and_no_other_string():
-    import ast
-
-    from app_support.python_source import without_docstrings
-
     source = (
         '"""module"""\n\n\n'
         'class Widget:\n    """class"""\n    "kept class string"\n\n    def method(self):\n        """method"""\n        return 1\n\n\n'
