@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import logging
+import os
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -238,10 +242,14 @@ def test_a_launcher_that_always_fails_is_retried_on_the_interval_not_every_beat(
     assert attempts == ["tried", "tried"]
 
 
-def test_without_localappdata_the_marker_lands_under_the_home_directory(tmp_path, monkeypatch):
-    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+def test_without_localappdata_the_marker_lands_under_the_home_directory(tmp_path):
+    child_environment = {name: value for name, value in os.environ.items() if name != "LOCALAPPDATA"}
+    child_environment.update(USERPROFILE=str(tmp_path), HOME=str(tmp_path), PYTHONPATH=str(Path(__file__).parents[1]))
+    script = ("from app_support.peer_watch import is_stood_down, stand_down\n"
+              "stand_down('Widget', environ={})\n"
+              "raise SystemExit(0 if is_stood_down('Widget', environ={}) else 1)")
 
-    stand_down("Widget", environ={})
+    ran = subprocess.run([sys.executable, "-c", script], env=child_environment, check=False)
 
+    assert ran.returncode == 0
     assert len(list(tmp_path.rglob("Widget.txt"))) == 1
-    assert is_stood_down("Widget", environ={}) is True

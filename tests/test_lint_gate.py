@@ -136,10 +136,12 @@ def test_only_the_named_trees_and_the_root_files_are_scanned(tmp_path):
         lint.assert_lint_is_clean(repo, repo / "pkg")
 
 
-def test_a_ruff_that_is_not_installed_is_not_an_answer(tmp_path, monkeypatch):
-    monkeypatch.setattr(lint, "_ruff", lambda root, *args: subprocess.CompletedProcess(args, 1, "", "No module"))
+def test_a_ruff_that_is_not_installed_is_not_an_answer(tmp_path):
+    def missing(root, *args):
+        return subprocess.CompletedProcess(args, 1, "", "No module")
+
     with pytest.raises(lint.LintDidNotRun, match="not installed"):
-        lint.ruff_version(tmp_path)
+        lint.ruff_version(tmp_path, run=missing)
 
 
 def test_a_rule_ruff_refuses_is_not_a_clean_scan(tmp_path):

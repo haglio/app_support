@@ -102,8 +102,8 @@ def _ruff(root, *args) -> subprocess.CompletedProcess:
                           capture_output=True, text=True, encoding="utf-8", check=False)
 
 
-def ruff_version(root) -> str:
-    ran = _ruff(root, "--version")
+def ruff_version(root, *, run=_ruff) -> str:
+    ran = run(root, "--version")
     if ran.returncode != 0:
         raise LintDidNotRun(f"ruff is not installed for {sys.executable}:\n{ran.stderr}")
     return ran.stdout.split()[-1]
