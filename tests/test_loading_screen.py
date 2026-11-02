@@ -191,7 +191,7 @@ class Launch:
         self.clock = Clock()
         self.launcher_running = True
         self.showing = loading_screen.Showing(
-            self.place, self.place.snapshots(), self.checkouts, progress_of=self.under_way.get, clock=self.clock,
+            self.place, self.checkouts, progress_of=self.under_way.get, clock=self.clock,
             launcher_running=lambda: self.launcher_running)
 
     def snapshot(self) -> bytes:
@@ -247,7 +247,7 @@ class TestWhatTheLaunchersLoadingScreenShows:
                               covers_every_monitor=False)
         under_way = {tmp_path / "example": updating()}
         clock = Clock(1010.0)
-        showing = loading_screen.Showing(place, place.snapshots(), (tmp_path / "example",),
+        showing = loading_screen.Showing(place, (tmp_path / "example",),
                                          progress_of=under_way.get, clock=clock, launcher_running=lambda: True)
 
         frame = showing.tick()
