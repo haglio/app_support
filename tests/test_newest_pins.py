@@ -64,6 +64,7 @@ class FakeGitHub:
         self.mains = dict(mains)
         self._tags = tags
         self.branches: dict[tuple[str, str], str] = {}
+        self.commits: dict[str, str] = {}
         self.pulls: dict[str, dict] = {}
         self.armed: list[tuple[str, int]] = []
         self.withdrawn: list[tuple[str, int, str]] = []
@@ -76,19 +77,23 @@ class FakeGitHub:
         return ("main", f"{repo}-head")
 
     def file_at(self, repo, ref, path):
-        text = self.branches.get((repo, ref)) if ref == BRANCH else self.mains[repo]
-        return None if text is None else (text, f"blob-of-{ref}")
+        return self.branches.get((repo, ref)) if ref == BRANCH else self.mains[repo]
 
     def tags(self, repo):
         return self._tags.get(repo, [])
 
     def point(self, repo, branch, sha):
-        assert sha == f"{repo}-head"
-        self.branches[repo, branch] = self.mains[repo]
+        if sha == f"{repo}-head":
+            self.pulls.pop(repo, None)
+            self.branches[repo, branch] = self.mains[repo]
+        else:
+            self.branches[repo, branch] = self.commits[sha]
 
-    def write_pyproject(self, repo, branch, text, *, blob, message):
-        assert blob == f"blob-of-{repo}-head"
-        self.branches[repo, branch] = text
+    def commit_pyproject(self, repo, parent, text, *, message):
+        assert parent == f"{repo}-head"
+        sha = f"commit-{len(self.commits)}"
+        self.commits[sha] = text
+        return sha
 
     def open_pull(self, repo, branch):
         pull = self.pulls.get(repo)
@@ -193,10 +198,10 @@ class TestGhGitHub:
         return GhGitHub("someorg", run=run), asked
 
     def test_a_file_at_a_revision_is_read_off_the_contents_api(self):
-        listing = json.dumps({"content": base64.b64encode(b"GRAY = 1\n").decode("ascii"), "sha": "b1"})
+        listing = json.dumps({"content": base64.b64encode(b"GRAY = 1\n").decode("ascii")})
         github, _ = self._github({("gh", "api", "repos/someorg/someapp/contents/pyproject.toml?ref=main"): listing})
 
-        assert github.file_at("someapp", "main", "pyproject.toml") == ("GRAY = 1\n", "b1")
+        assert github.file_at("someapp", "main", "pyproject.toml") == "GRAY = 1\n"
 
     def test_a_file_github_does_not_have_is_none(self):
         missing = subprocess.CalledProcessError(1, "gh", stderr="gh: Not Found (HTTP 404)")
@@ -256,15 +261,17 @@ class TestGhGitHub:
 
         assert github.main_of("someapp") is None
 
-    def test_a_file_is_written_onto_the_branch_over_the_copy_it_replaces(self):
-        github, asked = self._github({})
+    def test_a_commit_changes_only_the_pyproject_on_top_of_its_parent(self):
+        github, asked = self._github({
+            ("gh", "api", "repos/someorg/someapp/git/commits/c1"): json.dumps({"tree": {"sha": "t1"}}),
+            ("gh", "api", "-X", "POST", "repos/someorg/someapp/git/trees", "-f", "base_tree=t1",
+             "-f", "tree[][path]=pyproject.toml", "-f", "tree[][mode]=100644", "-f", "tree[][type]=blob",
+             "-f", "tree[][content]=GRAY = 2\n"): json.dumps({"sha": "t2"}),
+            ("gh", "api", "-X", "POST", "repos/someorg/someapp/git/commits", "-f", "message=Take widgetlib v0.1.10",
+             "-f", "tree=t2", "-f", "parents[]=c1"): json.dumps({"sha": "c2"})})
 
-        github.write_pyproject("someapp", BRANCH, "GRAY = 2\n", blob="b1", message="Take widgetlib v0.1.10")
-
-        assert asked == [("gh", "api", "-X", "PUT", "repos/someorg/someapp/contents/pyproject.toml",
-                          "-f", "message=Take widgetlib v0.1.10",
-                          "-f", f"content={base64.b64encode(b'GRAY = 2' + bytes([10])).decode('ascii')}",
-                          "-f", "sha=b1", "-f", f"branch={BRANCH}")]
+        assert github.commit_pyproject("someapp", "c1", "GRAY = 2\n", message="Take widgetlib v0.1.10") == "c2"
+        assert len(asked) == 3
 
     def test_the_open_pull_request_from_the_branch_is_found_by_its_number(self):
         github, _ = self._github({("gh", "api", f"repos/someorg/someapp/pulls?head=someorg:{BRANCH}&state=open"):
