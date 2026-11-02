@@ -119,3 +119,20 @@ class TestGenausChannel:
         assert publish_whole(path, "speed=3\ndepth=40\n")
 
         assert path.read_text(encoding="utf-8") == "speed=3\ndepth=40\n"
+
+
+def test_a_name_never_changes_because_a_writer_started_before_the_change_keeps_the_old_one():
+    assert _NAMES == {
+        "BROKER_CMD": "broker_cmd.txt",
+        "BROKER_HEARTBEAT": "broker_heartbeat.txt",
+        "BROKER_MODE": "broker_mode.txt",
+        "OSR2_SERIAL_RX": "osr2_serial_rx.txt",
+        "OSR2_SERIAL_ANSWER": "osr2_serial_answer.txt",
+        "OSR2_SERIAL_TX": "osr2_serial_tx.txt",
+        "OSR2_NOT_FOUND": "osr2_not_found.txt",
+        "OSR2_NOT_ANSWERING": "osr2_not_answering.txt",
+        "GENAU_CMD": "genau_cmd.txt",
+        "GENAU_PAUSED": "genau_paused.txt",
+        "GENAU_DRIVE": "genau_drive.txt",
+        "GENAU_STATUS": "genau_status.txt",
+    }
