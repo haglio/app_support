@@ -93,6 +93,10 @@ _SIBLING_PACKAGES: Mapping[str, tuple[str, ...]] = {
 def _packages_of(sibling: str) -> tuple[str, ...]:
     return _SIBLING_PACKAGES.get(sibling, (sibling,))
 
+
+def family_packages() -> tuple[str, ...]:
+    return tuple(package for sibling in FAMILY_SIBLINGS for package in _packages_of(sibling))
+
 _DIST_NAME = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
 
 
@@ -176,7 +180,7 @@ def _imported_names(root: Path, packages: Iterable[Path], *,
 def third_party_imports(root: Path, packages: Iterable[Path], *, local: Iterable[str] = ()) -> dict[str, list[str]]:
     """Every third-party name the *packages* import, with the files that do."""
     skip = (set(sys.stdlib_module_names) | set(local)
-            | {package for sibling in FAMILY_SIBLINGS for package in _packages_of(sibling)})
+            | set(family_packages()))
     return {name: files for name, files in _imported_names(root, packages).items()
             if name not in skip}
 
