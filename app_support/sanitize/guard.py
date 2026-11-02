@@ -1,19 +1,3 @@
-"""Pre-publication content guard.
-
-Scans text for terms that must never reach a public commit — whatever the
-machine's own list names: private vocabulary, filename fragments, provider and
-site names, personal identifiers. The term list is deliberately *not* committed:
-a checked-in blocklist would itself be a catalogue of the words we are trying to
-keep out of the public repo.
-Instead one list sits beside the family of checkouts, in no repository at all —
-see ``blocklist_path``.
-
-The module is dependency-free and importable without the app, so a repo's git
-hooks and its unit suite can both call it cheaply — run it as
-``python -m app_support.sanitize --staged`` or ``--message FILE``. Excerpts are
-fully redacted (every matched term replaced with ``***``) so the guard's own
-output never reproduces the content it is guarding against.
-"""
 from __future__ import annotations
 
 import argparse
@@ -32,30 +16,13 @@ _MAX_EXCERPT = 160
 _MOST_LISTED = 20
 _LONGEST_WORD_KEPT_WHOLE = 3
 _BLOCKLIST = Path(".sanitize") / "blocklist.txt"
-# What may stand between the words of a multi-word term: any run of spacing or
-# joining punctuation, or nothing — the shapes a filename uses.
 _SEPARATOR = r"[\s\-_.]*"
-# What a filename joins its words with; read as spaces when the name is scanned.
 _NAME_JOINERS = re.compile(r"[\s\-_.]+")
-# Trailing inflections a blocklist entry is not written with but text uses.
 _INFLECTION = r"(?:'?s|es|ed|ing)?"
-# What a plural's stem ends in when the plural took ``es`` -- not ``s``, since
-# ``phrases`` is ``phrase`` + ``s`` as surely as ``buses`` is ``bus`` + ``es``.
 _SIBILANT_ENDINGS = ("x", "z", "ch", "sh")
 
 
 def _stem(word: str) -> str:
-    """The word an entry written in the plural names.
-
-    A list is full of plurals, and an entry's own inflection slack ran only
-    forward: ``badterms`` caught ``badterms`` and let ``badterm`` through.  Only
-    a plural is undone -- ``es`` after x, z, ch or sh, else a lone ``s`` -- and
-    only where a real stem is left: never after ``ss``, ``us`` or ``is``, never
-    from a word of three letters or fewer, so the stem cannot decay into a
-    substring that fires on something else.  A plural in ``ses`` keeps its
-    ``e`` (``phrases`` reads as ``phrase``), and a plural this cannot undo
-    still matches exactly what it matched before.
-    """
     lower = word.lower()
     if (len(lower) <= _LONGEST_WORD_KEPT_WHOLE or not lower.endswith("s")
             or lower.endswith(("ss", "us", "is"))):
@@ -67,14 +34,6 @@ def _stem(word: str) -> str:
 
 @dataclass(frozen=True)
 class Violation:
-    """One blocklisted term found at a location, or a file the scan could not read.
-
-    The term stays out of the repr: a failing check reprints its violations
-    through pytest's assertion introspection, into the terminal and into any
-    retained junit artifact, and the term is the one thing this guard exists
-    to keep out of both.  The excerpt is already redacted.
-    """
-
     path: str
     line: int
     term: str = field(repr=False)
@@ -110,23 +69,6 @@ class _Matcher:
 
 @cache
 def _matcher(term: str) -> _Matcher:
-    """Case-insensitive matcher for *term*, in the forms text actually uses.
-
-    A term whose first/last character is a word character gets a word-boundary
-    guard on that side, so ``cat`` does not fire inside ``concatenate`` while a
-    punctuated term like ``site.co`` still matches literally.
-
-    The two things a plain literal misses are the two things that leak:
-
-    * **Separators.** A blocklist is written in prose — ``two word`` — and the
-      leak arrives as a filename: ``two-word``, ``two_word``, ``two.word``,
-      ``twoword``. So the gaps between a term's words match any run of spacing
-      or joining punctuation, including none at all.
-    * **Inflections.** A short inflectional tail is allowed before that
-      boundary, so an entry matches its own plural -- and an entry written in
-      the plural is matched from its stem (:func:`_stem`), so it catches its
-      own singular too.
-    """
     stripped = term.strip()
     parts = stripped.split()
     if parts[-1].isalpha():
@@ -163,23 +105,12 @@ def find_violations(
     *,
     path: str = "<text>",
 ) -> list[Violation]:
-    """Every blocklisted term occurrence in *text*, one per (line, term).
-
-    Matched against the whole text rather than line by line, because a term's
-    words are separated by *any* whitespace — a newline included — so a
-    multi-word term that a wrap has split across two lines is a real occurrence
-    that a per-line scan cannot see.
-
-    The line reported is where the match *starts*, and the excerpt is that line,
-    so a wrapped hit still points at somewhere useful to look.
-    """
     return _violations_in(text, _compile(terms), path)
 
 
 def _violations_in(text: str, matchers: Sequence[_Matcher], path: str) -> list[Violation]:
     present = _present(matchers, text)
     lines = text.splitlines()
-    # Offset of each line start, to turn a match position into a line number.
     starts, at = [], 0
     for line in lines:
         starts.append(at)
@@ -195,27 +126,10 @@ def _violations_in(text: str, matchers: Sequence[_Matcher], path: str) -> list[V
 
 
 def blocklist_path(repo: Path) -> Path:
-    """The one list, beside the checkouts rather than inside any of them.
-
-    The list describes the machine, not a tree, so one file beside the family
-    keeps it one list, and sitting outside every repository is what makes it
-    uncommittable.
-
-    The directory the checkouts sit in is the one holding the checkout a
-    worktree was made in, wherever the worktree itself is.
-
-    The leading dot says what the directory is: everything else beside it is a
-    checkout, and this one is not.
-
-    The returned path need not exist — a public clone legitimately has no
-    blocklist, and so does a source tree with no git at all. Callers check
-    ``.exists()`` and treat absence as nothing to enforce.
-    """
     return primary_checkout_of(repo).resolve().parent / _BLOCKLIST
 
 
 def load_blocklist(path: Path) -> list[str]:
-    """Read a blocklist file: one term per line, ``#`` comments and blanks skipped."""
     terms: list[str] = []
     for raw in path.read_text(encoding="utf-8").splitlines():
         line = raw.strip()
@@ -225,17 +139,6 @@ def load_blocklist(path: Path) -> list[str]:
 
 
 def _scan_name(path: str, matchers: Sequence[_Matcher]) -> tuple[str, list[Violation]]:
-    """*path* as a report may show it, and every term in the file's name.
-
-    A name is text the repository publishes as surely as any file's contents,
-    so it is scanned rather than passed through as a label.  A hit is reported
-    at line 0.
-
-    A name joins its words with ``_``, ``-`` and ``.``, which the matcher's word
-    boundaries read as letters, so the name is judged with those as spaces --
-    and a name that carries a term is shown in that reading, redacted, since
-    the report and pytest's introspection would otherwise print the term.
-    """
     words = _NAME_JOINERS.sub(" ", path)
     hits = [m for m in _present(matchers, words) if m.pattern.search(words)]
     if not hits:
@@ -265,13 +168,6 @@ def scan_files(
     *,
     root: Path | None = None,
 ) -> list[Violation]:
-    """Scan each file's name, and each readable text file's contents, for
-    blocklisted terms.
-
-    Binary or undecodable contents are skipped — assets are excluded from a
-    public repo by ``.gitignore``, not by this text guard — but every name is
-    read.
-    """
     return _scan(((str(path.relative_to(root)) if root else str(path), _text_of(path))
                   for path in paths), terms)
 
@@ -285,16 +181,6 @@ def _text_of(path: Path) -> str | OSError | None:
         return refused
 
 
-# --------------------------------------------------------------------------
-# Command line, for each repo's git hooks.
-#
-# A hook catches a term while it is still staged, which is the only point at
-# which the fix is free. The unit suite catches the same term afterwards, and by
-# then it is already a commit -- and on a public repo, a commit is forever: a
-# history rewrite is partial protection at best, since unreferenced objects stay
-# reachable for a while and clones, forks and caches outlive the rewrite.
-# --------------------------------------------------------------------------
-
 
 def _repo_root() -> Path:
     top = subprocess.run(
@@ -305,11 +191,6 @@ def _repo_root() -> Path:
 
 
 def _staged_violations(repo: Path, terms: Sequence[str]) -> list[Violation]:
-    """Blocklist hits in what is *staged*, read from the index rather than disk.
-
-    The index is what the commit will contain: a partially-staged file must be
-    judged on the staged half, not on the working copy sitting next to it.
-    """
     names = subprocess.run(
         ["git", "diff", "--cached", "--name-only", "--diff-filter=ACMR", "-z"],
         cwd=repo, capture_output=True, text=True, check=True,
@@ -330,12 +211,6 @@ def _staged_text(repo: Path, rel: str) -> str | None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """The two flags the hooks pass.
-
-    argparse, not a scan of ``sys.argv``: this runs inside a git hook, where a
-    missing value for ``--message`` must come out as a usage error rather than
-    a traceback.
-    """
     parser = argparse.ArgumentParser(
         prog="app_support.sanitize",
         description="Refuse a commit that carries a blocked term.")
@@ -348,14 +223,6 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """``--staged`` for pre-commit, ``--message FILE`` for commit-msg.
-
-    Exits 0 when there is no blocklist to enforce, so a public clone and a
-    checkout without the overlay both commit normally. The flags are parsed
-    first, before that check: a hook calling this wrongly must hear about it in
-    the checkout where the guard has nothing to enforce as well as in the one
-    where it does.
-    """
     args = build_parser().parse_args(sys.argv[1:] if argv is None else list(argv))
     try:
         repo = _repo_root()
@@ -364,9 +231,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     path = blocklist_path(repo)
     terms = load_blocklist(path) if path.exists() else []
     if not terms:
-        # Said on the way past, never refused: a public clone has no list and
-        # commits normally, but on the machine that keeps one this line is the
-        # only sign that the list has gone missing.
         print(f"sanitize: no blocklist at {path}; nothing enforced", file=sys.stderr)
         return 0
 
@@ -380,8 +244,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not violations:
         return 0
 
-    # Report the redacted excerpt only; naming the term would print the content
-    # this guard exists to keep out of the terminal as well as the repo.
     print(f"blocked term in {what}:", file=sys.stderr)
     for v in violations[:_MOST_LISTED]:
         print(f"  {v.path}:{v.line}  {v.excerpt}", file=sys.stderr)
