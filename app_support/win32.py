@@ -368,11 +368,10 @@ class Shortcut:
     app_id: str | None = None
 
 
-def write_shortcut(lnk_path: str, shortcut: Shortcut | None = None, *, ole32=_ole32, **described) -> None:
+def write_shortcut(lnk_path: str, shortcut: Shortcut, *, ole32=_ole32) -> None:
     """Make the shortcut at *lnk_path* exactly the one described, the identity
     in the same save.  One already there is changed in place, as the shell's
     Properties dialog changes one, so what this call does not name survives."""
-    shortcut = shortcut or Shortcut(**described)
     with _apartment(ole32) as com:
         shell_link = _shell_link_to_rewrite(com, lnk_path)
         try:
