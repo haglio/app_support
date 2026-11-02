@@ -49,10 +49,10 @@ def newest_release(tags: Sequence[str]) -> str | None:
 class GitHub(Protocol):
     def repos(self) -> list[str]: ...
     def main_of(self, repo: str) -> tuple[str, str] | None: ...
-    def file_at(self, repo: str, ref: str, path: str) -> tuple[str, str] | None: ...
+    def file_at(self, repo: str, ref: str, path: str) -> str | None: ...
     def tags(self, repo: str) -> list[str]: ...
     def point(self, repo: str, branch: str, sha: str) -> None: ...
-    def write_pyproject(self, repo: str, branch: str, text: str, *, blob: str, message: str) -> None: ...
+    def commit_pyproject(self, repo: str, parent: str, text: str, *, message: str) -> str: ...
     def open_pull(self, repo: str, branch: str) -> int | None: ...
     def offer(self, repo: str, branch: str, base: str, title: str, body: str) -> int: ...
     def retitle(self, repo: str, number: int, title: str, body: str) -> None: ...
@@ -66,7 +66,6 @@ class _Project:
     main: str
     head: str
     text: str
-    blob: str
 
 
 def _projects(github: GitHub) -> list[_Project]:
@@ -75,7 +74,7 @@ def _projects(github: GitHub) -> list[_Project]:
         main = github.main_of(repo)
         held = main and github.file_at(repo, main[1], PYPROJECT)
         if held:
-            found.append(_Project(repo, *main, *held))
+            found.append(_Project(repo, *main, held))
     return found
 
 
@@ -103,10 +102,10 @@ def _bring_up_one(github: GitHub, project: _Project, newest: Mapping[str, str]) 
         github.withdraw(project.repo, pull, BRANCH, why + ".")
         return f"{project.repo}: withdrew #{pull}, as {why}"
     offered = github.file_at(project.repo, BRANCH, PYPROJECT) if pull is not None else None
-    if offered is not None and offered[0] == taken:
+    if offered == taken:
         return f"{project.repo}: #{pull} already takes {_releases(moved)}"
-    github.point(project.repo, BRANCH, project.head)
-    github.write_pyproject(project.repo, BRANCH, taken, blob=project.blob, message=_subject(moved))
+    github.point(project.repo, BRANCH, github.commit_pyproject(project.repo, project.head, taken,
+                                                               message=_subject(moved)))
     if pull is None:
         pull = github.offer(project.repo, BRANCH, project.main, _subject(moved), _body(moved))
     else:
@@ -163,9 +162,9 @@ class GhGitHub:
         ref = self._found(f"repos/{self.org}/{repo}/git/ref/heads/{branch}")
         return (branch, ref["object"]["sha"]) if ref else None
 
-    def file_at(self, repo: str, ref: str, path: str) -> tuple[str, str] | None:
+    def file_at(self, repo: str, ref: str, path: str) -> str | None:
         held = self._found(f"repos/{self.org}/{repo}/contents/{path}?ref={ref}")
-        return (base64.b64decode(held["content"]).decode("utf-8"), held["sha"]) if held else None
+        return base64.b64decode(held["content"]).decode("utf-8") if held else None
 
     def tags(self, repo: str) -> list[str]:
         return _TAG_REF.findall(self._run(["git", "ls-remote", "--tags", "--refs",
@@ -182,10 +181,13 @@ class GhGitHub:
         self._api("-X", "PATCH", f"repos/{self.org}/{repo}/git/refs/heads/{branch}", "-f", f"sha={sha}",
                   "-F", "force=true")
 
-    def write_pyproject(self, repo: str, branch: str, text: str, *, blob: str, message: str) -> None:
-        self._api("-X", "PUT", f"repos/{self.org}/{repo}/contents/{PYPROJECT}", "-f", f"message={message}",
-                  "-f", f"content={base64.b64encode(text.encode('utf-8')).decode('ascii')}",
-                  "-f", f"sha={blob}", "-f", f"branch={branch}")
+    def commit_pyproject(self, repo: str, parent: str, text: str, *, message: str) -> str:
+        base = self._api(f"repos/{self.org}/{repo}/git/commits/{parent}")["tree"]["sha"]
+        tree = self._api("-X", "POST", f"repos/{self.org}/{repo}/git/trees", "-f", f"base_tree={base}",
+                         "-f", f"tree[][path]={PYPROJECT}", "-f", "tree[][mode]=100644", "-f", "tree[][type]=blob",
+                         "-f", f"tree[][content]={text}")["sha"]
+        return self._api("-X", "POST", f"repos/{self.org}/{repo}/git/commits", "-f", f"message={message}",
+                         "-f", f"tree={tree}", "-f", f"parents[]={parent}")["sha"]
 
     def open_pull(self, repo: str, branch: str) -> int | None:
         pulls = self._api(f"repos/{self.org}/{repo}/pulls?head={self.org}:{branch}&state=open")
