@@ -50,7 +50,7 @@ class TestFindViolations:
         assert find_violations("FORBIDDENTERM", ["forbiddenterm"])
 
     def test_a_letter_ignorecase_reads_as_the_plain_one_still_matches_it(self):
-        for spelled in ("mıſplacedterm", "MİSPLACEDTERM"):
+        for spelled in ("m\u0131\u017fplacedterm", "MİSPLACEDTERM"):
             assert find_violations(f"the {spelled} here", ["misplacedterm"]), spelled
 
     def test_word_boundary_prevents_substring_false_positive(self):

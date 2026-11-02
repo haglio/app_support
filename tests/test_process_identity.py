@@ -98,10 +98,10 @@ class TestNaming:
             ProcessNamer("Fun Time").exe_name("pythonw.exe", role)
 
     def test_the_description_leads_with_the_app(self):
-        assert ProcessNamer("Fun Time").description("MainFunestra") == "Fun Time – Main Funestra"
+        assert ProcessNamer("Fun Time").description("MainFunestra") == "Fun Time \u2013 Main Funestra"
 
     def test_the_description_splits_the_role_back_into_words(self):
-        assert ProcessNamer("Fun Time").description("AudioCompanion") == "Fun Time – Audio Companion"
+        assert ProcessNamer("Fun Time").description("AudioCompanion") == "Fun Time \u2013 Audio Companion"
 
     def test_a_lone_app_does_not_say_its_name_twice(self):
         assert ProcessNamer("Highdeas").description("Highdeas") == "Highdeas"
@@ -112,7 +112,7 @@ class TestNaming:
 
     def test_an_acronym_in_a_role_stays_whole(self):
         assert ProcessNamer("Genau VR").description("GenauVR") == "Genau VR"
-        assert ProcessNamer("Fun Time").description("RFBWindow") == "Fun Time – RFB Window"
+        assert ProcessNamer("Fun Time").description("RFBWindow") == "Fun Time \u2013 RFB Window"
 
 
 class TestBuildIconResources:
@@ -194,7 +194,7 @@ class TestNamedExe:
         namer.named_exe(source, "Landscape")
 
         assert stale.read_bytes() == source.read_bytes()
-        assert resources.stamped[stale]["FileDescription"] == "Genau – Landscape"
+        assert resources.stamped[stale]["FileDescription"] == "Genau \u2013 Landscape"
 
     def test_refreshes_a_copy_whose_label_this_version_no_longer_writes(self, tmp_path: Path):
         source = _stub_interpreter(tmp_path)
@@ -205,7 +205,7 @@ class TestNamedExe:
                                    read_field=resources.read_field)
                       .named_exe(source, "Dashboard"))
 
-        assert resources.stamped[result]["FileDescription"] == "OldName – Dashboard"
+        assert resources.stamped[result]["FileDescription"] == "OldName \u2013 Dashboard"
 
     def test_falls_back_to_the_interpreter_when_the_copy_cannot_be_made(self, tmp_path: Path):
         source = _stub_interpreter(tmp_path)
