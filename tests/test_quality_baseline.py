@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 import json
-import subprocess
 from pathlib import Path
 
 import pytest
 from consumer_runs import run_pytest_in
+from production_machine import IDENTIFIED, git
 
 from app_support.gates import Checkout, baseline, over
 
@@ -36,16 +36,11 @@ def _checkout(root: Path, files: dict[str, str] | None = None, entries: dict | N
     return Checkout(_files(root, every))
 
 
-def _git(root: Path, *args: str) -> str:
-    return subprocess.run(["git", "-C", str(root), "-c", "user.name=a", "-c", "user.email=a@example.invalid", *args],
-                          capture_output=True, text=True, check=True).stdout
-
-
 def _with_a_main(root: Path) -> None:
-    _git(root, "init", "-q", "-b", "main")
-    _git(root, "add", "-A")
-    _git(root, "commit", "-q", "-m", "first")
-    _git(root, "update-ref", "refs/remotes/origin/main", "HEAD")
+    git(*IDENTIFIED, "init", "-q", "-b", "main", cwd=root)
+    git(*IDENTIFIED, "add", "-A", cwd=root)
+    git(*IDENTIFIED, "commit", "-q", "-m", "first", cwd=root)
+    git(*IDENTIFIED, "update-ref", "refs/remotes/origin/main", "HEAD", cwd=root)
 
 
 class TestProseLines:
@@ -286,7 +281,7 @@ class TestAnEntryRaisedByHand:
 
     def test_a_renamed_files_entry_is_no_raise(self, tmp_path: Path):
         self._committed(tmp_path, {"prose_lines": {"example/a.py": 1}})
-        _git(tmp_path, "mv", "example/a.py", "example/b.py")
+        git(*IDENTIFIED, "mv", "example/a.py", "example/b.py", cwd=tmp_path)
         _files(tmp_path, {baseline.BASELINE_PATH: json.dumps({"prose_lines": {"example/b.py": 1}})})
 
         assert "above the" not in run_pytest_in(tmp_path).stdout
@@ -301,12 +296,12 @@ class TestAnEntryRaisedByHand:
 
     def test_a_branch_behind_main_is_held_to_where_it_left_main(self, tmp_path: Path):
         self._committed(tmp_path, {"prose_lines": {"example/a.py": 1}})
-        _git(tmp_path, "checkout", "-q", "-b", "elsewhere")
+        git(*IDENTIFIED, "checkout", "-q", "-b", "elsewhere", cwd=tmp_path)
         _files(tmp_path, {"example/a.py": "x = 1\n", baseline.BASELINE_PATH: json.dumps({"prose_lines": {}})})
-        _git(tmp_path, "add", "-A")
-        _git(tmp_path, "commit", "-q", "-m", "main moved on")
-        _git(tmp_path, "update-ref", "refs/remotes/origin/main", "HEAD")
-        _git(tmp_path, "checkout", "-q", "main")
+        git(*IDENTIFIED, "add", "-A", cwd=tmp_path)
+        git(*IDENTIFIED, "commit", "-q", "-m", "main moved on", cwd=tmp_path)
+        git(*IDENTIFIED, "update-ref", "refs/remotes/origin/main", "HEAD", cwd=tmp_path)
+        git(*IDENTIFIED, "checkout", "-q", "main", cwd=tmp_path)
 
         assert "above the" not in run_pytest_in(tmp_path).stdout
 
@@ -350,7 +345,7 @@ class TestTheCommand:
     def test_it_carries_a_renamed_files_entry(self, tmp_path: Path):
         checkout = _checkout(tmp_path, {"pkg/a.py": "# why\n" * 3}, {"prose_lines": {"pkg/a.py": 3}})
         _with_a_main(tmp_path)
-        _git(tmp_path, "mv", "pkg/a.py", "pkg/b.py")
+        git(*IDENTIFIED, "mv", "pkg/a.py", "pkg/b.py", cwd=tmp_path)
 
         code, said = self._main(checkout)
 
