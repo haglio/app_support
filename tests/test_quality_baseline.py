@@ -175,7 +175,7 @@ class TestTheGateInARun:
         return _files(root, every)
 
     def _a_baseline_gate_failed(self, done) -> list[str]:
-        return [line for line in done.stdout.splitlines() if line.startswith("FAILED") and "baseline" in line]
+        return [line for line in done.stdout.splitlines() if line.startswith("FAILED") and "test_no_baseline_entry" in line]
 
     def test_a_repo_with_no_baseline_is_not_held_to_one(self, tmp_path: Path):
         done = run_pytest_in(self._repo(tmp_path, {"example/a.py": "# why\n"}, None))
