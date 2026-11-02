@@ -4,18 +4,18 @@ from app_support.flick_folder import (
     audio_in,
     flat_flicks_in,
     flicks_folder_in,
+    trash_folder_beside,
+    trash_folder_in,
     vr_flicks_in,
-    weird_dir_for_flicks_folder,
-    weird_pile_in,
 )
 
 
-def test_weird_dir_sits_beside_the_flicks_folder():
-    assert weird_dir_for_flicks_folder(Path("C:/videos/genau/flicks")) == Path("C:/videos/genau/weird")
+def test_the_trash_folder_sits_beside_the_flicks_folder():
+    assert trash_folder_beside(Path("C:/videos/genau/flicks")) == Path("C:/videos/genau/weird")
 
 
-def test_the_weird_pile_is_in_genaus_folder_whether_or_not_its_flicks_are_found():
-    assert weird_pile_in(Path("C:/videos/genau")) == Path("C:/videos/genau/weird")
+def test_the_trash_folder_is_in_genaus_folder_whether_or_not_its_flicks_are_found():
+    assert trash_folder_in(Path("C:/videos/genau")) == Path("C:/videos/genau/weird")
 
 
 def test_genaus_audio_is_in_genaus_folder_beside_its_flicks():
@@ -30,9 +30,9 @@ def test_the_flicks_folder_forks_into_the_2d_flicks_and_the_vr_flicks():
 
 def _genau_holding_flicks_in(root: Path, name: str) -> Path:
     flicks = root / "genau" / name
-    weird = weird_dir_for_flicks_folder(flicks)
+    trash = trash_folder_beside(flicks)
     for folder in (root / "genau" / "audio", flat_flicks_in(flicks) / "AI", vr_flicks_in(flicks),
-                   flat_flicks_in(weird), vr_flicks_in(weird)):
+                   flat_flicks_in(trash), vr_flicks_in(trash)):
         folder.mkdir(parents=True)
     return root / "genau"
 
@@ -53,8 +53,8 @@ def test_finds_no_flicks_where_two_folders_have_their_shape(tmp_path):
     assert flicks_folder_in(genau) is None
 
 
-def test_the_weird_pile_is_never_taken_for_the_flicks(tmp_path):
-    weird = weird_dir_for_flicks_folder(tmp_path / "genau" / "flicks")
-    flat_flicks_in(weird).mkdir(parents=True)
+def test_the_trash_folder_is_never_taken_for_the_flicks(tmp_path):
+    trash = trash_folder_beside(tmp_path / "genau" / "flicks")
+    flat_flicks_in(trash).mkdir(parents=True)
 
     assert flicks_folder_in(tmp_path / "genau") is None

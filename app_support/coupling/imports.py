@@ -14,7 +14,7 @@ _IMPORTERS = frozenset({"__import__", "import_module"})
 
 APP_PACKAGES = frozenset({
     "backfill", "evolver", "fun_time", "fun_time_vr", "genaumacher", "line", "main_funestra", "origenerator",
-    "osr2_broker", "promptcrafter", "review_weird", "satellite", "scripture",
+    "osr2_broker", "promptcrafter", "review_trash", "review_weird", "satellite", "scripture",
 })
 
 

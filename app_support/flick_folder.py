@@ -11,7 +11,7 @@ def vr_flicks_in(flicks_folder: Path) -> Path:
     return flicks_folder / "VR"
 
 
-def weird_pile_in(genau: Path) -> Path:
+def trash_folder_in(genau: Path) -> Path:
     return genau / "weird"
 
 
@@ -19,14 +19,22 @@ def audio_in(genau: Path) -> Path:
     return genau / "audio"
 
 
+def trash_folder_beside(flicks_folder: Path) -> Path:
+    return trash_folder_in(flicks_folder.parent)
+
+
+def weird_pile_in(genau: Path) -> Path:
+    return trash_folder_in(genau)
+
+
 def weird_dir_for_flicks_folder(folder: Path) -> Path:
-    return weird_pile_in(folder.parent)
+    return trash_folder_beside(folder)
 
 
 def flicks_folder_in(genau: Path) -> Path | None:
     if not genau.is_dir():
         return None
     fitting = [folder for folder in genau.iterdir()
-               if folder.is_dir() and folder != weird_dir_for_flicks_folder(folder)
+               if folder.is_dir() and folder != trash_folder_beside(folder)
                and flat_flicks_in(folder).is_dir()]
     return fitting[0] if len(fitting) == 1 else None
