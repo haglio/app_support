@@ -80,7 +80,7 @@ every-minutes = 2
 [tool.haglio.dead-code]
 # Fields of records this package writes for the apps: Fun Time and Evolver read
 # a favorite's video and page, Fun Time and Line a run's length and exit.
-unread-dataclass-fields = ["Favorite.video", "Favorite.page", "RunRecord.short",
+unread-dataclass-fields = ["Favorite.video", "Favorite.page", 
                            "RunRecord.exit_code"]
 # pytest hands the coverage gate's collection hook the run's items by name; the
 # hook reads only the run's config.

@@ -9,6 +9,18 @@ from pathlib import Path
 from app_support.file_channel import read_whole, write_whole
 from app_support.win32 import process_started
 
+REPEAT_CHANGED_FLAG = "--repeat-changed"
+CHANGED_FLAG = "--changed"
+WITHOUT_COVERAGE_FLAG = "--no-cov"
+VERIFYING_MAIN = "verifying-main"
+
+ALL = "all"
+CHANGED = "changed"
+NAMED = "named"
+NO_FLAKES = "no flakes"
+AGAIN = "again"
+MEASURING = "measuring"
+
 _TIMES = ("joined", "got_the_machine", "ended", "seen")
 
 
@@ -48,6 +60,18 @@ class RunRecord:
 
 
 _FIELDS = {each.name for each in fields(RunRecord)}
+
+
+def kind_of(record: RunRecord) -> str:
+    if record.what[:1] == [REPEAT_CHANGED_FLAG]:
+        return NO_FLAKES
+    if not record.short:
+        return ALL
+    if record.what[:1] == [CHANGED_FLAG]:
+        return CHANGED
+    if record.checkout == VERIFYING_MAIN:
+        return MEASURING if WITHOUT_COVERAGE_FLAG in record.what else AGAIN
+    return NAMED
 
 
 def write_run(folder: Path, run: RunRecord) -> Path:
