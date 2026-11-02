@@ -503,7 +503,7 @@ class TestATaskbarAppDescribed:
 
     @pytest.mark.skipif(not hasattr(ctypes, "windll"), reason="the registry: only Windows can say")
     def test_the_registry_hands_back_what_was_described(self):
-        import winreg
+        winreg = pytest.importorskip("winreg")
         app_id = f"Example.Test.{uuid.uuid4().hex}"
         try:
             describe_taskbar_app(app_id, _EXAMPLE_APP)

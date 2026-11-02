@@ -4,11 +4,15 @@ import contextlib
 import ctypes
 import hashlib
 import os
+import sys
 import uuid
 from collections.abc import Iterable
 from ctypes import wintypes
 from dataclasses import dataclass
 from pathlib import Path
+
+if sys.platform == "win32":
+    import winreg
 
 
 def _load(name: str):
@@ -404,7 +408,6 @@ _TASKBAR_APPS = r"Software\Haglio\TaskbarApps"
 
 
 def _winreg():
-    import winreg
     return winreg
 
 
