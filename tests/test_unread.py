@@ -157,3 +157,40 @@ def test_a_dunder_is_read_by_the_language_not_by_name(tmp_path):
         "pkg/a.py": "__all__ = ['f']\n__version__ = '1'\nUNREAD = 2\n\n\ndef f():\n    return 1\n",
     })
     assert unread.module_constants(root, [root / "pkg"]) == ["pkg/a.py:3: UNREAD"]
+
+
+def test_a_constant_named_only_in_a_string_literal_counts_as_read(tmp_path):
+    root = _tree(tmp_path, {
+        "pkg/__init__.py": "",
+        "pkg/a.py": "BY_NAME = 1\nUNREAD = 2\n",
+        "pkg/b.py": "import pkg.a\n\nprint(getattr(pkg.a, 'BY_NAME'))\n",
+    })
+    assert unread.module_constants(root, [root / "pkg"]) == ["pkg/a.py:2: UNREAD"]
+
+
+def test_a_stored_parameter_read_through_getattr_counts_as_read(tmp_path):
+    root = _tree(tmp_path, {
+        "pkg/__init__.py": "",
+        "pkg/a.py": (
+            "class Thing:\n"
+            "    def __init__(self, by_name, stored):\n"
+            "        self.by_name = by_name\n"
+            "        self.stored = stored\n"
+        ),
+        "pkg/b.py": "def peek(thing):\n    return getattr(thing, 'by_name', None)\n",
+    })
+    assert unread.stored_parameters(root, [root / "pkg"]) == ["pkg/a.py:4: Thing.stored"]
+
+
+def test_a_test_a_fixture_and_a_hook_are_called_by_pytest_so_are_not_unused_helpers(tmp_path):
+    root = _tree(tmp_path, {
+        "tests/test_a.py": (
+            "import pytest\n\n\n"
+            "def test_it():\n    pass\n\n\n"
+            "@pytest.fixture\ndef a_fixture():\n    return 1\n\n\n"
+            "@pytest.hookimpl\ndef a_hook():\n    pass\n\n\n"
+            "def pytest_configure(config):\n    pass\n\n\n"
+            "def _left_over():\n    return 1\n"
+        ),
+    })
+    assert unread.test_helpers(root, root / "tests") == ["tests/test_a.py:22: _left_over"]
