@@ -242,6 +242,9 @@ that is what a public clone and a fresh CI checkout both look like.
 
 ## The numbers a repo keeps per file
 
+Every repo that names the gates plugin keeps this file; a repo without one fails until
+the command below writes it.
+
 `tools/quality_baseline.json` holds, per file, a repo's prose lines, private
 reaches (a read of another object's private name, through any handle), private
 imports (charged to the module that defines the name, through any re-export) and

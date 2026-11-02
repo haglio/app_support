@@ -208,11 +208,11 @@ class TestTheGateInARun:
     def _a_baseline_gate_failed(self, done) -> list[str]:
         return [line for line in done.stdout.splitlines() if line.startswith("FAILED") and "test_no_baseline_entry" in line]
 
-    def test_a_repo_with_no_baseline_is_not_held_to_one(self, tmp_path: Path):
+    def test_a_repo_with_no_baseline_goes_red_and_is_told_the_command(self, tmp_path: Path):
         done = run_pytest_in(self._repo(tmp_path, {"example/a.py": "# why\n"}, None))
 
-        assert self._a_baseline_gate_failed(done) == [], done.stdout
-        assert "test_quality_baseline" not in run_pytest_in(tmp_path, "--collect-only").stdout
+        assert self._a_baseline_gate_failed(done) != [], done.stdout
+        assert "has no tools/quality_baseline.json: run python -m app_support.gates.baseline" in done.stdout
 
     def test_a_file_at_its_entry_passes(self, tmp_path: Path):
         done = run_pytest_in(self._repo(tmp_path, {"example/a.py": "# why\n"}, {"prose_lines": {"example/a.py": 1}}))
@@ -247,6 +247,16 @@ class TestTheGateInARun:
                                         {"prose_lines": {}}))
 
         assert self._a_baseline_gate_failed(done) == [], done.stdout
+
+
+class TestAFileRemoved:
+    def test_taking_the_whole_file_out_is_told(self, tmp_path: Path):
+        checkout = _checkout(tmp_path, {}, {"prose_lines": {"pkg/a.py": 1}})
+        _with_a_main(tmp_path)
+        (tmp_path / baseline.BASELINE_PATH).unlink()
+
+        with pytest.raises(AssertionError, match="prose_lines is gone from the file, and main holds it"):
+            baseline.assert_nothing_stands_above_main(checkout)
 
 
 class TestAnEntryRaisedByHand:
