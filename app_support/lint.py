@@ -1,14 +1,3 @@
-"""The family's ruff config and lint gate, published once instead of copied eleven times.
-
-``app_support.gates`` asks both of every repo, which commits the `ruff.toml` that
-`render_config` writes: the family's numbers, plus the repo's own ratchet -- each
-rule the config still finds there, with the places the lint test holds it to. The
-config test refuses a file that drifted anywhere else, so there is one config,
-held here, and eleven copies of it that cannot differ.
-
-ruff is a dev dependency of the repo asking for the gate, pinned to `RUFF_VERSION`,
-never a dependency of this package.
-"""
 from __future__ import annotations
 
 import difflib
@@ -23,9 +12,6 @@ RUFF_VERSION = "0.16.6"
 
 FAMILY_IGNORES = ("E501", "BLE001", "S110")
 
-# Rule families other gates in this family run with selects of their own (genau's
-# argument scan is ARG) or that only ever existed as markers here: a noqa for one
-# is dormant, not unused, and RUF100 leaves it for the gate that reads it.
 READ_BY_OTHER_GATES = ("ARG", "N", "S")
 
 _SELECT = ("F", "E", "W", "I", "UP", "B", "C4", "SIM", "RUF", "PL", "PT", "DTZ", "PIE",
@@ -67,10 +53,6 @@ def _per_file_ignores() -> str:
 
 
 def render_config(ratchet=()) -> str:
-    """The `ruff.toml` a repo commits: the family's numbers, then *ratchet* --
-    that repo's own rules, each with the places it has today -- appended to the
-    ignore list. A ratchet listed without its places is the form every repo had
-    before the gate counted them."""
     if isinstance(ratchet, Mapping):
         ratcheted, exempted = _counted(ratchet), _per_file_ignores()
     else:
@@ -91,8 +73,6 @@ def render_config(ratchet=()) -> str:
 
 
 def ratchet_of(ruff_toml):
-    """The rules a repo's `ruff.toml` ignores beyond the family's own, each with its
-    places once the file counts them."""
     text = Path(ruff_toml).read_text(encoding="utf-8")
     config = tomllib.loads(text).get("lint", {})
     codes = tuple(code for code in config.get("ignore", []) if code not in FAMILY_IGNORES)
@@ -103,7 +83,6 @@ def ratchet_of(ruff_toml):
 
 
 def assert_config_is_the_familys(ruff_toml) -> None:
-    """*ruff_toml* is `render_config` of its own ratchet, byte for byte."""
     written = Path(ruff_toml).read_text(encoding="utf-8")
     expected = render_config(ratchet_of(ruff_toml))
     if written != expected:
@@ -115,7 +94,7 @@ def assert_config_is_the_familys(ruff_toml) -> None:
 
 
 class LintDidNotRun(RuntimeError):
-    """ruff never reached an answer, so silence here means nothing."""
+    pass
 
 
 def _ruff(root, *args) -> subprocess.CompletedProcess:
@@ -131,17 +110,10 @@ def ruff_version(root) -> str:
 
 
 def scan_targets(root, trees) -> list[str]:
-    """What the gate hands ruff: the named *trees* and the root's own files.
-
-    Never `.`: a gate checks out sibling repos beside or inside this one
-    (funestra's runner puts shared_ui under it) and an agent's checkout lives
-    in `.claude/worktrees`, and all of it would be read under this repo's config.
-    """
     return [str(tree) for tree in trees] + [path.name for path in sorted(Path(root).glob("*.py"))]
 
 
 def files_seen(root, targets) -> list[Path]:
-    """What ruff would scan of *targets* under *root*, its config's excludes applied."""
     ran = _ruff(root, "check", "--show-files", *targets)
     if ran.returncode != 0:
         raise LintDidNotRun(f"ruff could not list {root}:\n{ran.stdout}{ran.stderr}")
@@ -149,13 +121,6 @@ def files_seen(root, targets) -> list[Path]:
 
 
 def _check(root, *args) -> list[str]:
-    """ruff's findings from one ``check`` run, one concise line each; empty when
-    it found nothing.
-
-    Raises `LintDidNotRun` rather than returning that same empty list when ruff
-    did not scan: not installed, another version than the family's, or a
-    configuration it refused.
-    """
     version = ruff_version(root)
     if version != RUFF_VERSION:
         raise LintDidNotRun(f"ruff {version} is not the family's {RUFF_VERSION}; pin it in [dev]")
@@ -167,15 +132,11 @@ def _check(root, *args) -> list[str]:
 
 
 def findings_for_rules(root, rules, *targets) -> list[str]:
-    """ruff's findings for *rules* alone in *targets*, the repo's config set aside:
-    what a gate asks when a rule must hold whatever the ratchet says."""
     return _check(root, "--isolated", "--select", ",".join(rules),
                   *(str(target) for target in targets))
 
 
 def _refuse_a_scan_that_skipped(root, trees, targets) -> None:
-    """The failure no exit code reports: a tree the config's excludes or the
-    gitignore swallowed whole, which scans clean for the rest of its life."""
     seen = files_seen(root, targets)
     for tree in trees:
         wanted = Path(tree).resolve()
@@ -188,8 +149,6 @@ def _rule_of(finding: str) -> str:
 
 
 def assert_lint_is_clean(root, *trees) -> None:
-    """ruff finds nothing in *trees* or in the root's own files beyond the places the
-    repo's ratchet counts, having scanned at least one file under each tree."""
     targets = scan_targets(root, trees)
     _refuse_a_scan_that_skipped(root, trees, targets)
     ratchet = ratchet_of(Path(root) / "ruff.toml")

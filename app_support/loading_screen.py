@@ -1,15 +1,3 @@
-"""The loading screen a launcher shows from the click until the app's own is up.
-
-An app's launcher can have a wait before the app's own code runs -- an update of
-the app, or of an app it hosts -- and the app's loading screen cannot come up
-from a venv that is being installed.  So the launcher shows the snapshots the
-app's own loading screen left at its last start, from this package's own
-interpreter, with each update it waits on as a step; the app's loading screen
-then takes over from it where it stands.  This module is the folder they meet
-in and the program the launcher runs.
-
-Standard library only.
-"""
 from __future__ import annotations
 
 import ctypes
@@ -42,22 +30,14 @@ ENDED = "ended"
 CANCELED = "canceled"
 UPDATED = "updated"
 SAID_AT_EACH_LAUNCH = (SHOWN, TAKEN, STARTED, ENDED, CANCELED, UPDATED)
-# Longer than any app takes from its start to its own loading screen, so an app
-# that never puts one up is not covered for long.
 TAKING_OVER_WITHIN_S = 30.0
-# Rewritten every moment the launcher's loading screen is up, so a file older
-# than this was left by one that is gone.
 STANDING_FOR_S = 2.0
-# How much of what is left of the bar an update fills, leaving the rest for the
-# app's own start.
 UPDATE_SHARE = 0.6
 POLL_MS = 100
 _NEAREST = 2
 
 Box = tuple[int, int, int, int]
 
-
-# --- Where the launcher and the app meet ----------------------------------------
 
 
 @dataclasses.dataclass(frozen=True)
@@ -188,8 +168,6 @@ def _replace_whole(path: Path, data: bytes) -> None:
     os.replace(writing, path)
 
 
-# --- What it shows ------------------------------------------------------------------
-
 
 @dataclasses.dataclass(frozen=True)
 class Frame:
@@ -251,8 +229,6 @@ class Showing:
         self._fraction = max(self._fraction, reaching)
         return self._fraction
 
-
-# --- Where it stands --------------------------------------------------------------
 
 
 @dataclasses.dataclass(frozen=True)
@@ -393,8 +369,6 @@ def _every_monitor(windows) -> tuple[Monitor, ...]:
 def _box(rect: wintypes.RECT) -> Box:
     return rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top
 
-
-# --- The window ---------------------------------------------------------------------
 
 
 class _Window:  # pragma: no cover -- a window, run on a desktop of its own
