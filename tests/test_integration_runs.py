@@ -110,3 +110,20 @@ def test_a_file_in_the_folder_that_is_no_run_is_passed_over(tmp_path: Path):
     (tmp_path / "20261010-200007-2.json").write_text('{"checkout": "half"}', encoding="utf-8")
 
     assert integration_runs.read_runs(tmp_path) == [a_run()]
+
+
+def _kind(*what: str, short: bool = True, checkout: str = "crown-colors") -> str:
+    return integration_runs.kind_of(a_run(checkout=checkout, what=list(what), short=short))
+
+
+def test_each_kind_of_run_is_told_from_what_its_record_says():
+    test_file = "tests/integration/test_crown_integration.py"
+
+    assert _kind("-x", short=False) == integration_runs.ALL
+    assert _kind("-x", "-k", "hud") == integration_runs.NAMED
+    assert _kind(integration_runs.CHANGED_FLAG, test_file) == integration_runs.CHANGED
+    assert _kind(integration_runs.CHANGED_FLAG, short=False) == integration_runs.ALL
+    assert _kind(integration_runs.REPEAT_CHANGED_FLAG, "origin/main") == integration_runs.NO_FLAKES
+    assert _kind(test_file, checkout=integration_runs.VERIFYING_MAIN) == integration_runs.AGAIN
+    assert _kind(test_file, integration_runs.WITHOUT_COVERAGE_FLAG,
+                 checkout=integration_runs.VERIFYING_MAIN) == integration_runs.MEASURING
