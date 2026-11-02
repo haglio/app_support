@@ -136,3 +136,25 @@ class TestThePragmasARepoCarries:
             (tmp_path / under).write_text("z = 3  # pragma: no cover\n", encoding="utf-8")
 
         coverage_gate.assert_config_is_the_familys(written)
+
+    def test_nothing_in_a_python_environment_is_counted_wherever_it_sits(self, tmp_path):
+        """A repo's tool can install one in a plain folder, as Fun Time's flake gate
+        does under `state`: coverage takes a folder holding a `pyvenv.cfg` for
+        somebody else's code, and its pip carries pragmas this repo never wrote."""
+        written = _repo(tmp_path)
+        environment = tmp_path / "state" / "tool_venv"
+        library = environment / "Lib" / "site-packages" / "lib.py"
+        library.parent.mkdir(parents=True)
+        (environment / "pyvenv.cfg").write_text("home = nowhere\n", encoding="utf-8")
+        library.write_text("z = 3  # pragma: no cover\n", encoding="utf-8")
+
+        coverage_gate.assert_config_is_the_familys(written)
+
+    def test_a_pragma_beside_a_python_environment_is_still_counted(self, tmp_path):
+        written = _repo(tmp_path)
+        (tmp_path / "state" / "tool_venv").mkdir(parents=True)
+        (tmp_path / "state" / "tool_venv" / "pyvenv.cfg").write_text("home = nowhere\n", encoding="utf-8")
+        (tmp_path / "state" / "own.py").write_text("z = 3  # pragma: no cover\n", encoding="utf-8")
+
+        with pytest.raises(AssertionError, match=r"state/own\.py:1"):
+            coverage_gate.assert_config_is_the_familys(written)
