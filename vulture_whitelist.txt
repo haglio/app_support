@@ -30,3 +30,5 @@ pytestmark  # every check of a repository, shipped or this repo's own, read off 
 no_cov_on_fail  # app_support/coverage_gate.py, set on pytest-cov's own namespace
 
 # --- fields of a format another repo reads (no reader in this package) ---
+weird_pile_in
+weird_dir_for_flicks_folder
