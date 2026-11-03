@@ -7,6 +7,8 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
+from .file_held_alone import opened_alone
+
 _ATTEMPTS_WHILE_HELD = 5
 _DELAY_WHILE_HELD_S = 0.005
 _ATTEMPTS_BEFORE_A_VERB_IS_LOST = 1000
@@ -91,7 +93,7 @@ def append_command(
 
 
 def _append_line(path: Path, line: str) -> None:
-    with path.open("a+", encoding="utf-8") as handle:
+    with open(path, "a+", encoding="utf-8", opener=opened_alone) as handle:
         handle.seek(0, 2)
         if handle.tell():
             handle.seek(handle.tell() - 1)
