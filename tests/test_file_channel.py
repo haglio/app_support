@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import threading
 from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import call, patch
@@ -16,6 +17,10 @@ from app_support.file_channel import (
     retried_while_held,
     write_whole,
 )
+
+_GENERIC_READ = 0x80000000
+_SHARED_WITH_NOBODY = 0
+_CREATE_IF_MISSING = 4
 
 
 def test_append_command_queues_a_verb_without_losing_the_one_before_it(tmp_path: Path):
@@ -60,6 +65,28 @@ def test_append_command_retries_past_a_drain_then_gives_up(tmp_path: Path):
         assert append_command(path, "NEXT", attempts=2, delay_s=0) is False
 
     assert consume_command_file(path) == []
+
+
+def test_a_verb_waits_out_a_hold_that_outlasts_many_quick_tries(tmp_path: Path, held_open):
+    path = tmp_path / "cmd.txt"
+
+    with held_open(path, access=_GENERIC_READ, share=_SHARED_WITH_NOBODY,
+                   disposition=_CREATE_IF_MISSING) as let_go:
+        threading.Timer(0.2, let_go).start()
+        assert append_command(path, "LANDSCAPE_OPEN_SLIDESHOW")
+
+    assert consume_command_file(path) == ["LANDSCAPE_OPEN_SLIDESHOW"]
+
+
+def test_a_verb_given_up_on_is_logged_by_name(tmp_path: Path, held_open, caplog):
+    path = tmp_path / "cmd.txt"
+
+    with held_open(path, access=_GENERIC_READ, share=_SHARED_WITH_NOBODY,
+                   disposition=_CREATE_IF_MISSING):
+        assert append_command(path, "NEXT", attempts=2, delay_s=0) is False
+
+    assert "NEXT" in caplog.text
+    assert str(path) in caplog.text
 
 
 def test_a_channel_nobody_has_written_to_yet_holds_no_commands(tmp_path: Path):
