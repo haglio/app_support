@@ -9,7 +9,6 @@ from test_process_identity import _icon
 from app_support.process_identity import ProcessNamer
 from app_support.process_identity_check import (
     ProcessName,
-    assert_the_app_names_its_process,
     assert_the_process_is_named,
 )
 
@@ -35,8 +34,8 @@ class TestAnAppThatNamesItself:
         def names_its_tray():
             ProcessNamer("Broker").name_this_process("Tray")
 
-        assert_the_app_names_its_process(
-            names_its_tray, tmp_path, app_name="Broker", role="Tray", row="Broker \u2013 Tray")
+        assert_the_process_is_named(
+            names_its_tray, tmp_path, ProcessName(app_name="Broker", role="Tray", row="Broker \u2013 Tray"))
 
 
 class TestWhatItRefuses:
