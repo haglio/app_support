@@ -58,10 +58,11 @@ def test_append_command_creates_the_file_and_its_directory(tmp_path: Path):
     assert consume_command_file(path) == ["QUIT"]
 
 
-def test_append_command_retries_past_a_drain_then_gives_up(tmp_path: Path):
+def test_append_command_retries_past_a_drain_then_gives_up(tmp_path: Path, held_open):
     path = tmp_path / "cmd.txt"
 
-    with patch("pathlib.Path.open", side_effect=PermissionError(13, "Permission denied")):
+    with held_open(path, access=_GENERIC_READ, share=_SHARED_WITH_NOBODY,
+                   disposition=_CREATE_IF_MISSING):
         assert append_command(path, "NEXT", attempts=2, delay_s=0) is False
 
     assert consume_command_file(path) == []
@@ -87,6 +88,27 @@ def test_a_verb_given_up_on_is_logged_by_name(tmp_path: Path, held_open, caplog)
 
     assert "NEXT" in caplog.text
     assert str(path) in caplog.text
+
+
+def test_two_senders_at_once_lose_neither_ones_commands(tmp_path: Path):
+    path = tmp_path / "cmd.txt"
+    sent_by_each = 400
+    both_ready = threading.Barrier(2)
+
+    def send(sender: str) -> None:
+        both_ready.wait()
+        for number in range(sent_by_each):
+            append_command(path, f"{sender} {number}")
+
+    senders = [threading.Thread(target=send, args=(sender,)) for sender in ("NEXT", "PREV")]
+    for sender in senders:
+        sender.start()
+    for sender in senders:
+        sender.join()
+
+    arrived = consume_command_file(path, uppercase=False)
+    assert sorted(arrived) == sorted(f"{sender} {number}" for sender in ("NEXT", "PREV")
+                                     for number in range(sent_by_each))
 
 
 def test_a_channel_nobody_has_written_to_yet_holds_no_commands(tmp_path: Path):

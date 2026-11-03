@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import ctypes
 import dataclasses
 import json
 import logging
@@ -14,11 +13,10 @@ import sys
 import time
 import tomllib
 from collections.abc import Callable, Iterable, Mapping
-from ctypes import wintypes
 from pathlib import Path, PureWindowsPath
 from typing import NamedTuple
 
-from app_support import json_store, overlay, processes, win32
+from app_support import file_held_alone, json_store, overlay, processes, win32
 from app_support.dependencies import SiblingPin, release_of, sibling_pins_in
 from app_support.file_channel import publish_whole
 from app_support.git_steps import (
@@ -193,22 +191,11 @@ def libraries_off_their_pins(pyproject_text: str, installed: Mapping[str, str]) 
 
 
 
-def _kernel32():
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel32.CreateFileW.restype = wintypes.HANDLE
-    kernel32.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID,
-                                     wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
-    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
-    return kernel32
-
-
-_READ_AND_WRITE, _SHARED_WITH_NOBODY, _OPEN_ALWAYS, _NORMAL = 0xC0000000, 0, 4, 0x80
-
-
 def _held_alone(path: Path) -> int | None:
-    handle = _kernel32().CreateFileW(str(path), _READ_AND_WRITE, _SHARED_WITH_NOBODY, None, _OPEN_ALWAYS,
-                                     _NORMAL, None)
-    return None if handle in (None, wintypes.HANDLE(-1).value) else handle
+    try:
+        return file_held_alone.held_alone(path)
+    except OSError:
+        return None
 
 
 @contextlib.contextmanager
@@ -221,7 +208,7 @@ def _holding_alone(path: Path, *, wait_s: float, poll_s: float = 0.25):
     try:
         yield
     finally:
-        _kernel32().CloseHandle(handle)
+        file_held_alone.let_go_of(handle)
 
 
 def the_turn(checkout: Path, *, wait_s: float, poll_s: float = 0.25):

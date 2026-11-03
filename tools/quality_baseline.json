@@ -76,7 +76,7 @@
   },
   "patches": {
     "tests/conftest.py": 1,
-    "tests/test_file_channel.py": 8,
+    "tests/test_file_channel.py": 7,
     "tests/test_flags_and_stamps.py": 2,
     "tests/test_subprocess_utils.py": 1
   },
@@ -114,14 +114,14 @@
   "statements": {
     "app_support/launcher.py": 411,
     "app_support/loading_screen.py": 326,
-    "app_support/production_update.py": 555,
+    "app_support/production_update.py": 547,
     "app_support/win32.py": 454
   },
   "trailing_comments": {},
   "uncovered_lines": {
     "app_support/changed_tests.py": 3,
     "app_support/clocks/pytest_plugin.py": 8,
-    "app_support/coverage_gate.py": 55,
+    "app_support/coverage_gate.py": 54,
     "app_support/dead_code.py": 36,
     "app_support/dependencies.py": 69,
     "app_support/file_channel.py": 6,
@@ -144,7 +144,7 @@
     "app_support/process_identity.py": 18,
     "app_support/process_identity_check.py": 3,
     "app_support/processes.py": 16,
-    "app_support/production_update.py": 15,
+    "app_support/production_update.py": 13,
     "app_support/provenance.py": 2,
     "app_support/python_source.py": 2,
     "app_support/repo_checks.py": 6,
@@ -152,7 +152,7 @@
     "app_support/sanitize/__main__.py": 3,
     "app_support/sanitize/guard.py": 86,
     "app_support/sanitize/pytest_plugin.py": 6,
-    "app_support/sanitize/test_tracked_tree.py": 11,
+    "app_support/sanitize/test_tracked_tree.py": 6,
     "app_support/shipped_tests.py": 15,
     "app_support/siblings.py": 20,
     "app_support/taken_out.py": 1,
