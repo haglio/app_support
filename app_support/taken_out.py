@@ -147,6 +147,19 @@ def open_on_github(org: str, *, but: str, ask: Callable[[str], str] = _ask_githu
     return found
 
 
+def _fetch_what_is_still_there(git_dir: Path, url: str, names: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    try:
+        git(git_dir, "fetch", "-q", "--no-tags", url, *(f"+refs/heads/{name}:refs/heads/{name}" for name, _ in names))
+    except subprocess.CalledProcessError:
+        on_the_remote = {line.split("\t")[1] for line in git(git_dir, "ls-remote", "--heads", url).splitlines()}
+        left = [(name, main_branch) for name, main_branch in names
+                if name == main_branch or f"refs/heads/{name}" in on_the_remote]
+        if len(left) == len(names):
+            raise
+        return _fetch_what_is_still_there(git_dir, url, left)
+    return names
+
+
 def fetched(found: Iterable[tuple[str, str, str]], into: Path, *, url_of: Callable[[str], str]) -> list[OpenBranch]:
     by_repo: dict[str, list[tuple[str, str]]] = {}
     for repo, branch, main_branch in found:
@@ -155,11 +168,9 @@ def fetched(found: Iterable[tuple[str, str, str]], into: Path, *, url_of: Callab
     for repo, names in by_repo.items():
         git_dir = into / f"{repo}.git"
         git(into, "init", "-q", "--bare", str(git_dir))
-        git(git_dir, "fetch", "-q", "--no-tags", url_of(repo),
-            *(f"+refs/heads/{name}:refs/heads/{name}" for name, _ in names))
         branches += [OpenBranch(repo, name, f"refs/heads/{name}", git_dir,
                                 cut_from=None if name == main_branch else f"refs/heads/{main_branch}")
-                     for name, main_branch in names]
+                     for name, main_branch in _fetch_what_is_still_there(git_dir, url_of(repo), names)]
     return branches
 
 
