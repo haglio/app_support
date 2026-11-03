@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 
 import pytest
 
@@ -166,6 +167,36 @@ class TestFetched:
             ("someapp", "main", None), ("someapp", "branch", "refs/heads/main")]
         assert files_at(branches[1].git_dir, branches[1].commit, lambda path: True) == {
             "someapp/hud.py": "SHADE = 1\n", "someapp/levers.py": "PULL = 2\n"}
+
+    def test_a_pull_requests_branch_gone_by_fetch_time_is_left_out_and_the_rest_are_read(self, branch_from, tmp_path):
+        consumer = branch_from({"someapp/hud.py": "SHADE = 1\n"})
+        into = tmp_path / "fetched"
+        into.mkdir()
+
+        branches = fetched([("someapp", "main", "main"), ("someapp", "claude/merged-just-now", "main"),
+                            ("someapp", "branch", "main")], into, url_of=lambda repo: str(consumer.path))
+
+        assert [branch.branch for branch in branches] == ["main", "branch"]
+        assert files_at(branches[1].git_dir, branches[1].commit, lambda path: True) == {
+            "someapp/hud.py": "SHADE = 1\n"}
+
+    def test_a_repos_main_gone_by_fetch_time_is_refused_rather_than_read_as_nothing_using_it(
+            self, branch_from, tmp_path):
+        consumer = branch_from({"someapp/hud.py": "SHADE = 1\n"})
+        into = tmp_path / "fetched"
+        into.mkdir()
+
+        with pytest.raises(subprocess.CalledProcessError):
+            fetched([("someapp", "trunk", "trunk"), ("someapp", "branch", "trunk")], into,
+                    url_of=lambda repo: str(consumer.path))
+
+    def test_a_repo_that_cannot_be_reached_is_refused_rather_than_read_as_nothing_using_it(self, tmp_path):
+        into = tmp_path / "fetched"
+        into.mkdir()
+
+        with pytest.raises(subprocess.CalledProcessError):
+            fetched([("someapp", "main", "main"), ("someapp", "branch", "main")], into,
+                    url_of=lambda repo: str(tmp_path / "nowhere"))
 
 
 def _nobody_may_ask(query: str) -> str:
