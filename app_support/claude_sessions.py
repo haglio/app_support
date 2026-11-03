@@ -6,6 +6,7 @@ import re
 import shutil
 import subprocess
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 from app_support.subprocess_utils import hidden_subprocess_kwargs
@@ -39,14 +40,22 @@ def claude_command(local_app_data: str | None = None, which: Callable[[str], str
     return str(newest) if newest else which("claude") or "claude"
 
 
-def start_in_background(claude: str, title: str, brief: str, cwd: Path | str, shell=run_command,
+@dataclass(frozen=True)
+class NewSession:
+    title: str
+    brief: str
+    cwd: Path | str
+
+
+def start_in_background(claude: str, session: NewSession, shell=run_command,
                         once_signed_in: Callable[[], object] = lambda: None) -> str:
     try:
         shell([claude, "auth", "status"])
     except CommandFailed:
         raise CommandFailed("the Claude command line is not signed in") from None
     once_signed_in()
-    answer = shell([claude, "--bg", "--name", title, "--permission-mode", "auto", brief], cwd=cwd)
+    answer = shell([claude, "--bg", "--name", session.title, "--permission-mode", "auto", session.brief],
+                   cwd=session.cwd)
     started = _BACKGROUNDED.search(answer)
     if started is None:
         raise CommandFailed(f"the Claude command line did not say it started the session: {answer.strip()}")
