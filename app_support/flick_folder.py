@@ -12,7 +12,7 @@ def vr_flicks_in(flicks_folder: Path) -> Path:
 
 
 def trash_folder_in(genau: Path) -> Path:
-    return genau / "weird"
+    return genau / "trash"
 
 
 def audio_in(genau: Path) -> Path:
@@ -35,6 +35,6 @@ def flicks_folder_in(genau: Path) -> Path | None:
     if not genau.is_dir():
         return None
     fitting = [folder for folder in genau.iterdir()
-               if folder.is_dir() and folder != trash_folder_beside(folder)
+               if folder.is_dir() and folder != trash_folder_beside(folder) and folder.name != "weird"
                and flat_flicks_in(folder).is_dir()]
     return fitting[0] if len(fitting) == 1 else None
