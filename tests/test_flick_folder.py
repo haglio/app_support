@@ -13,11 +13,11 @@ from app_support.flick_folder import (
 
 
 def test_the_trash_folder_sits_beside_the_flicks_folder():
-    assert trash_folder_beside(Path("C:/videos/genau/flicks")) == Path("C:/videos/genau/weird")
+    assert trash_folder_beside(Path("C:/videos/genau/flicks")) == Path("C:/videos/genau/trash")
 
 
 def test_the_trash_folder_is_in_genaus_folder_whether_or_not_its_flicks_are_found():
-    assert trash_folder_in(Path("C:/videos/genau")) == Path("C:/videos/genau/weird")
+    assert trash_folder_in(Path("C:/videos/genau")) == Path("C:/videos/genau/trash")
 
 
 def test_genaus_audio_is_in_genaus_folder_beside_its_flicks():
@@ -66,3 +66,10 @@ def test_the_old_names_answer_until_the_apps_have_moved():
     flicks = Path("C:/videos/genau/flicks")
     assert weird_pile_in(flicks.parent) == trash_folder_in(flicks.parent)
     assert weird_dir_for_flicks_folder(flicks) == trash_folder_beside(flicks)
+
+
+def test_the_old_trash_folder_is_not_taken_for_the_flicks_until_it_is_renamed(tmp_path):
+    flicks = tmp_path / "genau" / "flicks"
+    flat_flicks_in(flicks).mkdir(parents=True)
+    flat_flicks_in(tmp_path / "genau" / "weird").mkdir(parents=True)
+    assert flicks_folder_in(tmp_path / "genau") == flicks
