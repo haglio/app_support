@@ -3,9 +3,10 @@ import sys
 import pytest
 
 from app_support import claude_sessions
-from app_support.claude_sessions import CommandFailed
+from app_support.claude_sessions import CommandFailed, NewSession
 
 CWD = "C:/made/up/place"
+SESSION = NewSession("title", "brief", CWD)
 
 
 class FakeClaude:
@@ -24,7 +25,7 @@ class FakeClaude:
 def test_a_session_starts_in_the_background_in_auto_under_its_title_and_its_short_id_comes_back():
     claude = FakeClaude(**{"--bg": "backgrounded \xb7 812181fb \xb7 A made-up title"})
 
-    short_id = claude_sessions.start_in_background("claude", "A made-up title", "the brief", CWD, shell=claude)
+    short_id = claude_sessions.start_in_background("claude", NewSession("A made-up title", "the brief", CWD), shell=claude)
 
     assert short_id == "812181fb"
     assert claude.asked == [(["claude", "auth", "status"], None),
@@ -36,7 +37,7 @@ def test_no_session_starts_while_the_command_line_is_not_signed_in():
     claude = FakeClaude(auth=CommandFailed("no"))
 
     with pytest.raises(CommandFailed, match="not signed in"):
-        claude_sessions.start_in_background("claude", "title", "brief", CWD, shell=claude)
+        claude_sessions.start_in_background("claude", SESSION, shell=claude)
 
     assert [command for command, _cwd in claude.asked if "--bg" in command] == []
 
@@ -45,10 +46,10 @@ def test_what_a_session_needs_made_first_is_made_only_once_the_command_line_is_s
     made = []
     claude = FakeClaude(**{"--bg": "backgrounded · 812181fb"})
 
-    claude_sessions.start_in_background("claude", "title", "brief", CWD, shell=claude,
+    claude_sessions.start_in_background("claude", SESSION, shell=claude,
                                         once_signed_in=lambda: made.append(len(claude.asked)))
     with pytest.raises(CommandFailed):
-        claude_sessions.start_in_background("claude", "title", "brief", CWD, shell=FakeClaude(auth=CommandFailed("no")),
+        claude_sessions.start_in_background("claude", SESSION, shell=FakeClaude(auth=CommandFailed("no")),
                                             once_signed_in=lambda: made.append("too soon"))
 
     assert made == [1]
@@ -58,7 +59,7 @@ def test_a_start_the_command_line_does_not_confirm_is_a_failure():
     claude = FakeClaude(**{"--bg": "something else entirely"})
 
     with pytest.raises(CommandFailed, match="something else entirely"):
-        claude_sessions.start_in_background("claude", "title", "brief", CWD, shell=claude)
+        claude_sessions.start_in_background("claude", SESSION, shell=claude)
 
 
 def test_background_sessions_are_read_off_the_command_line():
