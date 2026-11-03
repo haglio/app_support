@@ -9,6 +9,9 @@ from pathlib import Path
 
 _ATTEMPTS_WHILE_HELD = 5
 _DELAY_WHILE_HELD_S = 0.005
+_ATTEMPTS_BEFORE_A_VERB_IS_LOST = 1000
+
+_log = logging.getLogger(__name__)
 
 
 def retried_while_held[T](
@@ -75,13 +78,14 @@ def append_command(
     path: Path,
     line: str,
     *,
-    attempts: int = _ATTEMPTS_WHILE_HELD,
+    attempts: int = _ATTEMPTS_BEFORE_A_VERB_IS_LOST,
     delay_s: float = _DELAY_WHILE_HELD_S,
 ) -> bool:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         retried_while_held(lambda: _append_line(path, line), attempts=attempts, delay_s=delay_s)
     except OSError:
+        _log.exception("Lost the command %r: could not append it to %s", line, path)
         return False
     return True
 
