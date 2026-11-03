@@ -90,13 +90,6 @@ class ProcessName:
     icon: Path | None = None
 
 
-def assert_the_app_names_its_process(
-    name_this_process: Callable[[], object], where: Path, *, app_name: str, role: str,
-    interpreter: str = "pythonw.exe", row: str | None = None, icon: Path | None = None,
-) -> None:
-    assert_the_process_is_named(name_this_process, where, ProcessName(app_name, role, interpreter, row, icon))
-
-
 def assert_the_process_is_named(name_this_process: Callable[[], object], where: Path, named: ProcessName) -> None:
     app_name, role, interpreter, row, icon = named.app_name, named.role, named.interpreter, named.row, named.icon
     namer = ProcessNamer(app_name)
