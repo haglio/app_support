@@ -83,6 +83,16 @@ def test_a_session_opens_in_claude_desktop_by_being_stopped_then_resumed_there()
     assert ran == [(["claude", "stop", "812181fb"], CWD), (["claude", "--desktop", "--resume", "the-whole-id"], CWD)]
 
 
+def test_opening_in_claude_desktop_leaves_the_command_line_s_output_alone():
+    asked = []
+
+    claude_sessions.open_in_claude_desktop("claude", "812181fb", "the-whole-id", CWD,
+                                           run=lambda command, **kwargs: asked.append(kwargs))
+
+    assert "capture_output" not in asked[1]
+    assert "stdout" not in asked[1]
+
+
 def test_the_newest_copy_the_claude_app_keeps_is_the_command_line_used(tmp_path):
     kept = tmp_path / "Packages" / "Claude_x" / "LocalCache" / "Roaming" / "Claude" / "claude-code"
     for version in ("2.1.9", "2.1.293"):
