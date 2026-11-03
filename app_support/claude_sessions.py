@@ -73,4 +73,4 @@ def background_sessions(claude: str, shell=run_command) -> list[dict]:
 def open_in_claude_desktop(claude: str, short_id: str, session: str, cwd: Path | str,
                            run: Callable[..., object] = subprocess.run) -> None:
     run([claude, "stop", short_id], cwd=cwd, capture_output=True, **hidden_subprocess_kwargs())
-    run([claude, "--desktop", "--resume", session], cwd=cwd, capture_output=True, **hidden_subprocess_kwargs())
+    run([claude, "--desktop", "--resume", session], cwd=cwd, **hidden_subprocess_kwargs())
