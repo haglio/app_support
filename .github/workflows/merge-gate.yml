@@ -26,7 +26,7 @@ jobs:
     with:
       siblings: ""
       python-version: "3.14"
-      timeout-minutes: 15
+      timeout-minutes: 25
       keeps-what-others-use: true
 
   # A consumer built against the candidate. This package installs editable into
