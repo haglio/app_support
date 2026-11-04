@@ -113,7 +113,7 @@
   },
   "statements": {
     "app_support/launcher.py": 411,
-    "app_support/loading_screen.py": 326,
+    "app_support/loading_screen.py": 322,
     "app_support/production_update.py": 547,
     "app_support/win32.py": 454
   },

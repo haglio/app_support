@@ -256,19 +256,14 @@ class Placement:
         return self.window[0] + self.panel[0], self.window[1] + self.panel[1]
 
 
-def over_every_monitor(size: tuple[int, int], screens: Screens, *,
-                       panel_at: tuple[int, int] | None = None) -> Placement:
+def over_every_monitor(size: tuple[int, int], screens: Screens) -> Placement:
     x, y, _width, _height = screens.virtual
-    if panel_at is None:
-        panel_at = (screens.primary[0] // 2 - size[0] // 2, screens.primary[1] // 2 - size[1] // 2)
-    return Placement(screens.virtual, (panel_at[0] - x, panel_at[1] - y))
+    return Placement(screens.virtual, (screens.primary[0] // 2 - size[0] // 2 - x,
+                                       screens.primary[1] // 2 - size[1] // 2 - y))
 
 
-def on_the_apps_monitor(size: tuple[int, int], screens: Screens, app: AppWindow | None, *,
-                        panel_at: tuple[int, int] | None = None) -> Placement:
+def on_the_apps_monitor(size: tuple[int, int], screens: Screens, app: AppWindow | None) -> Placement:
     kept = _monitor_the_app_keeps_its_window_on(screens, app)
-    if panel_at is not None and (kept is None or _inside(panel_at, kept.area)):
-        return Placement((*panel_at, *size), (0, 0))
     x, y, width, height = kept.work_area if kept else _work_area_qt_opens_it_in(screens, app)
     return Placement((x + (width - size[0]) // 2, y + (height - size[1]) // 2, *size), (0, 0))
 
