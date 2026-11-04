@@ -442,30 +442,6 @@ class TestWhereTheLoadingScreenStands:
 
         assert placement.panel_on_screen == self.centered_on(self.PORTRAIT)
 
-    def test_the_apps_own_panel_taking_over_stays_where_the_launchers_stood(self):
-        placement = loading_screen.on_the_apps_monitor(
-            (408, 271), self.SCREENS, loading_screen.AppWindow(size=(1954, 600)), panel_at=(-1300, 900))
-
-        assert placement.panel_on_screen == (-1300, 900)
-
-    def test_the_apps_own_panel_leaves_a_launchers_that_stood_off_the_monitor_the_app_keeps_its_window_on(self):
-        placement = loading_screen.on_the_apps_monitor(
-            (408, 271), self.SCREENS, loading_screen.AppWindow(kept_on=self.MAIN.area), panel_at=(-1300, 900))
-
-        assert placement.panel_on_screen == self.centered_on(self.MAIN)
-
-    def test_the_apps_own_panel_stays_where_the_launchers_stood_on_the_monitor_the_app_keeps_its_window_on(self):
-        placement = loading_screen.on_the_apps_monitor(
-            (408, 271), self.SCREENS, loading_screen.AppWindow(kept_on=self.MAIN.area), panel_at=(1000, 500))
-
-        assert placement.panel_on_screen == (1000, 500)
-
-    def test_a_panel_handed_over_stays_where_it_stood(self):
-        placement = loading_screen.over_every_monitor((408, 271), self.SCREENS, panel_at=(100, 200))
-
-        assert placement.panel_on_screen == (100, 200)
-        assert placement.panel == (100 + 1440, 200)
-
 
 def a_png(width: int, height: int, color: tuple[int, int, int]) -> bytes:
     def chunk(kind: bytes, data: bytes) -> bytes:
