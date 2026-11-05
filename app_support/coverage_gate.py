@@ -1,28 +1,21 @@
 from __future__ import annotations
 
 import configparser
-import contextlib
 import difflib
 import fnmatch
-import json
 import os
 import re
-import tempfile
 from pathlib import Path
 from typing import NamedTuple
 
 import pytest
 from coverage.config import DEFAULT_EXCLUDE
 
-from app_support.gates import Checkout, over
-
 
 class NotUnitTested(NamedTuple):
     path: str
     because: str
 
-
-UNCOVERED = "uncovered_lines"
 
 _STOOD_DOWN = pytest.StashKey[str]()
 
@@ -95,26 +88,6 @@ def pytest_collection_modifyitems(config, items) -> None:
         measuring.no_cov_on_fail = True
 
 
-def unreached_lines_in_report(covering, root: Path) -> dict[str, list[int]]:
-    with tempfile.TemporaryDirectory() as folder, contextlib.chdir(root):
-        report = Path(folder) / "coverage.json"
-        covering.json_report(outfile=str(report))
-        files = json.loads(report.read_text(encoding="utf-8"))["files"]
-    measured = {Path(name).as_posix(): file["missing_lines"] for name, file in files.items()}
-    return {key: lines for key, lines in measured.items() if lines}
-
-
-def uncovered_rises(root: Path, covering) -> list[str]:
-    entries = (Checkout(root).sections or {}).get(UNCOVERED)
-    if entries is None:
-        return []
-    unreached = unreached_lines_in_report(covering, root)
-    return [f"{key} leaves {held} {UNCOVERED}, over its entry of {entry}, at lines {', '.join(map(str, unreached[key]))}: "
-            "if this change did not touch the file, one of them is reached only some of the time, so find what decides that; "
-            "if it did, ask what keeps a test from them and change how that code is built, or take them out"
-            for key, (held, entry) in over(entries, {key: len(lines) for key, lines in unreached.items()}).items()]
-
-
 def risen_floor(total: float, floor: float) -> float | None:
     hundredths = round(total * 100)
     if hundredths < round((floor + 1) * 100):
@@ -135,9 +108,6 @@ def pytest_runtestloop(session):
             f"\nERROR: coverage of {total:.2f}% beats the floor of {floor}% by a point or more: "
             f"raise fail_under in .coveragerc to {risen}, so what the suite has reached is kept\n",
             red=True, bold=True)
-        session.testsfailed += 1
-    for rise in uncovered_rises(session.config.rootpath, measuring.cov_controller.cov):
-        session.config.pluginmanager.get_plugin("terminalreporter").write(f"\nERROR: {rise}\n", red=True, bold=True)
         session.testsfailed += 1
     return finished
 

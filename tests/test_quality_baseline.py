@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
 import pytest
@@ -12,13 +11,6 @@ from app_support.gates import Checkout, baseline, over
 
 GATED = "-p no:cacheprovider -p app_support.gates.pytest_plugin --timeout=60 --timeout-method=thread"
 PROJECT = '[project]\nname = "example"\n'
-MEASURING = """\
-[tool.pytest.ini_options]
-addopts = "-p no:cacheprovider -p app_support.coverage_gate --cov --cov-report="
-testpaths = ["tests"]
-"""
-TWO_LINES = "def told():\n    return 1\n\n\ndef never_called():\n    return 2\n"
-A_TEST = "from pkg.mod import told\n\n\ndef test_told():\n    assert told() == 1\n"
 
 
 def _files(root: Path, files: dict[str, str]) -> Path:
@@ -181,6 +173,13 @@ class TestHoldingACount:
 
         with pytest.raises(AssertionError, match=r"prose_lines is gone from the file, and main holds it"):
             baseline.assert_nothing_stands_above_main(checkout)
+
+    def test_a_section_no_count_reads_may_leave_the_file_though_main_holds_it(self, tmp_path: Path):
+        checkout = _checkout(tmp_path, {}, {"prose_lines": {}, "left_by_an_older_gate": {"pkg/a.py": 3}})
+        _with_a_main(tmp_path)
+        _files(tmp_path, {baseline.BASELINE_PATH: json.dumps({"prose_lines": {}})})
+
+        baseline.assert_nothing_stands_above_main(checkout)
 
     def test_a_rename_the_repo_states_is_no_raise_where_git_cannot_see_one(self, tmp_path: Path):
         checkout = _checkout(tmp_path, {}, {"prose_lines": {"pkg/a.py": 30}})
@@ -399,97 +398,12 @@ class TestTheCommand:
         written = (tmp_path / baseline.BASELINE_PATH).read_text(encoding="utf-8")
         assert '  "prose_lines": {\n    "pkg/a.py": 1,\n    "pkg/b.py": 1\n  },\n' in written
 
+    def test_it_writes_only_the_sections_a_count_reads(self, tmp_path: Path):
+        checkout = _checkout(tmp_path, {"pkg/a.py": "# why\n"},
+                             {"prose_lines": {"pkg/a.py": 1}, "left_by_an_older_gate": {"pkg/a.py": 3}})
 
-class TestUncoveredLines:
-    def _measured(self, root: Path, entries: dict | None, *args: str):
-        every = {"pyproject.toml": PROJECT + MEASURING, "pkg/__init__.py": "", "pkg/mod.py": TWO_LINES,
-                 "tests/test_mod.py": A_TEST, ".coveragerc": "[run]\nsource = .\nomit = tests/*\nrelative_files = true\n"
-                 "[report]\nfail_under = 74.5\n"}
-        if entries is not None:
-            every[baseline.BASELINE_PATH] = json.dumps(entries)
-        return run_pytest_in(_files(root, every), *args)
-
-    def test_a_file_with_more_uncovered_lines_than_its_entry_fails_the_run(self, tmp_path: Path):
-        done = self._measured(tmp_path, {"uncovered_lines": {}})
-
-        assert done.returncode == 1, done.stdout
-        assert "pkg/mod.py leaves 1 uncovered_lines, over its entry of 0" in done.stdout
-
-    def test_a_file_at_its_entry_passes(self, tmp_path: Path):
-        done = self._measured(tmp_path, {"uncovered_lines": {"pkg/mod.py": 1}})
-
-        assert done.returncode == 0, done.stdout
-
-    def test_a_file_under_its_entry_passes_since_a_line_may_be_reached_by_chance(self, tmp_path: Path):
-        done = self._measured(tmp_path, {"uncovered_lines": {"pkg/mod.py": 5}})
-
-        assert done.returncode == 0, done.stdout
-
-    def test_a_repo_whose_file_has_no_such_section_is_not_held_to_one(self, tmp_path: Path):
-        done = self._measured(tmp_path, {"prose_lines": {}})
-
-        assert "uncovered_lines" not in done.stdout
-
-    def test_a_narrowed_run_is_not_held_to_it(self, tmp_path: Path):
-        done = self._measured(tmp_path, {"uncovered_lines": {}}, "tests/test_mod.py")
-
-        assert done.returncode == 0, done.stdout
-
-    def test_the_command_reads_the_last_run(self, tmp_path: Path):
-        self._measured(tmp_path, {"uncovered_lines": {"pkg/mod.py": 5}})
-        said: list[str] = []
-
-        code = baseline.main_in(Checkout(tmp_path), said=said.append)
+        code, _ = self._main(checkout)
 
         assert code == 0
-        written = json.loads((tmp_path / baseline.BASELINE_PATH).read_text(encoding="utf-8"))
-        assert written["uncovered_lines"] == {"pkg/mod.py": 1}
+        assert sorted(self._written(checkout)) == sorted(count.section for count in baseline.COUNTS)
 
-    def test_the_command_enters_the_section_from_the_last_run_when_the_file_has_none(self, tmp_path: Path):
-        self._measured(tmp_path, {})
-
-        assert baseline.main_in(Checkout(tmp_path), said=print) == 0
-        written = json.loads((tmp_path / baseline.BASELINE_PATH).read_text(encoding="utf-8"))
-        assert written["uncovered_lines"] == {"pkg/mod.py": 1}
-
-    def test_holding_a_gathered_run_names_each_rise(self, tmp_path: Path):
-        self._measured(tmp_path, {"uncovered_lines": {"pkg/mod.py": 1}})
-        _files(tmp_path, {baseline.BASELINE_PATH: json.dumps({"uncovered_lines": {}})})
-        said: list[str] = []
-
-        assert baseline.hold_uncovered(Checkout(tmp_path), said=said.append) == 1
-        assert len(said) == 1
-        assert said[0].startswith("pkg/mod.py leaves 1 uncovered_lines, over its entry of 0, at lines ")
-
-    def test_a_rise_says_which_lines_since_a_ci_run_keeps_nothing_else_to_read(self, tmp_path: Path):
-        done = self._measured(tmp_path, {"uncovered_lines": {}})
-
-        assert re.search(r"pkg/mod\.py leaves 1 uncovered_lines, over its entry of 0, at lines \d+:", done.stdout)
-
-    def test_a_rise_on_a_file_the_change_never_touched_is_named_as_a_line_reached_only_sometimes(self, tmp_path: Path):
-        done = self._measured(tmp_path, {"uncovered_lines": {}})
-
-        assert "reached only some of the time" in done.stdout
-        assert "test them, or take them out" not in done.stdout
-
-    def test_holding_a_gathered_run_at_its_entries_passes(self, tmp_path: Path):
-        self._measured(tmp_path, {"uncovered_lines": {"pkg/mod.py": 1}})
-
-        assert baseline.hold_uncovered(Checkout(tmp_path), said=print) == 0
-
-    def test_holding_with_no_run_to_read_is_no_pass(self, tmp_path: Path):
-        said: list[str] = []
-
-        assert baseline.hold_uncovered(_checkout(tmp_path, {}, {"uncovered_lines": {}}), said=said.append) == 1
-        assert said == ["no whole run's .coverage to read"]
-
-    def test_the_command_says_when_there_is_no_run_to_read(self, tmp_path: Path):
-        checkout = _checkout(tmp_path, {}, {"uncovered_lines": {"pkg/a.py": 2}})
-        said: list[str] = []
-
-        code = baseline.main_in(checkout, said=said.append)
-
-        assert code == 0
-        assert "left uncovered_lines as it was: no whole run's .coverage to read" in said
-        written = json.loads((tmp_path / baseline.BASELINE_PATH).read_text(encoding="utf-8"))
-        assert written["uncovered_lines"] == {"pkg/a.py": 2}
