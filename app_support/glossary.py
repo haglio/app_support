@@ -97,10 +97,19 @@ def _says(wanted: list[str], words: list[str]) -> bool:
     return words[:-1] == wanted[:-1] and words[-1] in _forms(wanted[-1])
 
 
-def _mentions(retired: str, keep: list[str], source: list[SourceLine]) -> list[str]:
+def _lines_saying_each_word(source: list[SourceLine]) -> dict[str, list[int]]:
+    saying: dict[str, list[int]] = {}
+    for at, line in enumerate(source):
+        for word in {w.lower() for w in line.words}:
+            saying.setdefault(word, []).append(at)
+    return saying
+
+
+def _mentions(retired: str, keep: list[str], source: list[SourceLine], saying: dict[str, list[int]]) -> list[str]:
     wanted = _words_of_phrase(retired)
+    could_say_it = sorted({at for form in _forms(wanted[-1]) for at in saying.get(form, ())})
     hits = []
-    for line in source:
+    for line in (source[at] for at in could_say_it):
         said = [(w.lower(), token) for token in line.tokens if not _kept(token, line.text, keep)
                 for w in _words_of(token) if _counted(w, token)]
         for at in range(len(said) - len(wanted) + 1):
@@ -113,10 +122,11 @@ def _mentions(retired: str, keep: list[str], source: list[SourceLine]) -> list[s
 
 def assert_retired_words_gone(glossary: Path, source: list[SourceLine]) -> None:
     left = []
+    saying = _lines_saying_each_word(source)
     for row in _rows(glossary):
         for word in row.get("retired", []):
             left += [f"{row['id']} retired {word!r}: {hit}"
-                     for hit in _mentions(word, row.get("keep", []), source)]
+                     for hit in _mentions(word, row.get("keep", []), source, saying)]
     assert not left, "retired words still in the code:\n" + "\n".join(left[:40])
 
 
