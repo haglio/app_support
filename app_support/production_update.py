@@ -59,7 +59,7 @@ LIBRARY_S = 15.0
 MOVE_S = 2.0
 REINSTALL_S = 10.0
 
-_KEYS = frozenset({"commit-file", "also-runs"})
+_KEYS = frozenset({"commit-file", "also-runs", "tests-run-from-its-venv"})
 _STANDS_FOR = re.compile(rf"^{HOTFIX_OF}: (\S+) (\d+)(?: in (\S+))?$", re.MULTILINE)
 _REVERTS = re.compile(r"This reverts commit ([0-9a-f]{40})")
 _FIELD, _RECORD = "\x1f", "\x1e"
@@ -82,6 +82,7 @@ class Busy(Exception):
 class Declaration:
     commit_file: str | None = None
     also_runs: tuple[str, ...] = ()
+    tests_run_from_its_venv: bool = False
 
 
 @dataclasses.dataclass(frozen=True)
@@ -143,7 +144,7 @@ def _declared_in(pyproject_text: str) -> Declaration | None:
     if not isinstance(also_runs, list) or not all(_a_folder_name(name) for name in also_runs):
         raise ProductionSpecError(
             f"[tool.haglio.production]: also-runs {also_runs!r} must name checkouts beside this one")
-    return Declaration(commit_file, tuple(also_runs))
+    return Declaration(commit_file, tuple(also_runs), table.get("tests-run-from-its-venv", False) is True)
 
 
 def opens_only_with(pyproject_text: str) -> OpensOnlyWith | None:
@@ -536,6 +537,11 @@ def _cloning_from_here(workspace: Path, pins: Iterable[SiblingPin], *, run: Run)
     return settings
 
 
+def _what_to_install(checkout: Path, pyproject_text: str) -> str:
+    declaration = _declared_in(pyproject_text)
+    return f"{checkout}[dev]" if declaration and declaration.tests_run_from_its_venv else str(checkout)
+
+
 def _describe(checkout: Path, branch: str, target: str, *, run: Run) -> str:
     tracking = git_or_none(checkout, "rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{branch}", run=run)
     return f"origin/{branch}" if tracking == target else target[:8]
@@ -544,7 +550,8 @@ def _describe(checkout: Path, branch: str, target: str, *, run: Run) -> str:
 def _carry_out(checkout: Path, plan: _Plan, *, workspace: Path, run: Run) -> str:
     python = str(checkout / ".venv" / "Scripts" / "python.exe")
     changed = git(checkout, "diff", "--name-only", plan.head, plan.target, run=run).splitlines() if plan.moves else []
-    pinned = sibling_pins_in(_pyproject_at(checkout, plan.target if plan.moves else plan.head, run=run))
+    pyproject = _pyproject_at(checkout, plan.target if plan.moves else plan.head, run=run)
+    pinned = sibling_pins_in(pyproject)
     local = _cloning_from_here(workspace, pinned, run=run)
     steps = []
     if plan.libraries:
@@ -555,7 +562,8 @@ def _carry_out(checkout: Path, plan: _Plan, *, workspace: Path, run: Run) -> str
         steps.append(("moving its code", MOVE_S, lambda: _move(checkout, plan, run=run)))
     if (checkout / ".venv").is_dir() and (plan.libraries or "pyproject.toml" in changed):
         steps.append(("installing it", REINSTALL_S, lambda: run(
-            [python, "-m", "pip", "install", "-e", str(checkout), "--config-settings", "editable_mode=compat"],
+            [python, "-m", "pip", "install", "-e", _what_to_install(checkout, pyproject),
+             "--config-settings", "editable_mode=compat"],
             cwd=checkout, timeout=PIP_TIMEOUT_S, env=local)))
     with _saying_how_far(checkout, tuple((name, seconds) for name, seconds, _ in steps)) as entering:
         for index, (_name, _seconds, take) in enumerate(steps):
