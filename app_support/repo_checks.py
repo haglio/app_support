@@ -11,6 +11,7 @@ def pytest_configure(config) -> None:
     # Imported here rather than through pytest_plugins: a plugin named with -p is imported before
     # pytest-cov starts measuring, and so would be every module it imports.
     config.pluginmanager.import_plugin("app_support.stopped_runs")
+    config.pluginmanager.import_plugin("app_support.worker_processes")
 
 
 @pytest.hookimpl(wrapper=True, tryfirst=True)

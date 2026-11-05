@@ -13,8 +13,11 @@ under test. The production checkout's own `.venv` runs the production updater
 and holds nothing else, so never run a suite or install anything into it:
 
 ```bash
-PYTHONPATH="<checkout>" "C:/path/to/fun_time/.venv/Scripts/python.exe" -m pytest "<checkout>/tests"
+PYTHONPATH="<checkout>" "C:/path/to/fun_time/.venv/Scripts/python.exe" -m pytest -x -q -n 8
 ```
+
+from the checkout. That is the whole run, in eight worker processes (pytest-xdist):
+about seven minutes, against twenty-two in one process.
 
 Without it a worktree's suite imports `app_support` from the **primary**
 checkout, because that is where every consumer's editable install points — so
