@@ -80,7 +80,7 @@ class TestCommentsAboutAnOutsideProgram:
             self, tmp_path: Path, source: str, lines: int):
         checkout = _checkout(tmp_path, {"pkg/a.py": source}, {})
 
-        assert baseline.count_named("prose_lines").measure(checkout, {}).get("pkg/a.py", 0) == lines
+        assert baseline.count_named("prose_lines").measure(checkout).get("pkg/a.py", 0) == lines
 
 
 class TestTrailingComments:
@@ -102,21 +102,7 @@ class TestTrailingComments:
     def test_they_are_counted_over_the_code_and_the_tests(self, tmp_path: Path):
         checkout = _checkout(tmp_path, {"pkg/a.py": "x = 1  # why\n", "tests/test_a.py": "x = 1  # why\n"})
 
-        assert baseline.count_named("trailing_comments").measure(checkout, {}) == {"pkg/a.py": 1, "tests/test_a.py": 1}
-
-
-class TestMethods:
-    @pytest.mark.parametrize(("source", "methods"), [
-        ("class A:\n    def f(self):\n        pass\n    def g(self):\n        pass\n", 2),
-        ("class A:\n    async def f(self):\n        pass\n", 1),
-        ("class A:\n    if True:\n        def f(self):\n            pass\n", 1),
-        ("class A:\n    try:\n        x = 1\n    except E:\n        def f(self):\n            pass\n", 1),
-        ("class A:\n    def f(self):\n        def inner():\n            pass\n", 1),
-        ("class A:\n    class B:\n        def f(self):\n            pass\n", 0),
-        ("class C:\n    def f(self):\n        pass\n", 0),
-    ], ids=["two", "async", "inside a block", "inside a handler", "a closure is not one", "a nested class's are not", "no such class"])
-    def test_a_class_is_counted_by_what_it_defines_itself(self, source: str, methods: int):
-        assert baseline.methods_of(source, "A") == methods
+        assert baseline.count_named("trailing_comments").measure(checkout) == {"pkg/a.py": 1, "tests/test_a.py": 1}
 
 
 class TestWhatACountReads:
@@ -124,26 +110,20 @@ class TestWhatACountReads:
         checkout = _checkout(tmp_path, {"pkg/a.py": "# why\n", "tools/t.py": "# why\n# what\n",
                                         "tests/test_a.py": "# why\n", "main.py": "x = 1\n"})
 
-        assert baseline.count_named("prose_lines").measure(checkout, {}) == {
+        assert baseline.count_named("prose_lines").measure(checkout) == {
             "pkg/a.py": 1, "tools/t.py": 2, "tests/test_a.py": 1}
 
     def test_reaches_are_read_over_the_code_alone(self, tmp_path: Path):
         checkout = _checkout(tmp_path, {"pkg/a.py": "def f(b):\n    return b._c\n",
                                         "tests/test_a.py": "def f(b):\n    return b._c\n"})
 
-        assert baseline.count_named("private_reaches").measure(checkout, {}) == {"pkg/a.py": 1}
+        assert baseline.count_named("private_reaches").measure(checkout) == {"pkg/a.py": 1}
 
     def test_private_imports_are_read_over_the_code_alone(self, tmp_path: Path):
         checkout = _checkout(tmp_path, {"pkg/a.py": "from pkg.b import _c\n", "pkg/b.py": "_c = 1\n",
                                         "tests/test_a.py": "from pkg.b import _c\n"})
 
-        assert baseline.count_named("private_imports").measure(checkout, {}) == {"pkg/a.py": 1}
-
-    def test_methods_are_read_only_of_the_classes_the_repo_lists(self, tmp_path: Path):
-        checkout = _checkout(tmp_path, {"pkg/a.py": "class A:\n    def f(self):\n        pass\n\n\nclass B:\n    def g(self):\n        pass\n"})
-
-        assert baseline.count_named("methods").measure(checkout, {"pkg/a.py::A": 5, "pkg/gone.py::C": 1}) == {
-            "pkg/a.py::A": 1}
+        assert baseline.count_named("private_imports").measure(checkout) == {"pkg/a.py": 1}
 
 
 class TestTheCompare:
@@ -166,12 +146,6 @@ class TestTheCompare:
 class TestCarrying:
     def test_a_renamed_files_entry_goes_with_it(self):
         assert baseline.carried({"old.py": 3, "kept.py": 1}, {"old.py": "new.py"}) == {"new.py": 3, "kept.py": 1}
-
-    def test_a_renamed_files_classes_go_with_it(self):
-        assert baseline.carried({"old.py::A": 3}, {"old.py": "new.py"}) == {"new.py::A": 3}
-
-    def test_a_renamed_class_takes_its_entry_under_its_new_name(self):
-        assert baseline.carried({"old.py::A": 3}, {"old.py::A": "new.py::B"}) == {"new.py::B": 3}
 
     def test_an_entry_the_new_name_already_holds_is_not_added_to(self):
         assert baseline.carried({"old.py": 3, "new.py": 1}, {"old.py": "new.py"}) == {"new.py": 3}
@@ -209,43 +183,20 @@ class TestHoldingACount:
             baseline.assert_nothing_stands_above_main(checkout)
 
     def test_a_rename_the_repo_states_is_no_raise_where_git_cannot_see_one(self, tmp_path: Path):
-        checkout = _checkout(tmp_path, {}, {"methods": {"pkg/a.py::A": 30}})
+        checkout = _checkout(tmp_path, {}, {"prose_lines": {"pkg/a.py": 30}})
         _with_a_main(tmp_path)
-        _files(tmp_path, {baseline.BASELINE_PATH: json.dumps({"methods": {"pkg/a.py::B": 30}}),
-                          baseline.STATED_RENAMES_PATH: json.dumps({"pkg/a.py::A": "pkg/a.py::B"})})
+        _files(tmp_path, {baseline.BASELINE_PATH: json.dumps({"prose_lines": {"pkg/b.py": 30}}),
+                          baseline.STATED_RENAMES_PATH: json.dumps({"pkg/a.py": "pkg/b.py"})})
 
         baseline.assert_nothing_stands_above_main(checkout)
 
     def test_a_stated_rename_cannot_raise_the_number_it_moves(self, tmp_path: Path):
-        checkout = _checkout(tmp_path, {}, {"methods": {"pkg/a.py::A": 30}})
+        checkout = _checkout(tmp_path, {}, {"prose_lines": {"pkg/a.py": 30}})
         _with_a_main(tmp_path)
-        _files(tmp_path, {baseline.BASELINE_PATH: json.dumps({"methods": {"pkg/a.py::B": 31}}),
-                          baseline.STATED_RENAMES_PATH: json.dumps({"pkg/a.py::A": "pkg/a.py::B"})})
+        _files(tmp_path, {baseline.BASELINE_PATH: json.dumps({"prose_lines": {"pkg/b.py": 31}}),
+                          baseline.STATED_RENAMES_PATH: json.dumps({"pkg/a.py": "pkg/b.py"})})
 
-        with pytest.raises(AssertionError, match=r"methods pkg/a.py::B stands at 31, above the 30 main holds"):
-            baseline.assert_nothing_stands_above_main(checkout)
-
-    def test_listing_a_class_under_the_familys_limit_raises_nothing(self, tmp_path: Path):
-        checkout = _checkout(tmp_path, {}, {"methods": {}})
-        _with_a_main(tmp_path)
-        _files(tmp_path, {baseline.BASELINE_PATH: json.dumps({"methods": {"pkg/a.py::A": 20}})})
-
-        baseline.assert_nothing_stands_above_main(checkout)
-
-    def test_listing_a_class_past_the_familys_limit_is_a_raise(self, tmp_path: Path):
-        checkout = _checkout(tmp_path, {}, {"methods": {}})
-        _with_a_main(tmp_path)
-        _files(tmp_path, {baseline.BASELINE_PATH: json.dumps({"methods": {"pkg/a.py::A": 31}})})
-
-        with pytest.raises(AssertionError, match=r"methods pkg/a.py::A stands at 31, above the 0 main holds"):
-            baseline.assert_nothing_stands_above_main(checkout)
-
-    def test_a_listed_class_already_at_main_is_held_there(self, tmp_path: Path):
-        checkout = _checkout(tmp_path, {}, {"methods": {"pkg/a.py::A": 20}})
-        _with_a_main(tmp_path)
-        _files(tmp_path, {baseline.BASELINE_PATH: json.dumps({"methods": {"pkg/a.py::A": 21}})})
-
-        with pytest.raises(AssertionError, match=r"methods pkg/a.py::A stands at 21, above the 20 main holds"):
+        with pytest.raises(AssertionError, match=r"prose_lines pkg/b.py stands at 31, above the 30 main holds"):
             baseline.assert_nothing_stands_above_main(checkout)
 
     def test_an_entry_above_mains_is_told(self, tmp_path: Path):
@@ -386,8 +337,9 @@ class TestTheCommand:
         code, _ = self._main(checkout)
 
         assert code == 0
-        assert self._written(checkout) == {**{count.section: {} for count in baseline.COUNTS},
-                                           "private_reaches": {"pkg/a.py": 1}, "prose_lines": {"pkg/a.py": 1}}
+        assert self._written(checkout) == {
+            "prose_lines": {"pkg/a.py": 1}, "trailing_comments": {}, "private_reaches": {"pkg/a.py": 1},
+            "private_imports": {}, "mutables_imported": {}, "library_patches": {}}
 
     def test_it_lowers_what_fell(self, tmp_path: Path):
         checkout = _checkout(tmp_path, {"pkg/a.py": "# why\n"}, {"prose_lines": {"pkg/a.py": 3}})

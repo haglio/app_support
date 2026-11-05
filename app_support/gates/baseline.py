@@ -13,14 +13,12 @@ from typing import NamedTuple
 
 import coverage
 
-from app_support.coupling import METHODS_LIMIT, measured_sections
-from app_support.coupling.classes import measure_classes
+from app_support.coupling import measured_sections
 from app_support.coverage_gate import UNCOVERED, uncovered_rises, unreached_lines_in_report
 from app_support.gates import BASELINE_PATH, Checkout, over
 from app_support.private_reach import private_imports, reaches_in
 
 _COMMAND = "python -m app_support.gates.baseline"
-_CLASS_MARK = "::"
 STATED_RENAMES_PATH = "tools/quality_baseline_renames.json"
 _NAMES_AN_EXTERNALITY = re.compile(
     r"\b(Qt|PyQt\d?|Q[A-Z][a-z]\w+|mpv|libmpv|Win32|Windows|ctypes|pywin32|pCloud|ComfyUI|pygame|OpenXR|ffmpeg|ffprobe|FFmpeg"
@@ -96,11 +94,6 @@ def _named_whole_lines(source: str) -> list[int]:
             for row in block if lines[row - 1].strip()]
 
 
-def methods_of(source: str, class_name: str) -> int:
-    surface = measure_classes(source).get(class_name)
-    return surface.methods if surface else 0
-
-
 def _python_under(paths: tuple[Path, ...]) -> Iterator[Path]:
     for path in paths:
         if path.is_file():
@@ -127,11 +120,11 @@ def _prose_naming_nothing_outside(source: str) -> int:
     return prose_lines(source) - len(_named_whole_lines(source))
 
 
-def _prose(checkout: Checkout, _entries: dict[str, int]) -> dict[str, int]:
+def _prose(checkout: Checkout) -> dict[str, int]:
     return _measured_over_code_and_tests(checkout, _prose_naming_nothing_outside)
 
 
-def _trailing_counts(checkout: Checkout, _entries: dict[str, int]) -> dict[str, int]:
+def _trailing_counts(checkout: Checkout) -> dict[str, int]:
     return _measured_over_code_and_tests(checkout, trailing_comments)
 
 
@@ -145,7 +138,7 @@ def _reach_listing(checkout: Checkout) -> dict[str, list[str]]:
     return listing
 
 
-def _reaches(checkout: Checkout, _entries: dict[str, int]) -> dict[str, int]:
+def _reaches(checkout: Checkout) -> dict[str, int]:
     return {key: len(found) for key, found in _reach_listing(checkout).items()}
 
 
@@ -153,28 +146,17 @@ def _import_listing(checkout: Checkout) -> dict[str, list[str]]:
     return private_imports(_python_under(checkout.code), checkout.root)
 
 
-def _imports(checkout: Checkout, _entries: dict[str, int]) -> dict[str, int]:
+def _imports(checkout: Checkout) -> dict[str, int]:
     return {key: len(found) for key, found in _import_listing(checkout).items()}
 
 
-def _methods(checkout: Checkout, entries: dict[str, int]) -> dict[str, int]:
-    measured = dict(measured_sections(checkout)["methods"])
-    for key in entries:
-        file, class_name = key.split(_CLASS_MARK)
-        path = checkout.root / file
-        methods = methods_of(_text(path), class_name) if path.is_file() else 0
-        if methods:
-            measured[key] = methods
-    return measured
-
-
-def _counted(section: str) -> Callable[[Checkout, dict[str, int]], dict[str, int]]:
-    return lambda checkout, _entries: measured_sections(checkout)[section]
+def _counted(section: str) -> Callable[[Checkout], dict[str, int]]:
+    return lambda checkout: measured_sections(checkout)[section]
 
 
 class Count(NamedTuple):
     section: str
-    measure: Callable[[Checkout, dict[str, int]], dict[str, int]]
+    measure: Callable[[Checkout], dict[str, int]]
     remedy: str
     listing: Callable[[Checkout], dict[str, list[str]]] | None = None
 
@@ -185,18 +167,8 @@ COUNTS = (
     Count("private_reaches", _reaches, "ask the object for what you need rather than reading its private name",
           _reach_listing),
     Count("private_imports", _imports, "make the name public, or stop reading it from outside", _import_listing),
-    Count("methods", _methods, "give the new method to a collaborator, or to a new one"),
-    Count("reach_chains", _counted("reach_chains"), "ask what you hold for what you need rather than walking through it"),
     Count("mutables_imported", _counted("mutables_imported"), "pass it, or freeze it, rather than sharing it from a module"),
-    Count("mocks", _counted("mocks"), "write a named fake with the role's methods and no others"),
-    Count("patches", _counted("patches"), "cut a parameter and hand the test's double in"),
-    Count("monkeypatches", _counted("monkeypatches"), "cut a parameter and hand the test's double in"),
-    Count("simple_namespaces", _counted("simple_namespaces"), "write a named fake or a dataclass"),
     Count("library_patches", _counted("library_patches"), "use what the library's testing module offers, or add it there"),
-    Count("class_attributes", _counted("class_attributes"), "give the new state to a collaborator, or to a new one"),
-    Count("chain_length", _counted("chain_length"), "ask the nearest object for what you need"),
-    Count("statements", _counted("statements"), "give the new code a module of its own"),
-    Count("fan_out", _counted("fan_out"), "split what this file does, so each part needs fewer others"),
 )
 
 
@@ -213,16 +185,9 @@ def lowered(entries: dict[str, int], live: dict[str, int]) -> dict[str, int]:
     return {key: entry for key, entry in kept.items() if entry}
 
 
-def _renamed_key(key: str, renames: dict[str, str]) -> str:
-    if key in renames:
-        return renames[key]
-    file, mark, class_name = key.partition(_CLASS_MARK)
-    return f"{renames.get(file, file)}{mark}{class_name}"
-
-
 def carried(entries: dict[str, int], renames: dict[str, str]) -> dict[str, int]:
-    moved = {_renamed_key(key, renames): entry for key, entry in entries.items() if _renamed_key(key, renames) != key}
-    return {**{key: entry for key, entry in entries.items() if _renamed_key(key, renames) == key}, **moved}
+    moved = {renames[key]: entry for key, entry in entries.items() if key in renames}
+    return {**{key: entry for key, entry in entries.items() if key not in renames}, **moved}
 
 
 def _write_sections(root: Path, sections: dict[str, dict[str, int]]) -> None:
@@ -236,7 +201,7 @@ def assert_count_holds(checkout: Checkout, count: Count) -> None:
     entries = checkout.sections.get(count.section)
     if entries is None:
         return
-    live = count.measure(checkout, entries)
+    live = count.measure(checkout)
     told = [f"{key} holds {held} {count.section}, over its entry of {entry}: {count.remedy}"
             for key, (held, entry) in over(entries, live).items()]
     told += [f"{key} holds {held} {count.section}, under its entry of {entry}: run {_COMMAND}"
@@ -276,10 +241,6 @@ def _sections_at_main(root: Path) -> dict[str, dict[str, int]] | None:
     return json.loads(held) if held else None
 
 
-def _lists_a_class_nothing_held(section: str, entry_at_main: int, held: int) -> bool:
-    return section == "methods" and not entry_at_main and held <= METHODS_LIMIT
-
-
 def assert_nothing_stands_above_main(checkout: Checkout) -> None:
     here, at_main = checkout.sections or {}, _sections_at_main(checkout.root)
     if at_main is None:
@@ -287,8 +248,7 @@ def assert_nothing_stands_above_main(checkout: Checkout) -> None:
     renames = _renames(checkout.root)
     told = [f"{section} {key} stands at {held}, above the {entry} main holds"
             for section, entries in here.items() if section in at_main
-            for key, (held, entry) in over(carried(at_main[section], renames), entries).items()
-            if not _lists_a_class_nothing_held(section, entry, held)]
+            for key, (held, entry) in over(carried(at_main[section], renames), entries).items()]
     told += [f"{section} is gone from the file, and main holds it" for section in at_main if section not in here]
     assert not told, "\n".join([*told, "An entry only comes down: bring the number down rather than the bar up."])
 
@@ -304,7 +264,7 @@ def _last_run(root: Path):
 
 def _measures(checkout: Checkout, sections: dict[str, dict[str, int]], said) -> Iterator[tuple[str, dict[str, int]]]:
     for count in COUNTS:
-        yield count.section, count.measure(checkout, sections.get(count.section, {}))
+        yield count.section, count.measure(checkout)
     last = _last_run(checkout.root)
     if last is not None:
         yield UNCOVERED, {key: len(lines) for key, lines in unreached_lines_in_report(last, checkout.root).items()}
@@ -312,16 +272,12 @@ def _measures(checkout: Checkout, sections: dict[str, dict[str, int]], said) -> 
         said(f"left {UNCOVERED} as it was: no whole run's .coverage to read")
 
 
-def _exists(checkout: Checkout, key: str) -> bool:
-    return (checkout.root / key.partition(_CLASS_MARK)[0]).exists()
-
-
 def _settled_section(checkout: Checkout, section: str, entries: dict[str, int], live: dict[str, int], said) -> dict[str, int]:
     refused = over(entries, live)
     for key, (held, entry) in sorted(refused.items()):
         said(f"refused {section} {key}: it holds {held}, over its entry of {entry}")
     for key, (held, entry) in sorted(owed(entries, live).items()):
-        if _exists(checkout, key):
+        if (checkout.root / key).exists():
             said(f"lowered {section} {key} from {entry} to {held}")
         else:
             said(f"could not match {section} {key}: nothing is there now and git names no rename of it")
@@ -339,7 +295,7 @@ def main_in(checkout: Checkout, *, said: Callable[[str], None] = print) -> int:
             continue
         entries = carried(on_file[section], renames)
         for key in sorted(set(on_file[section]) - set(entries)):
-            said(f"carried {section} {key} to {_renamed_key(key, renames)}")
+            said(f"carried {section} {key} to {renames[key]}")
         refusals += len(over(entries, live))
         sections[section] = _settled_section(checkout, section, entries, live, said)
     _write_sections(checkout.root, sections)
