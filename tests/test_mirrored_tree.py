@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from app_support.mirrored_tree import (
+    filed_record,
     library_roots_beside,
     mirrored_path,
     mirrored_source,
@@ -130,3 +132,28 @@ def test_a_video_kept_in_a_library_elsewhere_has_its_record_measured_from_that_l
 
     assert record_path(elsewhere / "VR" / "scene two.mp4", records,
                        more_roots=(elsewhere,)) == records / "VR" / "scene two.json"
+
+
+def _records_library(tmp_path):
+    return tmp_path / "videos" / "videos", tmp_path / "videos" / "metadata"
+
+
+def test_a_videos_record_is_the_one_filed_for_it(tmp_path):
+    videos, records = _records_library(tmp_path)
+    record = records / "portrait" / "scene one.json"
+    record.parent.mkdir(parents=True)
+    record.write_text(json.dumps({"watch": {"weight": 4.0}}), encoding="utf-8")
+
+    assert filed_record(videos / "portrait" / "scene one.mp4", records) == {"watch": {"weight": 4.0}}
+
+
+def test_a_video_with_no_record_or_a_broken_one_or_outside_the_library_has_an_empty_one(tmp_path):
+    videos, records = _records_library(tmp_path)
+    broken = records / "portrait" / "scene two.json"
+    broken.parent.mkdir(parents=True)
+    broken.write_text('{"watch": {"weight"', encoding="utf-8")
+
+    assert filed_record(videos / "portrait" / "scene one.mp4", records) == {}
+    assert filed_record(videos / "portrait" / "scene two.mp4", records) == {}
+    assert filed_record(tmp_path / "elsewhere" / "scene one.mp4", records) == {}
+    assert filed_record(videos / "portrait" / "scene one.mp4", None) == {}
