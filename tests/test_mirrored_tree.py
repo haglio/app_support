@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from app_support.mirrored_tree import library_roots_beside, mirrored_path, mirrored_source
+from app_support.mirrored_tree import (
+    library_roots_beside,
+    mirrored_path,
+    mirrored_source,
+    record_path,
+)
 
 
 def test_a_record_sits_at_the_same_relative_place_under_the_other_root(tmp_path: Path):
@@ -108,3 +113,20 @@ def test_a_record_whose_file_is_gone_leads_nowhere(tmp_path: Path):
         mirror_root=records,
         suffixes=(".mp4",),
     ) is None
+
+
+def test_a_videos_record_is_found_from_the_library_beside_the_records(tmp_path: Path):
+    records = tmp_path / "videos" / "metadata"
+
+    assert record_path(tmp_path / "videos" / "videos" / "portrait" / "scene one.mp4",
+                       records) == records / "portrait" / "scene one.json"
+    assert record_path(tmp_path / "elsewhere" / "scene one.mp4", records) is None
+
+
+def test_a_video_kept_in_a_library_elsewhere_has_its_record_measured_from_that_library(
+        tmp_path: Path):
+    records = tmp_path / "videos" / "metadata"
+    elsewhere = tmp_path / "another drive" / "videos"
+
+    assert record_path(elsewhere / "VR" / "scene two.mp4", records,
+                       more_roots=(elsewhere,)) == records / "VR" / "scene two.json"

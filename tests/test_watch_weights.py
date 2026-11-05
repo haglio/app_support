@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+import json
 import random
 
-from app_support.watch_weights import passes_inclusion, weight_of, weighted_shuffle
+from app_support.watch_weights import (
+    passes_inclusion,
+    recorded_weight,
+    weight_of,
+    weighted_shuffle,
+)
 
 
 def test_weighted_shuffle_front_loads_heavy_items():
@@ -40,3 +46,28 @@ def test_a_records_weight_is_the_one_stamped_on_it_and_one_where_none_is():
     assert weight_of({"video": {"type": "short"}}) == 1.0
     assert weight_of({"watch": "eight"}) == 1.0
     assert weight_of({"watch": {"weight": "heavy"}}) == 1.0
+
+
+def _library(tmp_path):
+    return tmp_path / "videos" / "videos", tmp_path / "videos" / "metadata"
+
+
+def test_a_videos_weight_is_read_from_the_record_filed_for_it(tmp_path):
+    videos, records = _library(tmp_path)
+    record = records / "portrait" / "scene one.json"
+    record.parent.mkdir(parents=True)
+    record.write_text(json.dumps({"watch": {"weight": 4.0}}), encoding="utf-8")
+
+    assert recorded_weight(videos / "portrait" / "scene one.mp4", records) == 4.0
+
+
+def test_a_video_with_no_record_or_a_broken_one_or_outside_the_library_weighs_one(tmp_path):
+    videos, records = _library(tmp_path)
+    broken = records / "portrait" / "scene two.json"
+    broken.parent.mkdir(parents=True)
+    broken.write_text('{"watch": {"weight"', encoding="utf-8")
+
+    assert recorded_weight(videos / "portrait" / "scene one.mp4", records) == 1.0
+    assert recorded_weight(videos / "portrait" / "scene two.mp4", records) == 1.0
+    assert recorded_weight(tmp_path / "elsewhere" / "scene one.mp4", records) == 1.0
+    assert recorded_weight(videos / "portrait" / "scene one.mp4", None) == 1.0
