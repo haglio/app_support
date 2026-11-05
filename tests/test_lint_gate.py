@@ -14,20 +14,21 @@ def test_the_rendered_config_carries_the_familys_numbers():
     assert config["line-length"] == 100
     assert config["format"]["quote-style"] == "double"
     assert {"F", "E", "W", "I", "UP", "B", "PL", "PT", "RUF"} <= set(config["lint"]["select"])
-    assert config["lint"]["ignore"] == ["E501", "BLE001", "S110"]
+    assert config["lint"]["ignore"] == ["E501", "BLE001", "S110", "PLR0913", "PLR0917", "PLR2004",
+                                        "RUF001", "RUF002", "RUF003", "SIM117", "ISC004", "PLC3002"]
 
 
 def test_a_repos_ratchet_survives_the_round_trip(tmp_path):
     written = tmp_path / "ruff.toml"
-    written.write_text(lint.render_config(["PLR2004", "PLC0415"]), encoding="utf-8")
-    assert lint.ratchet_of(written) == ("PLR2004", "PLC0415")
+    written.write_text(lint.render_config(["PT018", "PLC0415"]), encoding="utf-8")
+    assert lint.ratchet_of(written) == ("PT018", "PLC0415")
     lint.assert_config_is_the_familys(written)
 
 
 def test_a_counted_ratchet_keeps_each_rules_places_through_the_round_trip(tmp_path):
     written = tmp_path / "ruff.toml"
-    written.write_text(lint.render_config({"PLR2004": 12, "PT018": 3}), encoding="utf-8")
-    assert lint.ratchet_of(written) == {"PLR2004": 12, "PT018": 3}
+    written.write_text(lint.render_config({"PLC0415": 12, "PT018": 3}), encoding="utf-8")
+    assert lint.ratchet_of(written) == {"PLC0415": 12, "PT018": 3}
     lint.assert_config_is_the_familys(written)
 
 
@@ -38,9 +39,31 @@ def test_an_empty_counted_ratchet_keeps_the_exemptions_through_the_round_trip(tm
     lint.assert_config_is_the_familys(written)
 
 
+def test_a_repo_that_has_not_yet_written_the_config_without_the_rules_that_went_still_passes(tmp_path):
+    written = tmp_path / "ruff.toml"
+    written.write_text(
+        'line-length = 100\n'
+        'target-version = "py312"\n'
+        '\n'
+        '[lint]\n'
+        'select = ["F", "E", "W", "I", "UP", "B", "C4", "SIM", "RUF", "PL", "PT", "DTZ", "PIE", "PERF", "FLY", "ISC", '
+        '"RET", "FURB", "EXE"]\n'
+        'ignore = ["E501", "BLE001", "S110"]\n'
+        'external = ["ARG", "N", "S", "E501", "BLE001", "S110"]\n'
+        '\n'
+        '[lint.per-file-ignores]\n'
+        '"**/vulture_whitelist.py" = ["B018", "F821"]\n'
+        '"**/tests/**" = ["PLR2004"]\n'
+        '"**/test_*.py" = ["PLR2004"]\n'
+        '\n'
+        '[format]\n'
+        'quote-style = "double"\n', encoding="utf-8")
+    lint.assert_config_is_the_familys(written)
+
+
 def test_a_config_that_drifted_anywhere_but_its_ratchet_is_refused(tmp_path):
     drifted = tmp_path / "ruff.toml"
-    drifted.write_text(lint.render_config(["PLR2004"]).replace("line-length = 100", "line-length = 120"),
+    drifted.write_text(lint.render_config(["PLC0415"]).replace("line-length = 100", "line-length = 120"),
                        encoding="utf-8")
     with pytest.raises(AssertionError, match="line-length"):
         lint.assert_config_is_the_familys(drifted)
@@ -63,41 +86,40 @@ def test_a_clean_tree_passes_and_an_unused_import_is_named(tmp_path):
         lint.assert_lint_is_clean(dirty)
 
 
-def test_whitelist_names_and_test_literals_are_exempt_where_source_numbers_are_not(tmp_path):
+def test_names_in_a_dead_code_whitelist_are_no_findings(tmp_path):
     repo = _repo(tmp_path, "def f(x):\n    return x\n", ratchet={})
     (repo / "vulture_whitelist.py").write_text("unread_handler\n_.unread_attribute\n",
                                                encoding="utf-8")
-    (repo / "pkg" / "test_shipped.py").write_text(
-        "def test_f():\n    assert len('abc') == 3\n", encoding="utf-8")
-    (repo / "tests").mkdir()
-    (repo / "tests" / "test_mod.py").write_text(
-        "def test_g():\n    assert len('abcd') == 4\n", encoding="utf-8")
-    lint.assert_lint_is_clean(repo, repo / "pkg", repo / "tests")
-    (repo / "pkg" / "mod.py").write_text("def f(x):\n    return x > 42\n", encoding="utf-8")
-    with pytest.raises(AssertionError, match=r"mod\.py:2:\d+: PLR2004"):
-        lint.assert_lint_is_clean(repo, repo / "pkg", repo / "tests")
+    lint.assert_lint_is_clean(repo, repo / "pkg")
+
+
+def test_a_number_compared_against_and_a_long_list_of_arguments_are_no_findings(tmp_path):
+    lint.assert_lint_is_clean(_repo(tmp_path, "def f(a, b, c, d, e, f, g):\n    return a > 42\n"))
+
+
+AN_IMPORT_INSIDE_A_FUNCTION = "def f():\n    import os\n    return os.sep\n"
 
 
 def test_a_rule_whose_places_rise_past_its_count_is_named_with_every_place(tmp_path):
-    repo = _repo(tmp_path, "def f(x):\n    return x > 42\n", ratchet={"PLR2004": 1})
+    repo = _repo(tmp_path, AN_IMPORT_INSIDE_A_FUNCTION, ratchet={"PLC0415": 1})
     lint.assert_lint_is_clean(repo, repo / "pkg")
-    (repo / "pkg" / "more.py").write_text("def g(x):\n    return x < 7\n", encoding="utf-8")
-    with pytest.raises(AssertionError, match=r"(?s)PLR2004 has 2 places, more than the 1 "
+    (repo / "pkg" / "more.py").write_text("def g():\n    import sys\n    return sys.path\n", encoding="utf-8")
+    with pytest.raises(AssertionError, match=r"(?s)PLC0415 has 2 places, more than the 1 "
                                              r"ruff\.toml counts.*mod\.py:2.*more\.py:2"):
         lint.assert_lint_is_clean(repo, repo / "pkg")
 
 
 def test_a_rule_whose_places_fall_below_its_count_asks_for_the_lower_count(tmp_path):
-    repo = _repo(tmp_path, "def f(x):\n    return x > 42\n", ratchet={"PLR2004": 2})
-    with pytest.raises(AssertionError, match=r"PLR2004 has 1 places, fewer than the 2 "
+    repo = _repo(tmp_path, AN_IMPORT_INSIDE_A_FUNCTION, ratchet={"PLC0415": 2})
+    with pytest.raises(AssertionError, match=r"PLC0415 has 1 places, fewer than the 2 "
                                              r"ruff\.toml counts: write 1 beside it there"):
         lint.assert_lint_is_clean(repo, repo / "pkg")
 
 
 def test_a_rule_with_no_places_left_asks_to_come_off_the_ratchet(tmp_path):
-    repo = _repo(tmp_path, "def f(x):\n    return x\n", ratchet={"PLR2004": 1})
+    repo = _repo(tmp_path, "def f(x):\n    return x\n", ratchet={"PLC0415": 1})
     with pytest.raises(AssertionError,
-                       match=r"PLR2004 has no places left: take it off ruff\.toml's ratchet"):
+                       match=r"PLC0415 has no places left: take it off ruff\.toml's ratchet"):
         lint.assert_lint_is_clean(repo, repo / "pkg")
 
 
