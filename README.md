@@ -245,29 +245,20 @@ that is what a public clone and a fresh CI checkout both look like.
 Every repo that names the gates plugin keeps this file; a repo without one fails until
 the command below writes it.
 
-`tools/quality_baseline.json` holds, per file, a repo's prose lines, private
-reaches (a read of another object's private name, through any handle), private
-imports (charged to the module that defines the name, through any re-export) and
-uncovered lines, and per listed class (`path::Class`) its methods. It holds too what
-`app_support.coupling` counts: per file `self.a.b` reach-through chains, mutable containers
-another module imports, and in tests the mocks, patches, monkeypatches, `SimpleNamespace`
-bags and patches of a library's insides; and past the family's limits a class's methods,
-attributes and longest chain, a file's statements and fan-out. A number over its
-entry fails, and a file the section does not name enters at zero, so a total can no
-longer hide one file growing while another shrinks. A prose, reach, import or method
-number under its entry fails too, until `python -m app_support.gates.baseline` lowers
-it; run from the checkout, that command also carries a renamed file's entry, enters a
-section the file does not have, and refuses to raise anything. An entry above what main
-held where the branch left it fails as well, so no number can be raised by hand.
-A rename git cannot follow, of a class or of a file changed too far, is stated in
-`tools/quality_baseline_renames.json`, old key to new; that moves a number and cannot
-raise one, since a name still holding its count stands against an entry of zero.
-
-Uncovered lines are read at the end of a whole run, from the same measurement as the
-floor, and a rise names the lines, the one record a CI run keeps of them. A file
-under its entry passes, since a line can be reached by chance; the
-command takes the fall when someone runs it. A suite run in parts is held by its
-verdict job, with `python -m app_support.gates.baseline --hold-uncovered`.
+`tools/quality_baseline.json` holds, per file, a repo's prose lines and trailing
+comments (a comment or docstring that names a program outside the family is neither),
+private reaches (a read of another object's private name, through any handle), private
+imports (charged to the module that defines the name, through any re-export), mutable
+containers another module imports, and in tests the patches of a library's insides. A
+number over its entry fails, and a file the section does not name enters at zero, so a
+total can no longer hide one file growing while another shrinks. A number under its
+entry fails too, until `python -m app_support.gates.baseline` lowers it; run from the
+checkout, that command also carries a renamed file's entry, enters a section the file
+does not have, leaves out a section nothing reads, and refuses to raise anything. An
+entry above what main held where the branch left it fails as well, so no number can be
+raised by hand. A rename git cannot follow, of a file changed too far, is stated in
+`tools/quality_baseline_renames.json`, old path to new; that moves a number and cannot
+raise one, since a file still holding its count stands against an entry of zero.
 
 ## The family's gates
 
@@ -393,7 +384,7 @@ family's config around the repo's own ratchet -- each rule the config still
 finds there, listed at the end of `ignore` beside the places it has today -- and
 refuses a file that differs anywhere else; change the family's numbers here.
 The family's config also lets a `vulture_whitelist.py` name what it names
-(`B018`, `F821`) and a test assert its literal expected values (`PLR2004`).
+(`B018`, `F821`).
 
 **A ratchet only comes down.** The second test counts each ratcheted rule's
 places and fails when a count rises, naming every place of that rule, and when

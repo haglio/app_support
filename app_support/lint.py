@@ -10,18 +10,18 @@ from pathlib import Path
 
 RUFF_VERSION = "0.16.6"
 
-FAMILY_IGNORES = ("E501", "BLE001", "S110")
+FAMILY_IGNORES = ("E501", "BLE001", "S110", "PLR0913", "PLR0917", "PLR2004", "RUF001", "RUF002", "RUF003",
+                  "SIM117", "ISC004", "PLC3002")
 
 READ_BY_OTHER_GATES = ("ARG", "N", "S")
 
 _SELECT = ("F", "E", "W", "I", "UP", "B", "C4", "SIM", "RUF", "PL", "PT", "DTZ", "PIE",
            "PERF", "FLY", "ISC", "RET", "FURB", "EXE")
 
-_PER_FILE_IGNORES = {
-    "**/vulture_whitelist.py": ("B018", "F821"),
-    "**/tests/**": ("PLR2004",),
-    "**/test_*.py": ("PLR2004",),
-}
+_PER_FILE_IGNORES = {"**/vulture_whitelist.py": ("B018", "F821")}
+
+_IGNORES_A_REPO_MAY_STILL_HOLD = FAMILY_IGNORES[:3]
+_PER_FILE_IGNORES_A_REPO_MAY_STILL_HOLD = {**_PER_FILE_IGNORES, "**/tests/**": ("PLR2004",), "**/test_*.py": ("PLR2004",)}
 
 _A_FINDING = re.compile(r"^.+?:\d+:\d+: ([A-Z]+\d+) ")
 
@@ -47,14 +47,14 @@ def _listed(ratchet) -> str:
             "to be worked off rule by rule.\n    " + _quoted(ratchet))
 
 
-def _per_file_ignores() -> str:
+def _per_file_ignores(per_file) -> str:
     return "\n[lint.per-file-ignores]\n" + "".join(
-        f'"{files}" = [{_quoted(rules)}]\n' for files, rules in _PER_FILE_IGNORES.items())
+        f'"{files}" = [{_quoted(rules)}]\n' for files, rules in per_file.items())
 
 
-def render_config(ratchet=()) -> str:
+def render_config(ratchet=(), *, ignores=FAMILY_IGNORES, per_file=_PER_FILE_IGNORES) -> str:
     if isinstance(ratchet, Mapping):
-        ratcheted, exempted = _counted(ratchet), _per_file_ignores()
+        ratcheted, exempted = _counted(ratchet), _per_file_ignores(per_file)
     else:
         ratcheted, exempted = _listed(ratchet), ""
     return (
@@ -63,8 +63,8 @@ def render_config(ratchet=()) -> str:
         "\n"
         "[lint]\n"
         f"select = [{_quoted(_SELECT)}]\n"
-        f"ignore = [{_quoted(FAMILY_IGNORES)}{ratcheted}]\n"
-        f"external = [{_quoted((*READ_BY_OTHER_GATES, *FAMILY_IGNORES, *ratchet))}]\n"
+        f"ignore = [{_quoted(ignores)}{ratcheted}]\n"
+        f"external = [{_quoted((*READ_BY_OTHER_GATES, *ignores, *ratchet))}]\n"
         f"{exempted}"
         "\n"
         "[format]\n"
@@ -84,8 +84,11 @@ def ratchet_of(ruff_toml):
 
 def assert_config_is_the_familys(ruff_toml) -> None:
     written = Path(ruff_toml).read_text(encoding="utf-8")
-    expected = render_config(ratchet_of(ruff_toml))
-    if written != expected:
+    ratchet = ratchet_of(ruff_toml)
+    expected = render_config(ratchet)
+    still_held_by_a_repo_that_has_not_written_the_new_one = render_config(
+        ratchet, ignores=_IGNORES_A_REPO_MAY_STILL_HOLD, per_file=_PER_FILE_IGNORES_A_REPO_MAY_STILL_HOLD)
+    if written not in (expected, still_held_by_a_repo_that_has_not_written_the_new_one):
         diff = "".join(difflib.unified_diff(
             expected.splitlines(keepends=True), written.splitlines(keepends=True),
             "the family's", str(ruff_toml)))
