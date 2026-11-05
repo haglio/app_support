@@ -4,6 +4,8 @@ import os
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 
+from app_support.json_store import read_json
+
 LIBRARY_DIR_NAME = "videos"
 
 
@@ -72,3 +74,14 @@ _SPELLINGS: tuple[Callable[[Path], Path], ...] = (
 def record_path(video: Path, records_folder: Path, *, more_roots: Sequence[Path] = ()) -> Path | None:
     return mirrored_path(video, roots=(*library_roots_beside(records_folder), *more_roots),
                          mirror_root=records_folder, suffix=".json")
+
+
+def filed_record(video: Path, records_folder: Path | None) -> dict:
+    record = record_path(video, records_folder) if records_folder is not None else None
+    if record is None:
+        return {}
+    try:
+        filed = read_json(record)
+    except (OSError, ValueError):
+        return {}
+    return filed if isinstance(filed, dict) else {}
