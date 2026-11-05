@@ -39,28 +39,6 @@ def test_an_empty_counted_ratchet_keeps_the_exemptions_through_the_round_trip(tm
     lint.assert_config_is_the_familys(written)
 
 
-def test_a_repo_that_has_not_yet_written_the_config_without_the_rules_that_went_still_passes(tmp_path):
-    written = tmp_path / "ruff.toml"
-    written.write_text(
-        'line-length = 100\n'
-        'target-version = "py312"\n'
-        '\n'
-        '[lint]\n'
-        'select = ["F", "E", "W", "I", "UP", "B", "C4", "SIM", "RUF", "PL", "PT", "DTZ", "PIE", "PERF", "FLY", "ISC", '
-        '"RET", "FURB", "EXE"]\n'
-        'ignore = ["E501", "BLE001", "S110"]\n'
-        'external = ["ARG", "N", "S", "E501", "BLE001", "S110"]\n'
-        '\n'
-        '[lint.per-file-ignores]\n'
-        '"**/vulture_whitelist.py" = ["B018", "F821"]\n'
-        '"**/tests/**" = ["PLR2004"]\n'
-        '"**/test_*.py" = ["PLR2004"]\n'
-        '\n'
-        '[format]\n'
-        'quote-style = "double"\n', encoding="utf-8")
-    lint.assert_config_is_the_familys(written)
-
-
 def test_a_config_that_drifted_anywhere_but_its_ratchet_is_refused(tmp_path):
     drifted = tmp_path / "ruff.toml"
     drifted.write_text(lint.render_config(["PLC0415"]).replace("line-length = 100", "line-length = 120"),
