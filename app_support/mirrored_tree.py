@@ -67,3 +67,8 @@ _SPELLINGS: tuple[Callable[[Path], Path], ...] = (
     _as_folded,
     _as_the_disk_has_it,
 )
+
+
+def record_path(video: Path, records_folder: Path, *, more_roots: Sequence[Path] = ()) -> Path | None:
+    return mirrored_path(video, roots=(*library_roots_beside(records_folder), *more_roots),
+                         mirror_root=records_folder, suffix=".json")

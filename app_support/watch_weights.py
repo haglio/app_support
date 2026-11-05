@@ -3,6 +3,10 @@ from __future__ import annotations
 import math
 import random
 from collections.abc import Callable, Iterable
+from pathlib import Path
+
+from app_support.json_store import read_json
+from app_support.mirrored_tree import record_path
 
 WATCH_BLOCK = "watch"
 WEIGHT_KEY = "weight"
@@ -34,3 +38,13 @@ def weighted_shuffle[T](
 
 def passes_inclusion(weight: float, rng: random.Random) -> bool:
     return weight >= NEUTRAL_WEIGHT or rng.random() < weight
+
+
+def recorded_weight(video: Path, records_folder: Path | None) -> float:
+    record = record_path(video, records_folder) if records_folder is not None else None
+    if record is None:
+        return NEUTRAL_WEIGHT
+    try:
+        return weight_of(read_json(record))
+    except (OSError, ValueError):
+        return NEUTRAL_WEIGHT
