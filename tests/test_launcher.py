@@ -8,15 +8,19 @@ a stand-in, so every line runs and nothing is started.
 """
 from __future__ import annotations
 
+import contextlib
 import os
 import shutil
 import subprocess
 import sys
 import time
+from collections.abc import Iterator
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 from eventually import eventually
+from production_machine import IDENTIFIED, git
 
 from app_support import launcher, loading_screen, production_update
 from app_support.launcher import (
@@ -606,6 +610,21 @@ def _rehearse(script: Path, *arguments: str, child: str = "", screen: str = "") 
     return run_under_script_host(_rehearsal_of(script, child, screen), *arguments, dry_run=False)
 
 
+def _start_rehearsal(script: Path) -> subprocess.Popen:
+    host = Path(os.environ.get("SYSTEMROOT", r"C:\Windows")) / "System32" / "cscript.exe"
+    return subprocess.Popen([str(host), "//Nologo", str(script)], stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True)
+
+
+@contextlib.contextmanager
+def _rehearsing(script: Path) -> Iterator[subprocess.Popen]:
+    with _start_rehearsal(script) as rehearsal:
+        try:
+            yield rehearsal
+        finally:
+            rehearsal.kill()
+
+
 def _rehearsed_to_the_end(run: ScriptHostRun) -> ScriptHostRun:
     __tracebackhide__ = True
     assert run.returncode == 0, run.output
@@ -736,10 +755,8 @@ class TestALaunch:
         (checkout / "state").mkdir()
         (checkout / "state" / "example.exited").write_bytes(b"")
         script = _rehearsal_of(_rendered(checkout))
-        host = Path(os.environ.get("SYSTEMROOT", r"C:\Windows")) / "System32" / "cscript.exe"
 
-        with subprocess.Popen([str(host), "//Nologo", str(script)], stdout=subprocess.PIPE,
-                              stderr=subprocess.STDOUT, text=True) as rehearsal:
+        with _start_rehearsal(script) as rehearsal:
             eventually((checkout / "rehearsal.ran").exists, within_s=30)
             time.sleep(0.6)
             (checkout / "state" / "example.ready").write_text("ready\n", encoding="utf-8")
@@ -935,11 +952,9 @@ class TestTheUpdateBeforeALaunch:
         _venv(checkout, "pythonw.exe")
         (checkout / ".git").mkdir()
         script = _rehearsal_of(_rendered(checkout))
-        host = Path(os.environ.get("SYSTEMROOT", r"C:\Windows")) / "System32" / "cscript.exe"
 
         with production_update.the_turn(checkout, wait_s=5):
-            rehearsal = subprocess.Popen([str(host), "//Nologo", str(script)], stdout=subprocess.PIPE,
-                                         stderr=subprocess.STDOUT, text=True)
+            rehearsal = _start_rehearsal(script)
             time.sleep(2)
             started_during_the_update = (checkout / "rehearsal.ran").exists()
         output, _ = rehearsal.communicate(timeout=30)
@@ -952,10 +967,8 @@ class TestTheUpdateBeforeALaunch:
         _venv(checkout, "pythonw.exe")
         (checkout / ".git").mkdir()
         script = _rehearsal_of(_rendered(checkout), child="    WScript.Sleep 3000")
-        host = Path(os.environ.get("SYSTEMROOT", r"C:\Windows")) / "System32" / "cscript.exe"
 
-        with subprocess.Popen([str(host), "//Nologo", str(script)], stdout=subprocess.PIPE,
-                              stderr=subprocess.STDOUT, text=True) as rehearsal:
+        with _start_rehearsal(script) as rehearsal:
             eventually((checkout / "rehearsal.ran").exists, within_s=30)
             with pytest.raises(production_update.Busy), production_update.the_turn(checkout, wait_s=0.5):
                 pass
@@ -1114,3 +1127,151 @@ class TestTheLoadingScreenAtTheClick:
 
         assert report.value("command").endswith(
             f' & type nul > "{_screen_of(checkout) / loading_screen.ENDED}"')
+
+
+def _pointing_at_a_git_folder(tmp_path: Path, worktree: Path, pointer: str | None = None) -> Path:
+    folder = tmp_path / "primary" / ".git" / "worktrees" / "branch"
+    folder.mkdir(parents=True)
+    (worktree / ".git").write_text(f"gitdir: {pointer or folder.as_posix()}\n", encoding="utf-8")
+    return folder
+
+
+def _rebase_folders_in(folder: Path) -> list[str]:
+    return [str(folder / "rebase-merge"), str(folder / "rebase-apply")]
+
+
+def _worktree_stopped_partway_through_a_rebase(tmp_path: Path, how: str) -> tuple[Path, Path]:
+    primary = tmp_path / "primary"
+    primary.mkdir()
+    git("init", "-b", "main", cwd=primary)
+    (primary / "a_file.txt").write_text("the first line" + chr(10), encoding="utf-8")
+    git("add", "a_file.txt", cwd=primary)
+    git(*IDENTIFIED, "commit", "-m", "the first commit", cwd=primary)
+    worktree = primary / ".claude" / "worktrees" / "branch"
+    git("worktree", "add", str(worktree), "-b", "a-branch", cwd=primary)
+    (worktree / "a_file.txt").write_text("the branch's line" + chr(10), encoding="utf-8")
+    git(*IDENTIFIED, "commit", "-am", "the branch's commit", cwd=worktree)
+    (primary / "a_file.txt").write_text("main's line" + chr(10), encoding="utf-8")
+    git(*IDENTIFIED, "commit", "-am", "main's commit", cwd=primary)
+    with pytest.raises(subprocess.CalledProcessError):
+        git(*IDENTIFIED, "rebase", how, "main", cwd=worktree)
+    _checkout(worktree.parent, PREVIEW, name=worktree.name)
+    _venv(primary, "python.exe")
+    return primary, worktree
+
+
+def _partway_through_a_rebase(tmp_path: Path, how: str = "rebase-merge") -> tuple[Path, Path]:
+    primary, worktree = _worktree(tmp_path, PREVIEW)
+    (_pointing_at_a_git_folder(tmp_path, worktree) / how).mkdir()
+    _venv(primary, "python.exe")
+    return primary, worktree
+
+
+@windows_only
+class TestARebaseOfTheFolderItRuns:
+    def test_a_dry_run_of_a_worktree_launcher_names_the_rebase_it_waits_out(self, tmp_path: Path):
+        _, worktree = _worktree(tmp_path, PREVIEW)
+        folder = _pointing_at_a_git_folder(tmp_path, worktree)
+
+        report = dry_run(_rendered(worktree))
+
+        assert report.values("rebase") == _rebase_folders_in(folder)
+
+    @pytest.mark.parametrize("how", ["--merge", "--apply"])
+    def test_a_launch_waits_out_a_real_rebase_and_starts_when_it_ends(self, tmp_path: Path, how: str):
+        _, worktree = _worktree_stopped_partway_through_a_rebase(tmp_path, how)
+
+        with _rehearsing(_rehearsal_of(_rendered(worktree))) as rehearsal:
+            time.sleep(2)
+            started_during_the_rebase = (worktree / "rehearsal.ran").exists()
+            git("rebase", "--abort", cwd=worktree)
+            output, _ = rehearsal.communicate(timeout=30)
+
+        assert not started_during_the_rebase
+        _rehearsed_to_the_end(ScriptHostRun(rehearsal.returncode, output))
+
+    @pytest.mark.parametrize("how", ["rebase-merge", "rebase-apply"])
+    def test_a_rebase_that_outlasts_the_wait_starts_nothing(self, tmp_path: Path, how: str):
+        _, worktree = _partway_through_a_rebase(tmp_path, how)
+        script = _rendered(worktree)
+        script.write_text(
+            script.read_text(encoding="utf-8").replace(str(int(production_update.LAUNCH_WAIT_S * 1000)), "1000"),
+            encoding="utf-8")
+
+        run = _rehearse(script)
+
+        assert run.returncode == 1
+        assert not (worktree / "rehearsal.ran").exists()
+
+    def test_an_update_goes_ahead_while_a_launch_waits_out_a_rebase(self, tmp_path: Path):
+        primary, worktree = _partway_through_a_rebase(tmp_path)
+
+        with _rehearsing(_rehearsal_of(_rendered(worktree))):
+            time.sleep(2)
+            with production_update.the_turn(primary, wait_s=0.5):
+                pass
+
+    def test_esc_on_the_loading_screen_while_it_waits_starts_nothing(self, tmp_path: Path):
+        primary, worktree = _partway_through_a_rebase(tmp_path)
+        _updater_beside(primary)
+        loading_screen.MeetingPlace(_snapshots_of_every_preview(primary), ()).leave_snapshots(
+            opening=b"", full=b"", updating=[], bar=(0, 0, 1, 1), covers_every_monitor=False)
+
+        with _rehearsing(_rehearsal_of(_rendered(worktree))) as rehearsal:
+            eventually((_screen_of(worktree) / loading_screen.UPDATED).exists, within_s=30)
+            (_screen_of(worktree) / loading_screen.CANCELED).touch()
+            rehearsal.communicate(timeout=30)
+
+        assert rehearsal.returncode == 0
+        assert not (worktree / "rehearsal.ran").exists()
+
+    def test_a_launcher_handed_a_checkout_waits_on_that_checkouts_rebase(self, tmp_path: Path):
+        checkout = _checkout(tmp_path, BRANCH + KEPT)
+        worktree = tmp_path / "a-worktree"
+        worktree.mkdir()
+
+        report = dry_run(_rendered(checkout), str(worktree))
+
+        assert report.values("rebase") == _rebase_folders_in(worktree / ".git")
+
+    def test_a_clone_of_its_own_is_rebased_in_the_git_folder_inside_it(self, tmp_path: Path):
+        _, worktree = _worktree(tmp_path, PREVIEW)
+        (worktree / ".git").mkdir()
+
+        report = dry_run(_rendered(worktree))
+
+        assert report.values("rebase") == _rebase_folders_in(worktree / ".git")
+
+    def test_a_pointer_written_relative_to_the_worktree_is_followed(self, tmp_path: Path):
+        _, worktree = _worktree(tmp_path, PREVIEW)
+        folder = _pointing_at_a_git_folder(tmp_path, worktree, pointer="../../../.git/worktrees/branch")
+
+        report = dry_run(_rendered(worktree))
+
+        assert report.values("rebase") == _rebase_folders_in(folder)
+
+    def test_a_git_file_a_crash_left_empty_costs_no_launch(self, tmp_path: Path):
+        _, worktree = _worktree(tmp_path, PREVIEW)
+        (worktree / ".git").write_bytes(b"")
+
+        report = dry_run(_rendered(worktree))
+
+        assert report.values("rebase") == _rebase_folders_in(worktree)
+
+    def test_a_production_launcher_never_looks(self, tmp_path: Path):
+        checkout = _checkout(tmp_path, MINIMAL + KEPT)
+
+        report = dry_run(_rendered(checkout))
+
+        assert report.values("rebase") == []
+        assert "Rebasing" not in (checkout / "launch_example.vbs").read_text(encoding="utf-8")
+
+    def test_a_launcher_rendered_before_the_wait_still_passes_until_every_app_has_rendered_it(
+        self, tmp_path: Path,
+    ):
+        _, worktree = _worktree(tmp_path, PREVIEW)
+        (found,) = launchers(worktree)
+        (worktree / found.file).write_text(
+            launcher.render(replace(found, waits_out_a_rebase=False)), encoding="utf-8", newline="\n")
+
+        assert launcher.differences(worktree) == []

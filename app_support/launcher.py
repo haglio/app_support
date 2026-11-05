@@ -21,6 +21,7 @@ _KEYS = frozenset({
     "app", "run", "interpreter", "named-interpreter", "venv", "log", "watch",
     "note", "environment", "copy-from-primary", "checkout-argument", "loading-screen", "preview",
 })
+REBASE_FOLDERS = ("rebase-merge", "rebase-apply")
 _CHECKOUT_KEYS = frozenset({"missing", "gone", "flags"})
 _FLAG_KEYS = frozenset({"app", "log"})
 _PLACEHOLDER = re.compile(r"\{(\w+)\}")
@@ -62,6 +63,7 @@ class Launcher:
     loading_screen: tuple[str, ...] = ()
     preview: bool = False
     waits_for_updates: bool = False
+    waits_out_a_rebase: bool = False
     also_runs: tuple[str, ...] = ()
 
     @property
@@ -74,15 +76,20 @@ def launchers(checkout: Path) -> list[Launcher]:
     document = tomllib.loads((Path(checkout) / "pyproject.toml").read_text(encoding="utf-8"))
     specs = document.get("tool", {}).get("haglio", {}).get("launchers", {})
     production = production_update.declared(checkout)
-    also_runs = production.also_runs if production else ()
-    found = [replace(_launcher(file, spec), waits_for_updates=production is not None, also_runs=also_runs)
-             for file, spec in specs.items()]
+    found = [_launcher(file, spec) for file, spec in specs.items()]
+    if production:
+        found = [_kept_by_the_updater(each, production.also_runs) for each in found]
     for each in found:
         if each.loading_screen and len(each.loading_screen) != each.waits_on:
             raise LauncherSpecError(
                 f"{each.file}: loading-screen says {len(each.loading_screen)} lines for the "
                 f"{each.waits_on} checkouts a launch waits on, its own first and then each it also runs")
     return found
+
+
+def _kept_by_the_updater(launcher: Launcher, also_runs: tuple[str, ...]) -> Launcher:
+    runs_a_worktrees_code = launcher.venv == "primary" or launcher.checkout_argument is not None
+    return replace(launcher, waits_for_updates=True, waits_out_a_rebase=runs_a_worktrees_code, also_runs=also_runs)
 
 
 def _launcher(file: str, spec: dict) -> Launcher:
@@ -220,6 +227,8 @@ def render(launcher: Launcher) -> str:
     ]
     if launcher.waits_for_updates:
         sections.append(_gates(launcher).splitlines())
+    if launcher.waits_out_a_rebase:
+        sections.append(_rebase_folders().splitlines())
     if launcher.loading_screen:
         sections.append(_loading_screen(launcher).splitlines())
     if launcher.log:
@@ -249,6 +258,8 @@ def _declarations(launcher: Launcher) -> str:
     names = ["fso", "shell", "root", "app", "interpreter", "directory", "arguments"]
     if launcher.waits_for_updates:
         names += ["base", "updater", "gates", "held()"]
+    if launcher.waits_out_a_rebase:
+        names.append("rebases")
     if launcher.venv == "primary":
         names.append("primary")
     if launcher.checkout_argument:
@@ -320,8 +331,12 @@ def _venv_checkout(launcher: Launcher) -> str:
     return "primary" if launcher.venv == "primary" else "root"
 
 
+def _folder_it_runs(launcher: Launcher) -> str:
+    return "checkout" if launcher.checkout_argument else "root"
+
+
 def _decide(launcher: Launcher) -> list[str]:
-    base = "checkout" if launcher.checkout_argument else "root"
+    base = _folder_it_runs(launcher)
     venv = _venv_checkout(launcher)
     lines = ["Sub Decide()"]
     if launcher.checkout_argument:
@@ -359,11 +374,14 @@ def _gates_decided(launcher: Launcher) -> list[str]:
     gates = [f"fso.BuildPath(base, {_text(turn)})"]
     gates += [f"fso.BuildPath(fso.GetParentFolderName(base), {_text(name + chr(92) + turn)})"
               for name in launcher.also_runs]
-    return [
+    lines = [
         f"  base = {_venv_checkout(launcher)}",
         f"  updater = fso.BuildPath(fso.GetParentFolderName(base), {_text(production_update.UPDATER)})",
         f"  gates = Array({', '.join(gates)})",
     ]
+    if launcher.waits_out_a_rebase:
+        lines.append(f"  rebases = RebaseFoldersOf({_folder_it_runs(launcher)})")
+    return lines
 
 
 def _arguments_after_the_checkout(launcher: Launcher, base: str) -> list[str]:
@@ -415,6 +433,8 @@ def _report(launcher: Launcher) -> list[str]:
     if launcher.waits_for_updates:
         lines += ['  WScript.Echo "update: " & Update()', "  Dim gate", "  For Each gate In gates",
                   '    WScript.Echo "gate: " & gate', "  Next"]
+    if launcher.waits_out_a_rebase:
+        lines += ["  Dim rebase", "  For Each rebase In rebases", '    WScript.Echo "rebase: " & rebase', "  Next"]
     if launcher.loading_screen:
         lines += ['  WScript.Echo "loading screen: " & LoadingScreen()',
                   '  WScript.Echo "screen: " & screenFolder']
@@ -529,8 +549,26 @@ def _started(launcher: Launcher) -> list[str]:
     ]
 
 
+def _a_beat_of_waiting(launcher: Launcher, indent: str) -> str:
+    lines = [f"If waited >= {int(production_update.LAUNCH_WAIT_S * 1000)} Then WScript.Quit 1",
+             *(["StopIfCanceled"] if launcher.loading_screen else []),
+             "WScript.Sleep 500",
+             "waited = waited + 500"]
+    return "\n".join(indent + line for line in lines)
+
+
+def _waiting_out_a_rebase(launcher: Launcher) -> str:
+    if not launcher.waits_out_a_rebase:
+        return ""
+    return f"""\
+  waited = 0
+  Do While Rebasing()
+{_a_beat_of_waiting(launcher, "    ")}
+  Loop
+"""
+
+
 def _gates(launcher: Launcher) -> str:
-    stop_if_canceled = "\n        StopIfCanceled" if launcher.loading_screen else ""
     return f"""\
 Function Update()
   Update = Quote(updater) & " -m {production_update.__name__} --before-launch " & Quote(base)
@@ -539,14 +577,12 @@ End Function
 {_catch_up(launcher)}
 Sub HoldGates()
   Dim index, waited
-  ReDim held(UBound(gates))
+{_waiting_out_a_rebase(launcher)}  ReDim held(UBound(gates))
   For index = 0 To UBound(gates)
     If fso.FolderExists(fso.GetParentFolderName(gates(index))) Then
       waited = 0
       Do Until Holds(index)
-        If waited >= {int(production_update.LAUNCH_WAIT_S * 1000)} Then WScript.Quit 1{stop_if_canceled}
-        WScript.Sleep 500
-        waited = waited + 500
+{_a_beat_of_waiting(launcher, "        ")}
       Loop
     End If
   Next
@@ -566,6 +602,33 @@ Sub ReleaseGates()
     If IsObject(held(index)) Then held(index).Close
   Next
 End Sub
+"""
+
+
+def _rebase_folders() -> str:
+    folders = ", ".join(f"fso.BuildPath(gitFolder, {_text(name)})" for name in REBASE_FOLDERS)
+    return f"""\
+Function RebaseFoldersOf(folder)
+  Dim gitFolder, stream, pointer
+  gitFolder = fso.BuildPath(folder, ".git")
+  If fso.FileExists(gitFolder) Then
+    Set stream = fso.OpenTextFile(gitFolder, 1)
+    If Not stream.AtEndOfStream Then pointer = stream.ReadLine
+    stream.Close
+    pointer = Trim(Replace(pointer, "gitdir:", ""))
+    If InStr(pointer, ":") = 0 Then pointer = fso.BuildPath(folder, pointer)
+    gitFolder = fso.GetAbsolutePathName(Replace(pointer, "/", "\\"))
+  End If
+  RebaseFoldersOf = Array({folders})
+End Function
+
+Function Rebasing()
+  Dim folder
+  Rebasing = False
+  For Each folder In rebases
+    If fso.FolderExists(folder) Then Rebasing = True
+  Next
+End Function
 """
 
 
@@ -753,6 +816,10 @@ End Sub
 
 
 
+def _accepted_renderings(launcher: Launcher) -> tuple[str, str]:
+    return render(launcher), render(replace(launcher, waits_out_a_rebase=False))
+
+
 def differences(checkout: Path) -> list[str]:
     checkout = Path(checkout)
     specs = {launcher.file: launcher for launcher in launchers(checkout)}
@@ -761,7 +828,7 @@ def differences(checkout: Path) -> list[str]:
         path = checkout / file
         if not path.is_file():
             problems.append(f"{file}: declared in pyproject.toml and never rendered")
-        elif path.read_text(encoding="utf-8", errors="replace") != render(launcher):
+        elif path.read_text(encoding="utf-8", errors="replace") not in _accepted_renderings(launcher):
             problems.append(f"{file}: differs from its spec in pyproject.toml")
     problems += [f"{path.name}: a launcher with no spec in pyproject.toml"
                  for path in sorted(checkout.glob("*.vbs")) if path.name not in specs]
