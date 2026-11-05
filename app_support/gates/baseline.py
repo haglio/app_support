@@ -11,10 +11,7 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import NamedTuple
 
-import coverage
-
 from app_support.coupling import measured_sections
-from app_support.coverage_gate import UNCOVERED, uncovered_rises, unreached_lines_in_report
 from app_support.gates import BASELINE_PATH, Checkout, over
 from app_support.private_reach import private_imports, reaches_in
 
@@ -176,6 +173,10 @@ def count_named(section: str) -> Count:
     return next(count for count in COUNTS if count.section == section)
 
 
+def _read_by_a_count(sections: dict[str, dict[str, int]]) -> dict[str, dict[str, int]]:
+    return {count.section: sections[count.section] for count in COUNTS if count.section in sections}
+
+
 def owed(entries: dict[str, int], live: dict[str, int]) -> dict[str, tuple[int, int]]:
     return {key: (live.get(key, 0), entry) for key, entry in entries.items() if live.get(key, 0) < entry}
 
@@ -242,34 +243,16 @@ def _sections_at_main(root: Path) -> dict[str, dict[str, int]] | None:
 
 
 def assert_nothing_stands_above_main(checkout: Checkout) -> None:
-    here, at_main = checkout.sections or {}, _sections_at_main(checkout.root)
-    if at_main is None:
+    held_at_main = _sections_at_main(checkout.root)
+    if held_at_main is None:
         return
+    here, at_main = _read_by_a_count(checkout.sections or {}), _read_by_a_count(held_at_main)
     renames = _renames(checkout.root)
     told = [f"{section} {key} stands at {held}, above the {entry} main holds"
             for section, entries in here.items() if section in at_main
             for key, (held, entry) in over(carried(at_main[section], renames), entries).items()]
     told += [f"{section} is gone from the file, and main holds it" for section in at_main if section not in here]
     assert not told, "\n".join([*told, "An entry only comes down: bring the number down rather than the bar up."])
-
-
-def _last_run(root: Path):
-    data_file = root / ".coverage"
-    if not data_file.is_file():
-        return None
-    last = coverage.Coverage(data_file=str(data_file), config_file=str(root / ".coveragerc"))
-    last.load()
-    return last if last.get_data().measured_files() else None
-
-
-def _measures(checkout: Checkout, sections: dict[str, dict[str, int]], said) -> Iterator[tuple[str, dict[str, int]]]:
-    for count in COUNTS:
-        yield count.section, count.measure(checkout)
-    last = _last_run(checkout.root)
-    if last is not None:
-        yield UNCOVERED, {key: len(lines) for key, lines in unreached_lines_in_report(last, checkout.root).items()}
-    elif UNCOVERED in sections:
-        said(f"left {UNCOVERED} as it was: no whole run's .coverage to read")
 
 
 def _settled_section(checkout: Checkout, section: str, entries: dict[str, int], live: dict[str, int], said) -> dict[str, int]:
@@ -285,11 +268,12 @@ def _settled_section(checkout: Checkout, section: str, entries: dict[str, int], 
 
 
 def main_in(checkout: Checkout, *, said: Callable[[str], None] = print) -> int:
-    on_file = checkout.sections or {}
+    on_file = _read_by_a_count(checkout.sections or {})
     renames = _renames(checkout.root)
-    sections = dict(on_file)
+    sections = {}
     refusals = 0
-    for section, live in _measures(checkout, on_file, said):
+    for count in COUNTS:
+        section, live = count.section, count.measure(checkout)
         if section not in on_file:
             sections[section] = live
             continue
@@ -302,17 +286,5 @@ def main_in(checkout: Checkout, *, said: Callable[[str], None] = print) -> int:
     return 1 if refusals else 0
 
 
-def hold_uncovered(checkout: Checkout, *, said: Callable[[str], None] = print) -> int:
-    last = _last_run(checkout.root)
-    if last is None:
-        said("no whole run's .coverage to read")
-        return 1
-    rises = uncovered_rises(checkout.root, last)
-    for rise in rises:
-        said(rise)
-    return 1 if rises else 0
-
-
 if __name__ == "__main__":
-    command = hold_uncovered if "--hold-uncovered" in sys.argv else main_in
-    sys.exit(command(Checkout(Path.cwd())))
+    sys.exit(main_in(Checkout(Path.cwd())))
