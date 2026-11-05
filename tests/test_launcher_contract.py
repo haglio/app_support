@@ -88,6 +88,7 @@ class TestWhatALauncherReports:
         ("launch_example.vbs", "state\\example.log", "state\\other.log", "log"),
         ("launch_example.vbs", 'WScript.Echo "gate: " & gate', 'WScript.Echo "not: " & gate', "gate"),
         ("launch_preview_branch.vbs", "\\preview", "\\pictures", "pictures"),
+        ("launch_preview_branch.vbs", 'WScript.Echo "rebase: " & rebase', 'WScript.Echo "not: " & rebase', "rebase"),
         ("launch_preview_branch.vbs", '"EXAMPLE_BRANCH_SESSION"', '"OTHER"', "environment"),
     ])
     def test_a_launcher_that_says_otherwise_is_named_with_what_it_says(
@@ -103,6 +104,12 @@ class TestWhatALauncherReports:
         without = (checkout / "pyproject.toml").read_text(encoding="utf-8").replace("[tool.haglio.production]" + chr(10), "")
         (checkout / "pyproject.toml").write_text(without, encoding="utf-8")
         launcher.write(checkout)
+
+        assert_every_launcher_reports_its_spec(checkout)
+
+    def test_a_worktree_launcher_reports_the_git_folder_its_git_file_names(self, tmp_path: Path):
+        checkout = _checkout(tmp_path)
+        (checkout / ".git").write_text("gitdir: ../../../.git/worktrees/a-branch\n", encoding="utf-8")
 
         assert_every_launcher_reports_its_spec(checkout)
 
