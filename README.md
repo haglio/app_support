@@ -86,7 +86,10 @@ More that every repo in the family needs, and used to keep its own copy of:
   moves while one of his
   programs runs out of the checkout's venv, or out of the venv of a checkout
   that declares it starts programs from this one
-  (`[tool.haglio.production] also-runs`). Nor does a checkout move to a commit
+  (`[tool.haglio.production] also-runs`). A checkout whose repo's tests run from
+  its venv says so (`tests-run-from-its-venv = true`) and is installed with its
+  `dev` extra, so what those runs need reaches the venv with the commit naming it.
+  Nor does a checkout move to a commit
   whose app will not open while the checkout's git-ignored overlay lacks a key
   that commit's example documents (`[tool.haglio.opens-only-with] every-key-of`,
   `in`, read at the commit); it moves on the first pass once the overlay has

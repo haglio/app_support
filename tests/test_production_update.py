@@ -53,6 +53,15 @@ class TestBringingOneCheckoutUp:
         ]
         assert machine.head(checkout) == machine.origin_head(checkout)
 
+    def test_a_checkout_whose_tests_run_from_its_venv_is_installed_with_its_test_tools(self, machine):
+        declares = "\n[tool.haglio.production]\ntests-run-from-its-venv = true\n"
+        checkout = machine.checkout(files={"pyproject.toml": pins() + declares})
+        machine.ship(checkout, {"pyproject.toml": pins() + declares + "# a change\n"})
+
+        machine.bring_up(checkout)
+
+        assert machine.ran[-1] == ("pip", "install", "-e", f"{checkout}[dev]", "--config-settings", "editable_mode=compat")
+
     def test_a_checkout_moved_without_its_libraries_gets_them(self, machine):
         checkout = machine.checkout(files={"pyproject.toml": pins(shared_ui="0.1.200")})
         machine.install(checkout, "shared_ui", "0.1.199")
