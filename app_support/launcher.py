@@ -63,8 +63,11 @@ class Launcher:
     loading_screen: tuple[str, ...] = ()
     preview: bool = False
     waits_for_updates: bool = False
-    waits_out_a_rebase: bool = False
     also_runs: tuple[str, ...] = ()
+
+    @property
+    def waits_out_a_rebase(self) -> bool:
+        return self.waits_for_updates and (self.venv == "primary" or self.checkout_argument is not None)
 
     @property
     def waits_on(self) -> int:
@@ -76,20 +79,15 @@ def launchers(checkout: Path) -> list[Launcher]:
     document = tomllib.loads((Path(checkout) / "pyproject.toml").read_text(encoding="utf-8"))
     specs = document.get("tool", {}).get("haglio", {}).get("launchers", {})
     production = production_update.declared(checkout)
-    found = [_launcher(file, spec) for file, spec in specs.items()]
-    if production:
-        found = [_kept_by_the_updater(each, production.also_runs) for each in found]
+    also_runs = production.also_runs if production else ()
+    found = [replace(_launcher(file, spec), waits_for_updates=production is not None, also_runs=also_runs)
+             for file, spec in specs.items()]
     for each in found:
         if each.loading_screen and len(each.loading_screen) != each.waits_on:
             raise LauncherSpecError(
                 f"{each.file}: loading-screen says {len(each.loading_screen)} lines for the "
                 f"{each.waits_on} checkouts a launch waits on, its own first and then each it also runs")
     return found
-
-
-def _kept_by_the_updater(launcher: Launcher, also_runs: tuple[str, ...]) -> Launcher:
-    runs_a_worktrees_code = launcher.venv == "primary" or launcher.checkout_argument is not None
-    return replace(launcher, waits_for_updates=True, waits_out_a_rebase=runs_a_worktrees_code, also_runs=also_runs)
 
 
 def _launcher(file: str, spec: dict) -> Launcher:
@@ -816,10 +814,6 @@ End Sub
 
 
 
-def _accepted_renderings(launcher: Launcher) -> tuple[str, str]:
-    return render(launcher), render(replace(launcher, waits_out_a_rebase=False))
-
-
 def differences(checkout: Path) -> list[str]:
     checkout = Path(checkout)
     specs = {launcher.file: launcher for launcher in launchers(checkout)}
@@ -828,7 +822,7 @@ def differences(checkout: Path) -> list[str]:
         path = checkout / file
         if not path.is_file():
             problems.append(f"{file}: declared in pyproject.toml and never rendered")
-        elif path.read_text(encoding="utf-8", errors="replace") not in _accepted_renderings(launcher):
+        elif path.read_text(encoding="utf-8", errors="replace") != render(launcher):
             problems.append(f"{file}: differs from its spec in pyproject.toml")
     problems += [f"{path.name}: a launcher with no spec in pyproject.toml"
                  for path in sorted(checkout.glob("*.vbs")) if path.name not in specs]

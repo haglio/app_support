@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import os
 import re
 from collections.abc import Iterable
 from pathlib import Path, PureWindowsPath
 
 from app_support import production_update, windows_settings
-from app_support.launcher import Launcher, dry_run, launchers
+from app_support.launcher import REBASE_FOLDERS, Launcher, dry_run, launchers
 
 _MODULE = re.compile(r"-m\s+([\w.]+)")
 _FILE = re.compile(r'"\{root\}\\([^"]+\.py)"')
@@ -28,6 +29,19 @@ def _gates(checkout: Path, launcher: Launcher) -> list[str]:
     return [str(venv / turn), *(str(venv.parent / name / turn) for name in launcher.also_runs)]
 
 
+def _git_folder(checkout: Path) -> Path:
+    dot_git = checkout / ".git"
+    if not dot_git.is_file():
+        return dot_git
+    return Path(os.path.normpath(checkout / dot_git.read_text(encoding="utf-8").removeprefix("gitdir:").strip()))
+
+
+def _rebases(checkout: Path, launcher: Launcher) -> list[str]:
+    if not launcher.waits_out_a_rebase:
+        return []
+    return [str(_git_folder(checkout) / name) for name in REBASE_FOLDERS]
+
+
 def _pictures(checkout: Path, launcher: Launcher) -> list[str]:
     if not (launcher.preview and launcher.loading_screen):
         return []
@@ -44,6 +58,7 @@ def _what_its_spec_says(checkout: Path, launcher: Launcher) -> dict[str, list[st
         "environment": [f"{name}={value}" for name, value in launcher.environment],
         "copy": [f"{venv / name} > {checkout / name}" for name in launcher.copy_from_primary],
         "gate": _gates(checkout, launcher),
+        "rebase": _rebases(checkout, launcher),
         "pictures": _pictures(checkout, launcher),
     }
 

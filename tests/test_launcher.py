@@ -15,7 +15,6 @@ import subprocess
 import sys
 import time
 from collections.abc import Iterator
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -1265,13 +1264,3 @@ class TestARebaseOfTheFolderItRuns:
 
         assert report.values("rebase") == []
         assert "Rebasing" not in (checkout / "launch_example.vbs").read_text(encoding="utf-8")
-
-    def test_a_launcher_rendered_before_the_wait_still_passes_until_every_app_has_rendered_it(
-        self, tmp_path: Path,
-    ):
-        _, worktree = _worktree(tmp_path, PREVIEW)
-        (found,) = launchers(worktree)
-        (worktree / found.file).write_text(
-            launcher.render(replace(found, waits_out_a_rebase=False)), encoding="utf-8", newline="\n")
-
-        assert launcher.differences(worktree) == []
