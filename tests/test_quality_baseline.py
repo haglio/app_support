@@ -129,12 +129,13 @@ class TestTrailingComments:
         ("# why\nx = 1\n", 0),
         ("x = 1  # why\n", 1),
         ("x = 1  # mpv drops it\n", 0),
+        ("x = 1  # Topaz reads it from its download setting\n", 0),
         ("x = 1  # noqa: F401\n", 0),
         ("x = 1  # type: ignore\n", 0),
         ("x = 1  # pragma: no cover\n", 0),
         ("def broken(:  # why\n    '\n", 0),
-    ], ids=["code", "whole line", "our own reason", "names what forces it", "lint marker", "type marker", "coverage marker",
-            "what will not tokenize"])
+    ], ids=["code", "whole line", "our own reason", "names what forces it", "names the upscaler", "lint marker", "type marker",
+            "coverage marker", "what will not tokenize"])
     def test_a_reason_at_the_end_of_a_line_counts_and_a_marker_for_a_tool_does_not(self, source: str, comments: int):
         assert baseline.trailing_comments(source) == comments
 
