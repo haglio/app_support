@@ -157,3 +157,15 @@ class TestTheFloorAgainstARealRun:
 
         assert done.returncode != 0, done.stdout + done.stderr
         assert "no coverage is being collected" in done.stdout + done.stderr
+
+    def test_a_narrowed_run_under_workers_is_not_held_to_the_floor_and_says_so(self, tmp_path):
+        done = run_pytest_in(self._repo(tmp_path, 90.0), "-n", "2", "tests/test_mod.py")
+
+        assert done.returncode == 0, done.stdout + done.stderr
+        assert "coverage floor not checked" in done.stdout
+
+    def test_a_whole_run_under_workers_is_held_to_the_floor_over_them_all(self, tmp_path):
+        done = run_pytest_in(self._repo(tmp_path, 90.0), "-n", "2")
+
+        assert done.returncode != 0, done.stdout + done.stderr
+        assert "Required test coverage of 90.0% not reached" in done.stdout
