@@ -3,6 +3,9 @@ from __future__ import annotations
 import random
 
 from app_support.watch_weights import (
+    Staying,
+    dealt_by_weight,
+    newest_of_each_group,
     passes_inclusion,
     weight_of,
     weighted_shuffle,
@@ -45,3 +48,81 @@ def test_a_records_weight_is_the_one_stamped_on_it_and_one_where_none_is():
     assert weight_of({"watch": "eight"}) == 1.0
     assert weight_of({"watch": {"weight": "heavy"}}) == 1.0
 
+
+_GROUPS = {"alpha one": "alpha", "alpha two": "alpha", "alpha three": "alpha",
+           "beta": "beta", "gamma": None}
+
+
+def _deal(items, weights=None, *, seed, **staying):
+    weights = weights or {}
+    return dealt_by_weight(items, weight_of=lambda item: weights.get(item, 1.0),
+                           group_of=_GROUPS.get, rng=random.Random(seed),
+                           staying=Staying(**staying))
+
+
+def test_a_deal_by_weight_keeps_one_of_each_group_and_every_item_with_none():
+    group = {"alpha one", "alpha two", "alpha three"}
+    picked = set()
+    for seed in range(30):
+        deal = _deal(list(_GROUPS), seed=seed)
+        assert len(group.intersection(deal)) == 1
+        assert {"beta", "gamma"} <= set(deal)
+        assert len(deal) == 3
+        picked |= group.intersection(deal)
+
+    assert picked == group
+
+
+def test_the_one_a_group_keeps_follows_the_weights():
+    weights = {"alpha one": 8.0, "alpha two": 0.125, "alpha three": 0.125}
+
+    loved = sum("alpha one" in _deal(list(_GROUPS), weights, seed=seed) for seed in range(40))
+
+    assert loved >= 36
+
+
+def test_an_item_weighing_an_eighth_sits_most_deals_out():
+    appearances = sum("beta" in _deal(list(_GROUPS), {"beta": 0.125}, seed=seed)
+                      for seed in range(40))
+
+    assert appearances < 15
+
+
+def test_what_must_stay_stays_whatever_it_weighs_and_holds_its_group():
+    weights = dict.fromkeys(_GROUPS, 0.0)
+
+    for seed in range(10):
+        deal = _deal(list(_GROUPS), weights, seed=seed, kept=lambda item: item == "alpha two")
+        assert deal == ["alpha two"]
+
+
+def test_a_deal_asked_never_to_come_back_empty_keeps_one_of_each_group_when_all_sit_out():
+    weights = dict.fromkeys(_GROUPS, 0.0)
+
+    assert _deal(list(_GROUPS), weights, seed=1) == []
+    deal = _deal(list(_GROUPS), weights, seed=1, never_empty=True)
+
+    assert sorted(deal, key=str)[1:] == ["beta", "gamma"]
+    assert len(deal) == 3
+
+
+def test_newest_first_keeps_the_newest_of_each_group_in_its_place_and_every_item_with_none():
+    newest_first = ["alpha two", "beta", "alpha one", "gamma", "alpha three"]
+
+    assert newest_of_each_group(newest_first, _GROUPS.get) == ["alpha two", "beta", "gamma"]
+
+
+def test_newest_first_keeps_what_must_stay_in_place_of_its_groups_newest():
+    newest_first = ["alpha two", "beta", "alpha one", "gamma"]
+
+    kept = newest_of_each_group(newest_first, _GROUPS.get, kept=lambda item: item == "alpha one")
+
+    assert kept == ["alpha one", "beta", "gamma"]
+
+
+def test_a_caller_says_which_of_a_group_is_its_newest():
+    newest_first = ["alpha two", "beta", "alpha one"]
+
+    kept = newest_of_each_group(newest_first, _GROUPS.get, newest=min)
+
+    assert kept == ["alpha one", "beta"]
