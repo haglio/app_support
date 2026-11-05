@@ -20,9 +20,6 @@ _SELECT = ("F", "E", "W", "I", "UP", "B", "C4", "SIM", "RUF", "PL", "PT", "DTZ",
 
 _PER_FILE_IGNORES = {"**/vulture_whitelist.py": ("B018", "F821")}
 
-_IGNORES_A_REPO_MAY_STILL_HOLD = FAMILY_IGNORES[:3]
-_PER_FILE_IGNORES_A_REPO_MAY_STILL_HOLD = {**_PER_FILE_IGNORES, "**/tests/**": ("PLR2004",), "**/test_*.py": ("PLR2004",)}
-
 _A_FINDING = re.compile(r"^.+?:\d+:\d+: ([A-Z]+\d+) ")
 
 _COUNTED_RULE = re.compile(r'^    "([A-Z]+\d+)",  # (\d+)$', re.MULTILINE)
@@ -47,14 +44,14 @@ def _listed(ratchet) -> str:
             "to be worked off rule by rule.\n    " + _quoted(ratchet))
 
 
-def _per_file_ignores(per_file) -> str:
+def _per_file_ignores() -> str:
     return "\n[lint.per-file-ignores]\n" + "".join(
-        f'"{files}" = [{_quoted(rules)}]\n' for files, rules in per_file.items())
+        f'"{files}" = [{_quoted(rules)}]\n' for files, rules in _PER_FILE_IGNORES.items())
 
 
-def render_config(ratchet=(), *, ignores=FAMILY_IGNORES, per_file=_PER_FILE_IGNORES) -> str:
+def render_config(ratchet=()) -> str:
     if isinstance(ratchet, Mapping):
-        ratcheted, exempted = _counted(ratchet), _per_file_ignores(per_file)
+        ratcheted, exempted = _counted(ratchet), _per_file_ignores()
     else:
         ratcheted, exempted = _listed(ratchet), ""
     return (
@@ -63,8 +60,8 @@ def render_config(ratchet=(), *, ignores=FAMILY_IGNORES, per_file=_PER_FILE_IGNO
         "\n"
         "[lint]\n"
         f"select = [{_quoted(_SELECT)}]\n"
-        f"ignore = [{_quoted(ignores)}{ratcheted}]\n"
-        f"external = [{_quoted((*READ_BY_OTHER_GATES, *ignores, *ratchet))}]\n"
+        f"ignore = [{_quoted(FAMILY_IGNORES)}{ratcheted}]\n"
+        f"external = [{_quoted((*READ_BY_OTHER_GATES, *FAMILY_IGNORES, *ratchet))}]\n"
         f"{exempted}"
         "\n"
         "[format]\n"
@@ -84,11 +81,8 @@ def ratchet_of(ruff_toml):
 
 def assert_config_is_the_familys(ruff_toml) -> None:
     written = Path(ruff_toml).read_text(encoding="utf-8")
-    ratchet = ratchet_of(ruff_toml)
-    expected = render_config(ratchet)
-    still_held_by_a_repo_that_has_not_written_the_new_one = render_config(
-        ratchet, ignores=_IGNORES_A_REPO_MAY_STILL_HOLD, per_file=_PER_FILE_IGNORES_A_REPO_MAY_STILL_HOLD)
-    if written not in (expected, still_held_by_a_repo_that_has_not_written_the_new_one):
+    expected = render_config(ratchet_of(ruff_toml))
+    if written != expected:
         diff = "".join(difflib.unified_diff(
             expected.splitlines(keepends=True), written.splitlines(keepends=True),
             "the family's", str(ruff_toml)))
