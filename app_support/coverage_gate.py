@@ -77,9 +77,14 @@ def pytest_configure(config) -> None:
             "`-p app_support.coverage_gate`")
 
 
-def pytest_collection_modifyitems(config, items) -> None:
-    # pytest-cov reads the namespace it was handed before the conftests loaded, not `config.option`.
-    measuring = config.pluginmanager.get_plugin("_cov").options
+def risen_floor(total: float, floor: float) -> float | None:
+    hundredths = round(total * 100)
+    if hundredths < round((floor + 1) * 100):
+        return None
+    return (hundredths - 50) // 10 / 10
+
+
+def _hold_the_floor_only_over_a_whole_run(config, measuring) -> None:
     why = why_this_is_not_the_whole_suite(config)
     if why is not None:
         measuring.cov_fail_under = None
@@ -88,17 +93,12 @@ def pytest_collection_modifyitems(config, items) -> None:
         measuring.no_cov_on_fail = True
 
 
-def risen_floor(total: float, floor: float) -> float | None:
-    hundredths = round(total * 100)
-    if hundredths < round((floor + 1) * 100):
-        return None
-    return (hundredths - 50) // 10 / 10
-
-
 @pytest.hookimpl(wrapper=True, tryfirst=True)
 def pytest_runtestloop(session):
-    finished = yield
     measuring = session.config.pluginmanager.get_plugin("_cov")
+    # pytest-cov reads the namespace it was handed before the conftests loaded, not `config.option`.
+    _hold_the_floor_only_over_a_whole_run(session.config, measuring.options)
+    finished = yield
     total, floor = measuring.cov_total, measuring.options.cov_fail_under
     if session.config.option.collectonly or session.testsfailed or not floor or total is None:
         return finished
