@@ -25,6 +25,9 @@ dependencies = []
 dev = [
     "pytest>=9,<10",
     "pytest-timeout>=2.4,<3",
+    # Runs a whole test run side by side in worker processes: `-n 8`, which
+    # app_support.worker_processes keeps behind what he is using.
+    "pytest-xdist>=3.8,<4",
     # The scanner powering app_support.dead_code. A dev dependency of every repo
     # that asks for that gate, including this one -- never a dependency of the
     # package, which installs into every app's venv.
@@ -85,9 +88,6 @@ every-minutes = 2
 # a favorite's video and page, Fun Time and Line a run's length and exit.
 unread-dataclass-fields = ["Favorite.video", "Favorite.page", 
                            "RunRecord.exit_code"]
-# pytest hands the coverage gate's collection hook the run's items by name; the
-# hook reads only the run's config.
-unread-arguments = ["app_support/coverage_gate.py: items"]
 
 # The loading screen's window, its Windows calls and its process are not
 # unit-tested, until the window is a module of its own that not-unit-tested names.
