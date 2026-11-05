@@ -22,7 +22,6 @@ from app_support.private_reach import private_imports, reaches_in
 _COMMAND = "python -m app_support.gates.baseline"
 _CLASS_MARK = "::"
 STATED_RENAMES_PATH = "tools/quality_baseline_renames.json"
-EXTERNALITY_COMMENTS = "externality_comments"
 _NAMES_AN_EXTERNALITY = re.compile(
     r"\b(Qt|PyQt\d?|Q[A-Z][a-z]\w+|mpv|libmpv|Win32|Windows|ctypes|pywin32|pCloud|ComfyUI|pygame|OpenXR|ffmpeg|ffprobe|FFmpeg"
     r"|CPython|pytest|pip|git|GitHub|Chrome|SQLite|sqlite3|Pillow|PIL|vosk|Whisper|Ollama|ruff|vulture|VBScript|PowerShell|GGUF|safetensors|kohya|lycoris|WAN|SDXL|SD1.5|Flux|LTX|Krea|Topaz|COM|HRESULT|PE|psutil|wscript|TOML|Task Scheduler|Claude app)\b")
@@ -97,14 +96,6 @@ def _named_whole_lines(source: str) -> list[int]:
             for row in block if lines[row - 1].strip()]
 
 
-def externality_lines(source: str) -> int:
-    try:
-        trailing = _trailing(source)
-    except (tokenize.TokenError, IndentationError):
-        trailing = []
-    return len(_named_whole_lines(source)) + sum(bool(_NAMES_AN_EXTERNALITY.search(comment)) for comment in trailing)
-
-
 def methods_of(source: str, class_name: str) -> int:
     surface = measure_classes(source).get(class_name)
     return surface.methods if surface else 0
@@ -132,17 +123,12 @@ def _measured_over_code_and_tests(checkout: Checkout, measure: Callable[[str], i
     return {key: lines for key, lines in counted.items() if lines}
 
 
-def _other_prose_lines(source: str) -> int:
-    return prose_lines(source) - sum(1 for _ in _named_whole_lines(source))
+def _prose_naming_nothing_outside(source: str) -> int:
+    return prose_lines(source) - len(_named_whole_lines(source))
 
 
 def _prose(checkout: Checkout, _entries: dict[str, int]) -> dict[str, int]:
-    keeps_them_apart = EXTERNALITY_COMMENTS in (checkout.sections or {})
-    return _measured_over_code_and_tests(checkout, _other_prose_lines if keeps_them_apart else prose_lines)
-
-
-def _externalities(checkout: Checkout, _entries: dict[str, int]) -> dict[str, int]:
-    return _measured_over_code_and_tests(checkout, externality_lines)
+    return _measured_over_code_and_tests(checkout, _prose_naming_nothing_outside)
 
 
 def _trailing_counts(checkout: Checkout, _entries: dict[str, int]) -> dict[str, int]:
@@ -195,7 +181,6 @@ class Count(NamedTuple):
 
 COUNTS = (
     Count("prose_lines", _prose, "say it in a name or a test, or delete it"),
-    Count(EXTERNALITY_COMMENTS, _externalities, f"keep it only if it names what forces this shape, and run {_COMMAND}"),
     Count("trailing_comments", _trailing_counts, "say it in a name or a test, or delete it"),
     Count("private_reaches", _reaches, "ask the object for what you need rather than reading its private name",
           _reach_listing),
@@ -301,7 +286,7 @@ def assert_nothing_stands_above_main(checkout: Checkout) -> None:
         return
     renames = _renames(checkout.root)
     told = [f"{section} {key} stands at {held}, above the {entry} main holds"
-            for section, entries in here.items() if section in at_main and section != EXTERNALITY_COMMENTS
+            for section, entries in here.items() if section in at_main
             for key, (held, entry) in over(carried(at_main[section], renames), entries).items()
             if not _lists_a_class_nothing_held(section, entry, held)]
     told += [f"{section} is gone from the file, and main holds it" for section in at_main if section not in here]
@@ -349,7 +334,7 @@ def main_in(checkout: Checkout, *, said: Callable[[str], None] = print) -> int:
     sections = dict(on_file)
     refusals = 0
     for section, live in _measures(checkout, on_file, said):
-        if section not in on_file or section == EXTERNALITY_COMMENTS:
+        if section not in on_file:
             sections[section] = live
             continue
         entries = carried(on_file[section], renames)

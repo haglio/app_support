@@ -60,67 +60,27 @@ class TestProseLines:
         assert baseline.prose_lines(source) == lines
 
 
-class TestExternalityLines:
+class TestCommentsAboutAnOutsideProgram:
     @pytest.mark.parametrize(("source", "lines"), [
         ("x = 1\n", 0),
-        ("# why\nx = 1\n", 0),
-        ("# mpv drops the first seek\nx = 1\n", 1),
-        ("# GGUF values are typed\nx = 1\n", 1),
-        ("# Told once,\n# because mpv drops the first seek.\nx = 1\n", 2),
+        ("# why\nx = 1\n", 1),
+        ("# mpv drops the first seek\nx = 1\n", 0),
+        ("# GGUF values are typed\nx = 1\n", 0),
+        ("# Told once,\n# because mpv drops the first seek.\nx = 1\n", 0),
         ("# because mpv drops it\n\n# why\nx = 1\n", 1),
         ("# because mpv drops it\nx = 1\n# why\n", 1),
-        ('def f():\n    """QTimer only fires on\n\n    the thread that started it."""\n', 2),
-        ('"""Why."""\n', 0),
-        ("x = 1  # mpv\n", 1),
-        ("x = 1  # why\n", 0),
-        ("x = 1  # noqa: mpv\n", 0),
-        ("# a mpv_engine file\n", 0),
+        ('def f():\n    """QTimer only fires on\n\n    the thread that started it."""\n', 0),
+        ('"""Why."""\n', 1),
+        ("# a mpv_engine file\n", 1),
         ("def broken(:\n    # mpv\n", 0),
-    ], ids=["code", "our own reason", "names it", "names a model format", "a block counts whole", "a blank ends a block", "code ends a block",
-            "a docstring counts whole", "our own docstring", "trailing comment", "our own trailing comment",
-            "a marker for a tool", "only a whole word", "what will not parse"])
-    def test_a_comment_or_docstring_naming_something_outside_the_family_counts_whole(self, source: str, lines: int):
-        assert baseline.externality_lines(source) == lines
+    ], ids=["code", "our own reason", "names it", "names a model format", "a block is left out whole", "a blank ends a block",
+            "code ends a block", "a docstring is left out whole", "our own docstring", "only a whole word",
+            "what will not parse"])
+    def test_a_comment_or_docstring_naming_something_outside_the_family_is_no_prose_line(
+            self, tmp_path: Path, source: str, lines: int):
+        checkout = _checkout(tmp_path, {"pkg/a.py": source}, {})
 
-    def test_a_repo_keeping_the_section_counts_those_lines_there_and_not_as_prose(self, tmp_path: Path):
-        checkout = _checkout(tmp_path, {"pkg/a.py": "# why\n\n# mpv\n"}, {"externality_comments": {}})
-
-        assert baseline.count_named("prose_lines").measure(checkout, {}) == {"pkg/a.py": 1}
-        assert baseline.count_named("externality_comments").measure(checkout, {}) == {"pkg/a.py": 1}
-
-    def test_a_repo_without_the_section_counts_them_as_prose_as_it_always_did(self, tmp_path: Path):
-        checkout = _checkout(tmp_path, {"pkg/a.py": "# why\n\n# mpv\n"}, {})
-
-        assert baseline.count_named("prose_lines").measure(checkout, {}) == {"pkg/a.py": 2}
-
-    def test_the_count_is_exact_so_taking_one_out_owes_the_lower_number(self, tmp_path: Path):
-        checkout = _checkout(tmp_path, {"pkg/a.py": "# mpv\n"}, {"externality_comments": {"pkg/a.py": 2}})
-
-        with pytest.raises(AssertionError, match="under its entry of 2"):
-            baseline.assert_count_holds(checkout, baseline.count_named("externality_comments"))
-
-    def test_a_new_one_is_written_in_by_the_command_where_the_diff_shows_it(self, tmp_path: Path):
-        checkout = _checkout(tmp_path, {"pkg/a.py": "# mpv\n# mpv too\n"}, {"externality_comments": {"pkg/a.py": 1}})
-
-        assert baseline.main_in(checkout, said=lambda _: None) == 0
-
-        assert checkout.sections["externality_comments"] == {"pkg/a.py": 2}
-
-    def test_main_holding_fewer_is_no_refusal_since_the_rise_is_there_to_be_read(self, tmp_path: Path):
-        checkout = _checkout(tmp_path, {"pkg/a.py": "# mpv\n"}, {"externality_comments": {}})
-        _with_a_main(tmp_path)
-        _files(tmp_path, {baseline.BASELINE_PATH: json.dumps({"externality_comments": {"pkg/a.py": 1}})})
-
-        baseline.assert_nothing_stands_above_main(checkout)
-
-    def test_the_command_run_twice_enters_the_section_then_takes_those_lines_off_prose(self, tmp_path: Path):
-        checkout = _checkout(tmp_path, {"pkg/a.py": "# why\n\n# mpv\n"}, {"prose_lines": {"pkg/a.py": 2}})
-
-        baseline.main_in(checkout, said=lambda _: None)
-        baseline.main_in(checkout, said=lambda _: None)
-
-        assert checkout.sections["prose_lines"] == {"pkg/a.py": 1}
-        assert checkout.sections["externality_comments"] == {"pkg/a.py": 1}
+        assert baseline.count_named("prose_lines").measure(checkout, {}).get("pkg/a.py", 0) == lines
 
 
 class TestTrailingComments:
