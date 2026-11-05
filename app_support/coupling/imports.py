@@ -4,13 +4,13 @@ import ast
 from collections.abc import Iterable, Iterator, Mapping
 from pathlib import PurePosixPath
 
-from app_support.coupling.statements import own_statements
 from app_support.python_source import top_of
 
 _INIT = "__init__"
 _MUTABLE_LITERALS = (ast.List, ast.Dict, ast.Set, ast.ListComp, ast.DictComp, ast.SetComp)
 _MUTABLE_MAKERS = frozenset({"list", "dict", "set", "defaultdict", "deque", "Counter", "OrderedDict"})
 _IMPORTERS = frozenset({"__import__", "import_module"})
+_DEFINITIONS = (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
 
 APP_PACKAGES = frozenset({
     "backfill", "evolver", "fun_time", "fun_time_vr", "genaumacher", "line", "main_funestra", "origenerator",
@@ -38,9 +38,20 @@ def _is_mutable_container(value: ast.expr | None) -> bool:
     return isinstance(value, _MUTABLE_LITERALS)
 
 
+def _own_statements(module: ast.Module) -> Iterator[ast.stmt]:
+    waiting: list[ast.AST] = list(module.body)
+    while waiting:
+        node = waiting.pop()
+        if isinstance(node, ast.stmt):
+            yield node
+        if not isinstance(node, _DEFINITIONS):
+            waiting += [child for child in ast.iter_child_nodes(node)
+                        if isinstance(child, (ast.stmt, ast.ExceptHandler))]
+
+
 def _mutables_bound_in(tree: ast.Module) -> set[str]:
     names: set[str] = set()
-    for statement in own_statements(tree):
+    for statement in _own_statements(tree):
         if isinstance(statement, ast.Assign) and _is_mutable_container(statement.value):
             names |= {target.id for target in statement.targets if isinstance(target, ast.Name)}
         elif (isinstance(statement, ast.AnnAssign) and isinstance(statement.target, ast.Name)
@@ -82,29 +93,6 @@ class ModuleTree:
                         if (alias.asname or alias.name) == name and source in self._path_of and source != module:
                             return self._defined_by(source, alias.name)
         return module
-
-    def _module_taken(self, module: str, name: str) -> str | None:
-        if f"{module}.{name}" in self._path_of:
-            return f"{module}.{name}"
-        return self._defined_by(module, name) if module in self._path_of else None
-
-    def _longest_module_within(self, dotted: str) -> str | None:
-        parts = dotted.split(".")
-        candidates = (".".join(parts[:length]) for length in range(len(parts), 0, -1))
-        return next((candidate for candidate in candidates if candidate in self._path_of), None)
-
-    def _modules_imported_by(self, path: str) -> Iterator[str | None]:
-        for node in ast.walk(self._trees[path]):
-            if isinstance(node, ast.Import):
-                yield from (self._longest_module_within(alias.name) for alias in node.names)
-            elif isinstance(node, ast.ImportFrom):
-                module = _absolute(path, node)
-                yield from (self._module_taken(module, alias.name) for alias in node.names)
-
-    def fan_out(self) -> dict[str, int]:
-        return {path: 0 if path in self._gathers
-                else len(set(self._modules_imported_by(path)) - {_module_name(path), None})
-                for path in self._trees}
 
     def _modules_bound_to_names_in(self, path: str) -> dict[str, str]:
         bound = {}

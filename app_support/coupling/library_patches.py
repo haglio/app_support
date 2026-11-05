@@ -1,36 +1,21 @@
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterable, Iterator
-from dataclasses import dataclass
+from collections.abc import Iterable
 
 from app_support.dependencies import family_packages
 from app_support.python_source import top_of
 
-_MOCK = "unittest.mock."
-_MOCKS = frozenset(_MOCK + name for name in (
-    "Mock", "MagicMock", "AsyncMock", "NonCallableMock", "NonCallableMagicMock", "PropertyMock", "create_autospec"))
-_PATCH = _MOCK + "patch"
+_PATCH = "unittest.mock.patch"
 _PATCHES = frozenset({_PATCH, f"{_PATCH}.object", f"{_PATCH}.dict", f"{_PATCH}.multiple"})
-_BAG = "types.SimpleNamespace"
 _MONKEYPATCH = "monkeypatch"
 _MONKEYPATCH_MAKERS = frozenset({"pytest.MonkeyPatch()", "pytest.MonkeyPatch.context()",
                                  "_pytest.monkeypatch.MonkeyPatch()", "_pytest.monkeypatch.MonkeyPatch.context()"})
 _MONKEYPATCH_TYPES = frozenset({"pytest.MonkeyPatch", "_pytest.monkeypatch.MonkeyPatch"})
-_MONKEYPATCH_SET = f"{_MONKEYPATCH}.setattr"
-_MONKEYPATCH_REPLACING = frozenset({_MONKEYPATCH_SET, f"{_MONKEYPATCH}.delattr", f"{_MONKEYPATCH}.setitem",
+_MONKEYPATCH_REPLACING = frozenset({f"{_MONKEYPATCH}.setattr", f"{_MONKEYPATCH}.delattr", f"{_MONKEYPATCH}.setitem",
                                     f"{_MONKEYPATCH}.delitem"})
 _LIBRARY_TEST_SURFACE = "testing"
 _LOCAL_DEFINITIONS = (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
-
-
-@dataclass(frozen=True)
-class Doubles:
-    mocks: int = 0
-    patches: int = 0
-    monkeypatches: int = 0
-    simple_namespaces: int = 0
-    library_patches: int = 0
 
 
 class _Names:
@@ -103,39 +88,15 @@ class _Names:
         return self.resolve(node)
 
 
-def _references(tree: ast.Module) -> Iterator[ast.expr]:
-    waiting: list[ast.AST] = [tree]
-    while waiting:
-        node = waiting.pop()
-        if isinstance(node, (ast.Name, ast.Attribute)) and isinstance(node.ctx, ast.Load):
-            yield node
-        waiting += [child for field, child in _children(node) if field not in {"annotation", "returns"}]
-
-
-def _children(node: ast.AST) -> Iterator[tuple[str, ast.AST]]:
-    for field, value in ast.iter_fields(node):
-        for child in value if isinstance(value, list) else [value]:
-            if isinstance(child, ast.AST):
-                yield field, child
-
-
 def _is_inside_a_library(target: str | None, own: Iterable[str]) -> bool:
     if target is None or top_of(target) not in set(family_packages()) - set(own):
         return False
     return target.split(".")[1:2] != [_LIBRARY_TEST_SURFACE]
 
 
-def count_doubles(source: str, *, own: Iterable[str]) -> Doubles:
+def library_patches_in(source: str, *, own: Iterable[str]) -> int:
     tree = ast.parse(source)
     names = _Names(tree)
-    mocks = sum(names.resolve(node) in _MOCKS for node in _references(tree))
-    called = [(names.resolve(node.func), node) for node in ast.walk(tree) if isinstance(node, ast.Call)]
-    replacing = [node for resolved, node in called if resolved in _PATCHES or resolved in _MONKEYPATCH_REPLACING]
-    return Doubles(
-        mocks=mocks,
-        patches=sum(resolved in _PATCHES for resolved, _ in called),
-        monkeypatches=sum(resolved == _MONKEYPATCH_SET for resolved, _ in called),
-        simple_namespaces=sum(resolved == _BAG for resolved, _ in called),
-        library_patches=sum(bool(node.args) and _is_inside_a_library(names.target_of(node.args[0]), own)
-                            for node in replacing),
-    )
+    replacing = [node for node in ast.walk(tree) if isinstance(node, ast.Call)
+                 and names.resolve(node.func) in _PATCHES | _MONKEYPATCH_REPLACING]
+    return sum(bool(node.args) and _is_inside_a_library(names.target_of(node.args[0]), own) for node in replacing)
