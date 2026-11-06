@@ -49,6 +49,7 @@ LAUNCH_WAIT_S = 15 * 60.0
 RETRY_FAILED_AFTER_S = 30 * 60.0
 HOTFIX_SHIPS_WITHIN_S = 24 * 60 * 60.0
 FETCH_UNASKED_AFTER_S = 30 * 60.0
+FETCH_OVERDUE_AFTER_S = 24 * 60 * 60.0
 GITHUB_ANSWERS = "answers what has shipped again, so only a checkout whose main moved is fetched"
 # The Claude app fast-forwards the checked-out main of a project it starts a session in, and its
 # preflight passes over a checkout while that checkout's info/attributes holds any rule.
@@ -735,16 +736,26 @@ def _heads_on_github(checkouts: Iterable[Path], *, run: Run) -> dict[Path, tuple
     return {checkout: heads[place] for checkout, place in places.items() if place in heads}
 
 
+def _since_last_fetch(checkout: Path, *, now: Callable[[], float]) -> float:
+    try:
+        return now() - (checkout / ".git" / "FETCH_HEAD").stat().st_mtime
+    except OSError:
+        return math.inf
+
+
 def _worth_fetching(checkout: Path, branch: str, head: tuple[str, str] | None, *, run: Run,
                     now: Callable[[], float]) -> bool:
     if head is not None and head[0] == branch:
         tracking = git_or_none(checkout, "rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{branch}", run=run)
         return tracking != head[1]
-    try:
-        fetched = (checkout / ".git" / "FETCH_HEAD").stat().st_mtime
-    except OSError:
-        return True
-    return now() - fetched >= FETCH_UNASKED_AFTER_S
+    return _since_last_fetch(checkout, now=now) >= FETCH_UNASKED_AFTER_S
+
+
+def _say_the_fetch_failed(checkout: Path, unreachable: StepFailed, *, now: Callable[[], float]) -> None:
+    if _since_last_fetch(checkout, now=now) >= FETCH_OVERDUE_AFTER_S:
+        _log.warning("%s: has fetched nothing for a day: %s", checkout.name, unreachable)
+    else:
+        _log.info("%s: could not fetch: %s", checkout.name, unreachable)
 
 
 def _ask_github(checkouts: list[Path], *, run: Run) -> tuple[dict[Path, tuple[str, str]], str]:
@@ -774,8 +785,8 @@ def keep_up(workspace: Path, state: Path, *, fetch: bool = True, surroundings: S
     outcomes = {}
     checkouts = checkouts_in(workspace)
     heads, github = _ask_github(checkouts, run=run) if fetch else ({}, None)
-    if github is not None and github != status.get("github", GITHUB_ANSWERS):
-        (_log.info if github == GITHUB_ANSWERS else _log.warning)("GitHub: %s", github)
+    if github is not None and (github == GITHUB_ANSWERS) != (status.get("github", GITHUB_ANSWERS) == GITHUB_ANSWERS):
+        _log.info("GitHub: %s", github)
     for checkout in checkouts:
         try:
             keep_the_claude_app_off(checkout)
@@ -786,7 +797,7 @@ def keep_up(workspace: Path, state: Path, *, fetch: bool = True, surroundings: S
             try:
                 git(checkout, "fetch", "--quiet", "origin", branch, run=run)
             except StepFailed as unreachable:
-                _log.warning("%s: could not fetch: %s", checkout.name, unreachable)
+                _say_the_fetch_failed(checkout, unreachable, now=now)
         outcomes[checkout.name] = bring_up(checkout, workspace=workspace, surroundings=surroundings, wait_s=wait_s,
                                            previous=previous.get(checkout.name))
     _record(state, outcomes, previous, finished=now(), github=github)

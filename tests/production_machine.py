@@ -51,6 +51,7 @@ class Machine:
         self.ran: list[tuple[str, ...]] = []
         self.clones = 0
         self.github_down = False
+        self.offline = False
 
     def checkout(self, name: str = "example", *, venv: bool = True, files: dict[str, str] | None = None) -> Path:
         origin = self.base / "origins" / f"{name}.git"
@@ -144,6 +145,8 @@ class Machine:
     def run(self, arguments, *, cwd=None, timeout=production_update.GIT_TIMEOUT_S, env=None) -> str:
         if arguments[:3] == ["gh", "api", "graphql"]:
             self.ran.append(("github",))
+            if self.offline:
+                raise production_update.StepFailed("gh api said: error connecting to api.github.com")
             if self.github_down:
                 raise production_update.StepFailed("gh api said: could not reach api.github.com")
             return json.dumps({"data": {"repositoryOwner": {"repositories": {"nodes": [
@@ -155,6 +158,8 @@ class Machine:
             return ""
         if arguments[1:2] == ["fetch"]:
             self.ran.append(("fetch", Path(cwd).name))
+            if self.offline:
+                raise production_update.StepFailed("git fetch said: fatal: Could not read from remote repository.")
         elif arguments[1:2] == ["merge"]:
             self.ran.append(("merge",))
         return production_update.run(arguments, cwd=cwd, timeout=timeout, env=env)
