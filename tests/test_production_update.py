@@ -968,6 +968,42 @@ class TestKeepingTheWorkspaceUp:
         assert [record.getMessage() for record in caplog.records if "GitHub" in record.getMessage()] == [
             out_of_reach, back]
 
+    def test_github_out_of_reach_for_a_new_reason_is_not_said_again(self, machine, caplog):
+        machine.checkout("app")
+
+        with caplog.at_level("INFO", logger="production_update"):
+            for down, offline in ((True, False), (False, True)):
+                machine.github_down, machine.offline = down, offline
+                keep_up(machine.workspace, machine.base / "state", run=machine.run, in_use=lambda venvs: [])
+
+        assert len([record for record in caplog.records if "GitHub" in record.getMessage()]) == 1
+
+    def test_the_computer_being_offline_for_a_while_is_no_warning(self, machine, caplog):
+        app = machine.checkout("app")
+        git("fetch", "-q", "origin", cwd=app)
+        fetched_at = (app / ".git" / "FETCH_HEAD").stat().st_mtime
+        machine.offline = True
+
+        with caplog.at_level("INFO", logger="production_update"):
+            keep_up(machine.workspace, machine.base / "state", run=machine.run, in_use=lambda venvs: [],
+                    now=lambda: fetched_at + production_update.FETCH_UNASKED_AFTER_S)
+
+        assert [record.levelname for record in caplog.records if record.levelno >= logging.WARNING] == []
+        assert any("app: could not fetch" in record.getMessage() for record in caplog.records)
+
+    def test_a_checkout_that_could_not_fetch_for_a_day_is_warned_about(self, machine, caplog):
+        app = machine.checkout("app")
+        git("fetch", "-q", "origin", cwd=app)
+        fetched_at = (app / ".git" / "FETCH_HEAD").stat().st_mtime
+        machine.offline = True
+
+        with caplog.at_level("WARNING", logger="production_update"):
+            keep_up(machine.workspace, machine.base / "state", run=machine.run, in_use=lambda venvs: [],
+                    now=lambda: fetched_at + production_update.FETCH_OVERDUE_AFTER_S)
+
+        assert [record.getMessage() for record in caplog.records] == [
+            "app: has fetched nothing for a day: git fetch said: fatal: Could not read from remote repository."]
+
     def test_a_pass_leaves_each_checkout_a_rule_that_keeps_the_claude_app_from_moving_its_main(self, machine):
         # Starting a session in a project, the Claude app fast-forwards the project's checked-out
         # main itself, libraries skipped, unless its preflight finds a rule in info/attributes:
