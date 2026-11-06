@@ -80,6 +80,30 @@ def start_again_stand_in(**how: Any):
     return patch("app_support.production_update.start_again_after", **how)
 
 
+def processes_listed(**how: Any):
+    return patch("app_support.processes.running", **how)
+
+
+def process_alive(**how: Any):
+    return patch("app_support.processes.is_running", **how)
+
+
+def process_exe(**how: Any):
+    return patch("app_support.processes.exe_of", **how)
+
+
+def process_terminated(**how: Any):
+    return patch("app_support.processes.terminate", **how)
+
+
+def process_suspended(**how: Any):
+    return patch("app_support.processes.suspend", **how)
+
+
+def process_resumed(**how: Any):
+    return patch("app_support.processes.resume", **how)
+
+
 @contextmanager
 def update_waiting_for(checkout: Path) -> Iterator[None]:
     with patch("app_support.production_update.UP_BEFORE_AN_UPDATE_S", 0.0), \

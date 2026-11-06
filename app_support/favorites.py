@@ -4,7 +4,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from app_support.json_store import locked_update, read_json
+from app_support.json_store import locked_update, read_json_or_empty
 from app_support.mirrored_tree import mirrored_source
 
 FAVORITE_KEY = "favorite"
@@ -51,10 +51,7 @@ def favorites_under(
 ) -> list[Favorite]:
     found = []
     for record_path in sorted(Path(record_root).rglob("*.json")):
-        try:
-            record = read_json(record_path)
-        except (OSError, ValueError):
-            continue
+        record = read_json_or_empty(record_path)
         if is_favorite(record):
             video = mirrored_source(record_path, roots=video_roots, mirror_root=record_root,
                                     suffixes=video_suffixes)

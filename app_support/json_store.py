@@ -30,6 +30,13 @@ def read_json(path: Path) -> dict:
     return payload
 
 
+def read_json_or_empty(path: Path) -> dict:
+    try:
+        return read_json(path)
+    except (OSError, ValueError):
+        return {}
+
+
 def _claim(lock: Path, *, wait_s: float, stale_s: float) -> int:
     deadline = time.monotonic() + wait_s
     while True:

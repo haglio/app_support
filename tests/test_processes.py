@@ -7,6 +7,7 @@ import time
 import uuid
 
 import pytest
+from eventually import eventually
 from git_bash_programs import waited_for
 
 from app_support import processes
@@ -240,3 +241,75 @@ class TestWhatGitBashStarts:
         among = {process.pid: process for process in processes.running()}
 
         assert processes.whose_process(among[program.pid], among) == processes.AGENT
+
+
+_WRITES_UNTIL_STOPPED = (
+    "import sys, time\n"
+    "f = open(sys.argv[1], 'ab', buffering=0)\n"
+    "while True:\n"
+    "    f.write(b'x')\n"
+    "    time.sleep(0.005)\n"
+)
+
+
+def _size(counter) -> int:
+    return counter.stat().st_size if counter.exists() else 0
+
+
+def _ended(child: subprocess.Popen) -> int:
+    child.kill()
+    child.wait()
+    return child.pid
+
+
+@windows_only
+class TestOneProcess:
+    def test_a_process_is_listed_with_its_arguments_exactly_as_it_was_given_them(self, sleeper):
+        marker = _marker()
+
+        found = _the(sleeper(f"two  words\n{marker}", '"quoted"'))
+
+        assert found.arguments[-2:] == (f"two  words\n{marker}", '"quoted"')
+
+    def test_a_live_process_is_running_and_one_that_has_ended_is_not(self, sleeper):
+        child = sleeper(_marker())
+
+        assert processes.is_running(child.pid)
+        assert not processes.is_running(_ended(child))
+
+    def test_it_names_the_program_a_process_is_running(self, sleeper):
+        child = sleeper(_marker())
+
+        assert os.path.normcase(processes.exe_of(child.pid)) == os.path.normcase(PYTHON)
+        assert processes.exe_of(_ended(child)) == ""
+
+    def test_ending_a_process_ends_it(self, sleeper):
+        child = sleeper(_marker())
+
+        assert processes.terminate(child.pid)
+        child.wait(timeout=10)
+        assert not processes.is_running(child.pid)
+
+    def test_suspending_freezes_a_process_and_resuming_thaws_it(self, tmp_path):
+        counter = tmp_path / "count.bin"
+        child = subprocess.Popen([PYTHON, "-c", _WRITES_UNTIL_STOPPED, str(counter)],
+                                 creationflags=subprocess.CREATE_NO_WINDOW)
+        try:
+            assert eventually(lambda: _size(counter) >= 3), "the child never started writing"
+
+            assert processes.suspend(child.pid)
+            frozen = _size(counter)
+            time.sleep(0.5)
+            assert _size(counter) == frozen, "the suspended child kept writing"
+
+            assert processes.resume(child.pid)
+            assert eventually(lambda: _size(counter) > frozen), "the resumed child never wrote again"
+        finally:
+            child.kill()
+            child.wait(timeout=10)
+
+    def test_a_process_that_has_ended_can_be_neither_suspended_resumed_nor_ended(self, sleeper):
+        pid = _ended(sleeper(_marker()))
+
+        assert (processes.suspend(pid), processes.resume(pid), processes.terminate(pid)) == (
+            False, False, False)
