@@ -15,6 +15,8 @@ SESSION_MARK = "CLAUDECODE"
 _QUERY_LIMITED_INFORMATION = 0x1000
 _QUERY_INFORMATION = 0x0400
 _VM_READ = 0x0010
+_TERMINATE = 0x0001
+_SUSPEND_RESUME = 0x0800
 _SNAPSHOT_PROCESSES = 0x2
 _COMMAND_LINE_INFORMATION = 60
 _BASIC_INFORMATION = 0
@@ -64,6 +66,7 @@ class Process:
     name: str
     exe: str
     cmdline: str
+    arguments: tuple[str, ...] = ()
 
 
 class _ProcessEntry(ctypes.Structure):
@@ -104,6 +107,8 @@ def _api():
     kernel32.GetProcessTimes.argtypes = [wintypes.HANDLE, *[ctypes.POINTER(ctypes.c_ulonglong)] * 4]
     kernel32.GetExitCodeProcess.restype = wintypes.BOOL
     kernel32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+    kernel32.TerminateProcess.restype = wintypes.BOOL
+    kernel32.TerminateProcess.argtypes = [wintypes.HANDLE, wintypes.UINT]
     kernel32.WaitForSingleObject.restype = wintypes.DWORD
     kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
     kernel32.ReadProcessMemory.restype = wintypes.BOOL
@@ -126,6 +131,9 @@ def _api():
     ntdll.NtQueryInformationProcess.restype = wintypes.LONG
     ntdll.NtQueryInformationProcess.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p,
                                                 wintypes.ULONG, ctypes.POINTER(wintypes.ULONG)]
+    for freeze in (ntdll.NtSuspendProcess, ntdll.NtResumeProcess):
+        freeze.restype = wintypes.LONG
+        freeze.argtypes = [wintypes.HANDLE]
     shell32.CommandLineToArgvW.restype = ctypes.POINTER(wintypes.LPWSTR)
     shell32.CommandLineToArgvW.argtypes = [wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_int)]
     kernel32.LocalFree.argtypes = [ctypes.c_void_p]
@@ -158,14 +166,53 @@ def _described(pid: int, ppid: int, name: str) -> Process | None:
     try:
         if _has_ended(handle):
             return None
-        return Process(pid, ppid, _started(handle), name, _exe(handle), _command_line(handle))
+        arguments = _arguments(_command_line(handle))
+        return Process(pid, ppid, _started(handle), name, _exe(handle), _one_line(arguments), arguments)
     finally:
         _kernel32.CloseHandle(handle)
 
 
-def _has_ended(handle) -> bool:
+def _opened(pid: int, access: int, act, *, otherwise=None):
+    handle = _kernel32.OpenProcess(access, False, pid)
+    if not handle:
+        return otherwise
+    try:
+        return act(handle)
+    finally:
+        _kernel32.CloseHandle(handle)
+
+
+def _exit_code(handle) -> int | None:
     code = wintypes.DWORD()
-    return bool(_kernel32.GetExitCodeProcess(handle, ctypes.byref(code))) and code.value != _STILL_ACTIVE
+    return code.value if _kernel32.GetExitCodeProcess(handle, ctypes.byref(code)) else None
+
+
+def _has_ended(handle) -> bool:
+    return _exit_code(handle) not in (None, _STILL_ACTIVE)
+
+
+def is_running(pid: int) -> bool:
+    return _opened(pid, _QUERY_LIMITED_INFORMATION, lambda handle: _exit_code(handle) == _STILL_ACTIVE,
+                   otherwise=False)
+
+
+def exe_of(pid: int) -> str:
+    return _opened(pid, _QUERY_LIMITED_INFORMATION, _exe, otherwise="")
+
+
+def terminate(pid: int) -> bool:
+    return _opened(pid, _TERMINATE, lambda handle: bool(_kernel32.TerminateProcess(handle, 1)),
+                   otherwise=False)
+
+
+def suspend(pid: int) -> bool:
+    return _opened(pid, _SUSPEND_RESUME, lambda handle: _ntdll.NtSuspendProcess(handle) == 0,
+                   otherwise=False)
+
+
+def resume(pid: int) -> bool:
+    return _opened(pid, _SUSPEND_RESUME, lambda handle: _ntdll.NtResumeProcess(handle) == 0,
+                   otherwise=False)
 
 
 def _started(handle) -> float:
@@ -194,20 +241,24 @@ def _command_line(handle) -> str:
                                         ctypes.byref(needed)):
         return ""
     text = _UnicodeString.from_buffer(buffer)
-    return _one_line(ctypes.wstring_at(text.Buffer, text.Length // 2)) if text.Buffer else ""
+    return ctypes.wstring_at(text.Buffer, text.Length // 2) if text.Buffer else ""
 
 
-def _one_line(command_line: str) -> str:
+def _arguments(command_line: str) -> tuple[str, ...]:
     if not command_line.strip():
-        return ""
+        return ()
     count = ctypes.c_int(0)
-    arguments = _shell32.CommandLineToArgvW(command_line, ctypes.byref(count))
-    if not arguments:
-        return " ".join(command_line.split())
+    split = _shell32.CommandLineToArgvW(command_line, ctypes.byref(count))
+    if not split:
+        return tuple(command_line.split())
     try:
-        return " ".join(" ".join(arguments[index] for index in range(count.value)).split())
+        return tuple(split[index] for index in range(count.value))
     finally:
-        _kernel32.LocalFree(arguments)
+        _kernel32.LocalFree(split)
+
+
+def _one_line(arguments: tuple[str, ...]) -> str:
+    return " ".join(" ".join(arguments).split())
 
 
 def ancestors(process: Process, among: Mapping[int, Process]) -> list[Process]:
@@ -268,27 +319,20 @@ def _from_its_memory(pid: int, read, *, access: int = 0):
 
 
 def wait_for_end(pid: int) -> bool:
-    handle = _kernel32.OpenProcess(_SYNCHRONIZE, False, pid)
-    if not handle:
-        return False
-    try:
-        return _kernel32.WaitForSingleObject(handle, _INFINITE) == _WAIT_OBJECT_0
-    finally:
-        _kernel32.CloseHandle(handle)
+    return _opened(pid, _SYNCHRONIZE,
+                   lambda handle: _kernel32.WaitForSingleObject(handle, _INFINITE) == _WAIT_OBJECT_0,
+                   otherwise=False)
 
 
 def console_host_of(pid: int) -> int | None:
-    handle = _kernel32.OpenProcess(_QUERY_LIMITED_INFORMATION, False, pid)
-    if not handle:
-        return None
-    try:
+    def read(handle) -> int | None:
         host = ctypes.c_size_t()
         if _ntdll.NtQueryInformationProcess(handle, _CONSOLE_HOST_INFORMATION, ctypes.byref(host),
                                             ctypes.sizeof(host), None):
             return None
         return (host.value & ~_CONSOLE_HOST_FLAGS) or None
-    finally:
-        _kernel32.CloseHandle(handle)
+
+    return _opened(pid, _QUERY_LIMITED_INFORMATION, read)
 
 
 def desktop_of(pid: int) -> str | None:

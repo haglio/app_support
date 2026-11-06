@@ -688,11 +688,7 @@ def _not_waiting(checkout: Path, said: str) -> str:
 
 
 def _status(state: Path) -> dict:
-    try:
-        document = json_store.read_json(state / STATUS_NAME)
-    except (OSError, ValueError):
-        return {}
-    return document if isinstance(document, dict) else {}
+    return json_store.read_json_or_empty(state / STATUS_NAME)
 
 
 def _previous(status: Mapping) -> dict[str, Outcome]:

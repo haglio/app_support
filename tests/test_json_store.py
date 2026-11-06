@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from app_support.json_store import STALE_S, locked_update, read_json
+from app_support.json_store import STALE_S, locked_update, read_json, read_json_or_empty
 
 
 def _write(path, payload):
@@ -192,3 +192,20 @@ def test_an_update_leaves_the_document_and_nothing_beside_it(tmp_path):
 
     assert read_json(path) == {"alpha": 1}
     assert list(path.parent.iterdir()) == [path]
+
+
+def test_a_document_read_or_empty_reads_back_what_was_written(tmp_path):
+    path = tmp_path / "clip.json"
+    _write(path, {"video": {"act": "alpha"}})
+
+    assert read_json_or_empty(path) == {"video": {"act": "alpha"}}
+
+
+@pytest.mark.parametrize("written", [None, '{"video": {"act"', '["alpha", "beta"]'],
+                         ids=["not there", "will not parse", "not an object"])
+def test_a_document_read_or_empty_that_cannot_be_read_as_one_is_empty(tmp_path, written):
+    path = tmp_path / "clip.json"
+    if written is not None:
+        path.write_text(written, encoding="utf-8")
+
+    assert read_json_or_empty(path) == {}

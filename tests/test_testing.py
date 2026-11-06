@@ -12,6 +12,7 @@ from app_support import (
     origenerator_handoff,
     peer_watch,
     ports,
+    processes,
     production_update,
     testing,
     win32,
@@ -126,3 +127,16 @@ def test_starting_again_starts_nothing():
     with testing.start_again_stand_in() as started:
         production_update.start_again_after(1, Path("launcher"))
     started.assert_called_once_with(1, Path("launcher"))
+
+
+@pytest.mark.parametrize(("stand_in", "name"), [
+    (testing.processes_listed, "running"),
+    (testing.process_alive, "is_running"),
+    (testing.process_exe, "exe_of"),
+    (testing.process_terminated, "terminate"),
+    (testing.process_suspended, "suspend"),
+    (testing.process_resumed, "resume"),
+], ids=["listed", "alive", "exe", "terminated", "suspended", "resumed"])
+def test_each_process_stand_in_answers_for_the_call_it_names(stand_in, name):
+    with stand_in(return_value="as the test said"):
+        assert getattr(processes, name)() == "as the test said"
