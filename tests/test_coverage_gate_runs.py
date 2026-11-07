@@ -55,7 +55,7 @@ class TestWhichRunsTheFloorApplies:
         why = coverage_gate.why_this_is_not_the_whole_suite(_config(file_or_dir=["tests/test_a.py"]))
         assert "tests/test_a.py" in why
 
-    def test_naming_a_directory_narrows_it_too(self):
+    def test_naming_a_directory_narrows_it_too_since_a_repo_with_two_test_folders_would_measure_one(self):
         assert coverage_gate.why_this_is_not_the_whole_suite(_config(file_or_dir=["tests"]))
 
     def test_choosing_by_name_narrows_it(self):
@@ -102,7 +102,8 @@ class TestTheFloorAgainstARealRun:
         assert done.returncode == 0, done.stdout + done.stderr
         assert "Total coverage: 75.00%" in done.stdout
 
-    def test_a_suite_a_point_over_its_floor_fails_and_names_the_floor_to_set(self, tmp_path):
+    def test_a_suite_a_point_over_its_floor_fails_and_names_the_floor_to_set_since_a_floor_nobody_must_raise_stays_put(
+            self, tmp_path):
         done = run_pytest_in(self._repo(tmp_path, 74.0))
 
         assert done.returncode != 0, done.stdout + done.stderr
@@ -114,13 +115,13 @@ class TestTheFloorAgainstARealRun:
         assert done.returncode != 0, done.stdout + done.stderr
         assert "Required test coverage of 90.0% not reached" in done.stdout
 
-    def test_a_run_that_only_collects_is_not_asked_to_raise_the_floor(self, tmp_path):
+    def test_a_run_that_only_collects_is_not_asked_to_raise_the_floor_it_measured_the_imports_alone(self, tmp_path):
         done = run_pytest_in(self._repo(tmp_path, 10.0), "--collect-only")
 
         assert done.returncode == 0, done.stdout + done.stderr
         assert "raise fail_under" not in done.stdout
 
-    def test_a_run_told_to_hold_no_floor_is_not_asked_to_raise_one(self, tmp_path):
+    def test_a_run_told_to_hold_no_floor_is_not_asked_to_raise_one_a_part_measures_only_its_share(self, tmp_path):
         done = run_pytest_in(self._repo(tmp_path, 10.0), "--cov-fail-under=0", "--cov-report=term")
 
         assert done.returncode == 0, done.stdout + done.stderr
@@ -132,7 +133,7 @@ class TestTheFloorAgainstARealRun:
         assert done.returncode != 0, done.stdout + done.stderr
         assert "Required test coverage of 90.0% not reached" in done.stdout
 
-    def test_a_run_stopped_by_a_failure_reports_the_failure_alone(self, tmp_path):
+    def test_a_run_stopped_by_a_failure_reports_the_failure_alone_it_measured_only_what_ran_before(self, tmp_path):
         done = run_pytest_in(self._repo(tmp_path, 90.0, failing=True), "-x")
 
         assert done.returncode != 0, done.stdout + done.stderr
@@ -152,7 +153,7 @@ class TestTheFloorAgainstARealRun:
         assert done.returncode == 0, done.stdout + done.stderr
         assert "coverage floor not checked" in done.stdout
 
-    def test_a_repo_asking_for_the_floor_without_measuring_is_refused(self, tmp_path):
+    def test_a_repo_asking_for_the_floor_without_measuring_is_refused_before_it_passes_for_good(self, tmp_path):
         done = run_pytest_in(self._repo(tmp_path, 90.0, NOT_MEASURING))
 
         assert done.returncode != 0, done.stdout + done.stderr

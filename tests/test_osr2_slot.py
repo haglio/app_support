@@ -136,7 +136,7 @@ class TestTheBrokersSide:
 
         assert written.so_far() == [("caf\N{REPLACEMENT CHARACTER}", "L05000I33")]
 
-    def test_a_connection_that_says_nothing_for_a_second_is_hung_up_on(self):
+    def test_a_connection_that_says_nothing_for_a_second_is_hung_up_on_not_left_holding_a_thread(self):
         ours, theirs = socket.socketpair()
 
         started = time.monotonic()
@@ -145,8 +145,18 @@ class TestTheBrokersSide:
         took = time.monotonic() - started
 
         assert not serving.is_alive()
-        assert 0.9 <= took < 2.5, took
+        assert took < 2.5, took
         assert _hung_up_on(theirs)
+
+    def test_a_connection_is_given_its_whole_second_so_a_slow_sender_is_not_turned_away(self):
+        ours, _theirs = socket.socketpair()
+
+        started = time.monotonic()
+        serving = _serve_on_a_thread(_slot(), ours)
+        serving.join(timeout=_WITHIN_S)
+        took = time.monotonic() - started
+
+        assert took >= 0.9, took
 
     def test_a_name_said_a_piece_at_a_time_still_has_only_its_second(self, monkeypatch):
         readings = iter([100.0, 100.0])
@@ -181,7 +191,7 @@ class TestTheBrokersSide:
         assert written.so_far() == []
         assert _hung_up_on(theirs)
 
-    def test_lines_sent_before_a_hold_took_the_osr2_are_not_handed_on_after_it(self):
+    def test_lines_sent_before_a_hold_took_the_osr2_are_not_handed_on_after_it_or_they_would_undo_the_hold(self):
         slot = _slot()
         handed_on = []
 
@@ -384,7 +394,8 @@ class TestTheBrokersSide:
             assert after.next() == ("portrait", "L02000I33")
         assert before.so_far() == []
 
-    def test_t_code_sent_while_no_session_is_up_is_dropped_rather_than_kept_for_the_next(self):
+    def test_t_code_sent_while_no_session_is_up_is_dropped_since_kept_it_would_move_the_device_late_all_at_once(
+            self):
         slot = _slot()
         ours, _theirs = _a_sender_that_says(b"portrait\nL01000I33\n")
         slot.serve(ours)

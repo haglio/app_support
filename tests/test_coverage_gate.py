@@ -14,7 +14,7 @@ def _read(text: str) -> configparser.ConfigParser:
     return parsed
 
 
-def test_what_is_measured_is_the_repo_itself_less_its_tests():
+def test_what_is_measured_is_the_repo_itself_less_its_tests_as_source_dot_since_a_package_list_drops_a_root_module():
     config = _read(coverage_gate.render_config((), 54.3))
     assert config["run"]["source"].split() == ["."]
     assert "tests/*" in config["run"]["omit"].split()
@@ -64,7 +64,7 @@ def test_a_config_that_drifted_anywhere_but_its_floor_is_refused(tmp_path):
         coverage_gate.assert_config_is_the_familys(written)
 
 
-def test_an_excuse_for_a_file_that_has_gone_is_refused(tmp_path):
+def test_an_excuse_for_a_file_that_has_gone_is_refused_before_it_excuses_something_else(tmp_path):
     shell = coverage_gate.NotUnitTested("pkg/shell.py", "needs a headset")
     written = _repo(tmp_path, not_unit_tested=(shell,))
     (tmp_path / "pkg" / "shell.py").unlink()
@@ -85,7 +85,7 @@ class TestTheFloorAWholeRunEarns:
     def test_a_total_a_hair_under_its_tenth_in_floating_point_still_counts_that_tenth(self):
         assert coverage_gate.risen_floor(96.29999999999999, 95.0) == 95.8
 
-    def test_a_floor_raised_from_one_run_holds_the_next_run_that_measures_a_little_less(self):
+    def test_a_floor_raised_from_one_run_holds_the_next_run_that_measures_a_little_less_as_timing_moves_it(self):
         assert coverage_gate.risen_floor(94.75, 91.0) <= 94.48
 
 

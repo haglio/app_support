@@ -31,9 +31,10 @@ CANCELED = "canceled"
 UPDATED = "updated"
 SAID_AT_EACH_LAUNCH = (SHOWN, TAKEN, STARTED, ENDED, CANCELED, UPDATED)
 TAKING_OVER_WITHIN_S = 30.0
-STANDING_FOR_S = 2.0
-UPDATE_SHARE = 0.6
 POLL_MS = 100
+_POLLS_MISSED_BEFORE_A_SCREEN_IS_GONE = 20
+STANDING_FOR_S = _POLLS_MISSED_BEFORE_A_SCREEN_IS_GONE * POLL_MS / 1000
+UPDATES_SHARE_OF_THE_BAR_LEFT = 0.6
 _NEAREST = 2
 
 Box = tuple[int, int, int, int]
@@ -225,7 +226,7 @@ class Showing:
         if self._update is None or self._update[0] != index:
             self._update = (index, self._fraction)
         began_at = self._update[1]
-        reaching = began_at + (1 - began_at) * UPDATE_SHARE * progress.fraction(now=self._clock())
+        reaching = began_at + (1 - began_at) * UPDATES_SHARE_OF_THE_BAR_LEFT * progress.fraction(now=self._clock())
         self._fraction = max(self._fraction, reaching)
         return self._fraction
 

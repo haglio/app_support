@@ -110,7 +110,7 @@ def test_a_whitelist_entry_for_a_name_a_caller_uses_suppresses_nothing(tmp_path)
         assert_whitelist_is_live(package, whitelist=whitelist, callers=[caller])
 
 
-def test_a_checkouts_python_is_what_it_tracks(checkout_tracking):
+def test_a_checkouts_python_is_what_it_tracks_not_its_venv_worktrees_and_caches(checkout_tracking):
     app = checkout_tracking("an_app", {"parlour.py": "", "drawing_room.py": ""})
     installed = app / ".venv" / "Lib" / "site-packages" / "example_package"
     installed.mkdir(parents=True)
@@ -307,7 +307,7 @@ def test_a_directory_without_an_init_is_not_a_package_the_gate_must_name(tmp_pat
     assert_every_package_is_scanned(tmp_path, ())
 
 
-def test_an_argument_a_method_never_reads_is_left_alone_by_default(tmp_path):
+def test_an_argument_a_method_never_reads_is_left_alone_by_default_a_framework_override_may_ignore_its(tmp_path):
     (tmp_path / "pkg").mkdir()
     (tmp_path / "pkg" / "__init__.py").write_text("", encoding="utf-8")
     (tmp_path / "pkg" / "a.py").write_text(

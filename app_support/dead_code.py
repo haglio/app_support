@@ -74,6 +74,8 @@ def scan(
         _refuse_a_whitelist_inside_the_scan(targets, whitelist)
         targets = (*targets, whitelist)
     _refuse_a_target_with_nothing_to_read(targets)
+    # The folders to scan are named outright, never `.` under an exclude list: vulture matches an exclude against
+    # the absolute path, so `--exclude .claude` from inside a worktree under .claude excludes every file there is.
     with tempfile.TemporaryDirectory() as scratch:
         config = Path(scratch) / "pyproject.toml"
         config.write_text(_vulture_config_reading(*targets, *callers), encoding="utf-8")

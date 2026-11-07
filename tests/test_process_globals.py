@@ -22,7 +22,7 @@ def test_no_test_before_this_left_a_log_file_open():
     still_open = sorted(
         f"{name} -> {handler.baseFilename}"
         for name, logger in logging.Logger.manager.loggerDict.items()
-        if isinstance(logger, logging.Logger)
+        if not isinstance(logger, logging.PlaceHolder)
         for handler in logger.handlers
         if isinstance(handler, logging.FileHandler)
     )

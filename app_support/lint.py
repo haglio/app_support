@@ -13,7 +13,8 @@ RUFF_VERSION = "0.16.6"
 FAMILY_IGNORES = ("E501", "BLE001", "S110", "PLR0913", "PLR0917", "PLR2004", "RUF001", "RUF002", "RUF003",
                   "SIM117", "ISC004", "PLC3002")
 
-READ_BY_OTHER_GATES = ("ARG", "N", "S")
+READ_BY_OTHER_GATES = ("ARG",)
+ONLY_EVER_MARKERS_HERE = ("N", "S")
 
 _SELECT = ("F", "E", "W", "I", "UP", "B", "C4", "SIM", "RUF", "PL", "PT", "DTZ", "PIE",
            "PERF", "FLY", "ISC", "RET", "FURB", "EXE")
@@ -37,7 +38,7 @@ def _counted(ratchet) -> str:
             + "".join(f'    "{rule}",  # {places}\n' for rule, places in ratchet.items()))
 
 
-def _listed(ratchet) -> str:
+def _listed_uncounted_the_older_form(ratchet) -> str:
     if not ratchet:
         return ""
     return (",\n    # This repo's ratchet: what the family config found here, "
@@ -49,11 +50,15 @@ def _per_file_ignores() -> str:
         f'"{files}" = [{_quoted(rules)}]\n' for files, rules in _PER_FILE_IGNORES.items())
 
 
+def _rules_whose_markers_stay_dormant(ratchet) -> tuple[str, ...]:
+    return (*READ_BY_OTHER_GATES, *ONLY_EVER_MARKERS_HERE, *FAMILY_IGNORES, *ratchet)
+
+
 def render_config(ratchet=()) -> str:
     if isinstance(ratchet, Mapping):
         ratcheted, exempted = _counted(ratchet), _per_file_ignores()
     else:
-        ratcheted, exempted = _listed(ratchet), ""
+        ratcheted, exempted = _listed_uncounted_the_older_form(ratchet), ""
     return (
         "line-length = 100\n"
         'target-version = "py312"\n'
@@ -61,7 +66,7 @@ def render_config(ratchet=()) -> str:
         "[lint]\n"
         f"select = [{_quoted(_SELECT)}]\n"
         f"ignore = [{_quoted(FAMILY_IGNORES)}{ratcheted}]\n"
-        f"external = [{_quoted((*READ_BY_OTHER_GATES, *FAMILY_IGNORES, *ratchet))}]\n"
+        f"external = [{_quoted(_rules_whose_markers_stay_dormant(ratchet))}]\n"
         f"{exempted}"
         "\n"
         "[format]\n"

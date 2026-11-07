@@ -73,8 +73,8 @@ def pytest_configure(config) -> None:
     if config.pluginmanager.get_plugin("_cov") is None:
         raise pytest.UsageError(
             "this repo asks for the family's coverage floor but no coverage is being "
-            "collected: its pytest addopts needs `--cov --cov-report=` beside "
-            "`-p app_support.coverage_gate`")
+            "collected, and a floor held against nothing measured would pass for good: its pytest "
+            "addopts needs `--cov --cov-report=` beside `-p app_support.coverage_gate`")
 
 
 def risen_floor(total: float, floor: float) -> float | None:
@@ -137,7 +137,8 @@ def assert_config_is_the_familys(coveragerc, not_unit_tested=(), max_pragmas=0) 
     repo = coveragerc.parent
     for shell in not_unit_tested:
         if not (repo / shell.path).exists():
-            raise AssertionError(f"{coveragerc} excuses {shell.path}, which {repo} no longer has")
+            raise AssertionError(f"{coveragerc} excuses {shell.path}, which {repo} no longer has; "
+                                 "an excuse that outlives its file comes to excuse something else")
     excused = _lines_excused_where_they_stand(repo, (*_NOT_WHAT_A_REPO_SHIPS, *not_unit_tested))
     if len(excused) > max_pragmas:
         raise AssertionError(

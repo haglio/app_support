@@ -36,7 +36,7 @@ class TestResolvePath:
     def test_an_absolute_path_is_taken_as_given(self, tmp_path: Path):
         assert resolve_path(tmp_path, tmp_path / "state") == tmp_path / "state"
 
-    def test_a_relative_path_hangs_off_the_base(self, tmp_path: Path):
+    def test_a_relative_path_hangs_off_the_base_the_config_files_own_folder(self, tmp_path: Path):
         assert resolve_path(tmp_path, "state") == (tmp_path / "state").resolve()
 
 

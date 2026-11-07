@@ -25,14 +25,20 @@ def _dotted(context: str, key: str) -> str:
     return f"{context}.{key}" if context else key
 
 
+def _a_refusal_a_launcher_with_no_console_still_tells(what: str, context: str, key: str, source: Path) -> str:
+    return f"{what}: {_dotted(context, key)} (in {source})"
+
+
 def require_section(
     parent: dict[str, Any], key: str, source: Path, *, context: str = "config",
 ) -> dict[str, Any]:
     value = parent.get(key)
     if value is None:
-        raise ValueError(f"Missing required config section: {_dotted(context, key)} (in {source})")
+        raise ValueError(_a_refusal_a_launcher_with_no_console_still_tells(
+            "Missing required config section", context, key, source))
     if not isinstance(value, dict):
-        raise TypeError(f"Expected object for config section: {_dotted(context, key)} (in {source})")
+        raise TypeError(_a_refusal_a_launcher_with_no_console_still_tells(
+            "Expected object for config section", context, key, source))
     return value
 
 
@@ -43,14 +49,16 @@ def optional_section(
     if value is None:
         return None
     if not isinstance(value, dict):
-        raise TypeError(f"Expected object for config section: {_dotted(context, key)} (in {source})")
+        raise TypeError(_a_refusal_a_launcher_with_no_console_still_tells(
+            "Expected object for config section", context, key, source))
     return value
 
 
 def require_value(parent: dict[str, Any], key: str, source: Path, *, context: str = "config") -> Any:
     value = parent.get(key)
     if value is None:
-        raise ValueError(f"Missing required config value: {_dotted(context, key)} (in {source})")
+        raise ValueError(_a_refusal_a_launcher_with_no_console_still_tells(
+            "Missing required config value", context, key, source))
     return value
 
 

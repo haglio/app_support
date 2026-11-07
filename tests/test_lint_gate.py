@@ -124,7 +124,7 @@ def test_a_noqa_for_a_rule_this_config_does_not_run_is_not_unused(tmp_path):
     lint.assert_lint_is_clean(repo, repo / "pkg")
 
 
-def test_only_the_named_trees_and_the_root_files_are_scanned(tmp_path):
+def test_only_the_named_trees_and_the_root_files_are_scanned_never_a_checkout_nested_inside(tmp_path):
     repo = _repo(tmp_path, "def f():\n    return 1\n")
     nested = repo / "sibling_checkout" / "pkg"
     nested.mkdir(parents=True)

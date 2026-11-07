@@ -211,9 +211,12 @@ def _staged_text(repo: Path, rel: str) -> str | None:
         return None
 
 
+THE_COMMAND_EVERY_REPOS_HOOKS_RUN = "app_support.sanitize"
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="app_support.sanitize",
+        prog=THE_COMMAND_EVERY_REPOS_HOOKS_RUN,
         description="Refuse a commit that carries a blocked term.")
     what = parser.add_mutually_exclusive_group()
     what.add_argument("--staged", action="store_true",
