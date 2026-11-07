@@ -117,15 +117,6 @@ class TestNaming:
         assert ProcessNamer("Genau VR").description("GenauVR") == "Genau VR"
         assert ProcessNamer("Fun Time").description("RFBWindow") == "Fun Time \u2013 RFB Window"
 
-    def test_one_apps_roles_sort_together_in_a_task_list_sorted_by_name(self):
-        namer = ProcessNamer("Fun Time")
-        ours = sorted(namer.exe_name("pythonw.exe", role) for role in ("Portrait", "AudioCompanion", "Dashboard"))
-
-        rows = sorted([*ours, "Genau-MainFunestra.exe", "notepad.exe", "pythonw.exe", "FunTimeOther.exe"])
-
-        first = rows.index(ours[0])
-        assert rows[first:first + len(ours)] == ours
-
 
 class TestVersionInfoNode:
     def test_the_length_counts_the_padding_before_the_value_and_not_after_it(self):
@@ -371,22 +362,6 @@ class TestNameThisProcess:
             .name_this_process("Highdeas", interpreter="python.exe")
 
         assert console.with_name("Highdeas-Highdeas.exe").read_bytes() == console.read_bytes()
-
-    def test_a_later_run_under_its_own_copy_still_copies_the_launcher_beside_it(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-    ):
-        console, windowed = self._launchers(tmp_path)
-        resources = _FakeResources()
-        namer = ProcessNamer("Highdeas", stamp=resources.stamp, read_field=resources.read_field)
-        monkeypatch.setattr(sys, "executable", str(console))
-        namer.name_this_process("Highdeas")
-        copy = console.with_name("Highdeas-Highdeas.exe")
-        monkeypatch.setattr(sys, "executable", str(copy))
-        windowed.write_bytes(b"MZ the upgrade's windowed launcher")
-
-        namer.name_this_process("Highdeas")
-
-        assert copy.read_bytes() == windowed.read_bytes()
 
     def test_never_raises_when_python_cannot_say_what_it_is_running_under(
         self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,

@@ -56,8 +56,8 @@ GITHUB_ANSWERS = "answers what has shipped again, so only a checkout whose main 
 HANDS_OFF_RULE = "/.moved-only-by-the-production-updater moved-only-by-the-production-updater"
 UP_BEFORE_AN_UPDATE_S = 10 * 60.0
 PIP_TIMEOUT_S = 15 * 60.0
-LIBRARY_S = 15.0
-MOVE_S = 2.0
+A_LIBRARY_CLONE_FROM_GITHUB_TAKES_S = 15.0
+A_MOVE_OF_THE_CODE_TAKES_S = 2.0
 REINSTALL_S = 10.0
 
 _KEYS = frozenset({"commit-file", "also-runs", "tests-run-from-its-venv"})
@@ -556,11 +556,11 @@ def _carry_out(checkout: Path, plan: _Plan, *, workspace: Path, run: Run) -> str
     local = _cloning_from_here(workspace, pinned, run=run)
     steps = []
     if plan.libraries:
-        steps.append(("installing its libraries", LIBRARY_S * len(plan.libraries), lambda: run(
+        steps.append(("installing its libraries", A_LIBRARY_CLONE_FROM_GITHUB_TAKES_S * len(plan.libraries), lambda: run(
             [python, "-m", "pip", "install", *(pin.spec for pin in plan.libraries)], cwd=checkout,
             timeout=PIP_TIMEOUT_S, env=local)))
     if plan.moves:
-        steps.append(("moving its code", MOVE_S, lambda: _move(checkout, plan, run=run)))
+        steps.append(("moving its code", A_MOVE_OF_THE_CODE_TAKES_S, lambda: _move(checkout, plan, run=run)))
     if (checkout / ".venv").is_dir() and (plan.libraries or "pyproject.toml" in changed):
         steps.append(("installing it", REINSTALL_S, lambda: run(
             [python, "-m", "pip", "install", "-e", _what_to_install(checkout, pyproject),

@@ -154,6 +154,16 @@ def test_a_dunder_is_read_by_the_language_not_by_name(tmp_path):
     assert unread.module_constants(root, [root / "pkg"]) == ["pkg/a.py:3: UNREAD"]
 
 
+def test_a_name_read_anywhere_under_the_same_spelling_counts_so_a_live_name_is_never_reported(tmp_path):
+    root = _tree(tmp_path, {
+        "pkg/__init__.py": "",
+        "pkg/a.py": "LIMIT = 1\n",
+        "pkg/b.py": "from pkg.c import LIMIT\n\nprint(LIMIT)\n",
+        "pkg/c.py": "LIMIT = 2\n",
+    })
+    assert unread.module_constants(root, [root / "pkg"]) == []
+
+
 def test_a_constant_named_only_in_a_string_literal_counts_as_read(tmp_path):
     root = _tree(tmp_path, {
         "pkg/__init__.py": "",

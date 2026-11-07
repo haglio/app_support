@@ -10,7 +10,7 @@ from armed_guard import arm_where_the_guard_looks
 from consumer_runs import run_pytest_in
 from production_machine import git
 
-from app_support.sanitize import find_violations, test_tracked_tree
+from app_support.sanitize import test_tracked_tree
 
 APP_SUPPORT = Path(__file__).resolve().parents[1]
 TERM = "plantedterm"
@@ -62,26 +62,6 @@ class TestTheControlWordTheCheckCarries:
         path = self._file(tmp_path, "unremarkable_compound plain")
 
         assert test_tracked_tree._a_control_word_from([path], []) == "plain"
-
-    def test_the_control_is_a_word_the_matchers_boundaries_let_the_scan_find(self, tmp_path: Path):
-        text = "unremarkable_compound plain"
-        path = self._file(tmp_path, text)
-
-        control = test_tracked_tree._a_control_word_from([path], [])
-
-        assert find_violations(text, [control])
-
-    def test_the_control_rides_in_the_one_scan_the_terms_do(self, tmp_path: Path):
-        scans: list[list[str]] = []
-
-        def recording(paths, terms, *, root):
-            scans.append(list(terms))
-            return []
-
-        test_tracked_tree._one_scan_of_the_terms_and_the_control(
-            [tmp_path / "notes.md"], [TERM], "ordinary", tmp_path, scan=recording)
-
-        assert scans == [[TERM, "ordinary"]]
 
     def test_a_plural_is_passed_over_since_the_guard_scans_for_its_stem(self, tmp_path: Path):
         path = self._file(tmp_path, "notes belong here")

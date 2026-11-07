@@ -33,6 +33,7 @@ def run(arguments: Sequence[str], *, cwd: Path | None = None, timeout: float = G
 
 
 def _why_it_failed(printed: list[str]) -> list[str]:
+    # pip ends a failed clone with three closing lines of its own, after the line that names the cause.
     lines = [line.strip() for line in printed]
     cause = next((line for line in lines if line.startswith(("error:", "fatal:"))), None)
     return [cause, lines[-1]] if cause and cause != lines[-1] else lines[-3:]

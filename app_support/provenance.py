@@ -11,15 +11,15 @@ SCHEMA = 1
 
 METHOD, METHOD_VERSION = "recipe", "recipe_version"
 
-_GIT_TIMEOUT_SECONDS = 10
+_GIVE_UP_ON_A_HUNG_GIT_AFTER_S = 10
 
 _OID_HEADER = "# branch.oid "
 
 
-def _status(directory: Path) -> str | None:
+def _both_facts_from_one_git_status(directory: Path) -> str | None:
     try:
         done = run_process_tree(["git", "-C", str(directory), "status", "--porcelain=v2", "--branch"],
-                                text=True, timeout=_GIT_TIMEOUT_SECONDS, **hidden_subprocess_kwargs())
+                                text=True, timeout=_GIVE_UP_ON_A_HUNG_GIT_AFTER_S, **hidden_subprocess_kwargs())
     except (OSError, subprocess.SubprocessError):
         return None
     return done.stdout if done.returncode == 0 else None
@@ -27,7 +27,7 @@ def _status(directory: Path) -> str | None:
 
 @cache
 def _code_version(directory: str) -> tuple[str | None, bool | None]:
-    reported = _status(Path(directory))
+    reported = _both_facts_from_one_git_status(Path(directory))
     if reported is None:
         return None, None
     lines = reported.splitlines()

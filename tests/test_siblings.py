@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import subprocess
 import sys
 from pathlib import Path
@@ -75,7 +76,8 @@ class TestSiblingCheckout:
 
 
 class TestEnsureSiblingImportable:
-    def test_the_checkout_goes_on_the_path_at_the_back(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    def test_the_checkout_goes_at_the_back_where_its_own_tests_cannot_shadow_the_apps(
+            self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         family = _family(tmp_path)
         monkeypatch.setattr(sys, "path", ["C:/somewhere/first"])
 
@@ -83,13 +85,27 @@ class TestEnsureSiblingImportable:
 
         assert sys.path == ["C:/somewhere/first", str(family / "widgetlib")]
 
-    def test_a_name_something_already_provides_is_left_to_it(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setattr(sys, "path", list(sys.path))
-        before = list(sys.path)
+    def test_a_copy_chosen_through_pythonpath_is_left_to_it(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        family = _family(tmp_path)
+        chosen = tmp_path / "chosen" / "widgetlib"
+        chosen.mkdir(parents=True)
+        (chosen / "__init__.py").write_text("", encoding="utf-8")
+        monkeypatch.setattr(sys, "path", [str(chosen.parent)])
+        importlib.invalidate_caches()
 
-        ensure_sibling_importable("json", near=tmp_path / "x.py")
+        ensure_sibling_importable("widgetlib", near=family / "someapp" / "someapp" / "x.py")
 
-        assert sys.path == before
+        assert sys.path == [str(chosen.parent)]
+
+    def test_a_folder_answering_as_an_empty_namespace_package_is_no_choice_anyone_made(
+            self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        family = _family(tmp_path)
+        monkeypatch.setattr(sys, "path", [str(family)])
+        importlib.invalidate_caches()
+
+        ensure_sibling_importable("widgetlib", near=family / "someapp" / "someapp" / "x.py")
+
+        assert sys.path == [str(family), str(family / "widgetlib")]
 
     def test_it_is_put_on_the_path_once(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         family = _family(tmp_path)
@@ -105,20 +121,20 @@ class TestProjectRoots:
         assert project_roots(None, fallback=tmp_path / "projects") == (tmp_path / "projects",)
         assert project_roots([], fallback=tmp_path) == (tmp_path,)
 
-    def test_the_overlays_roots_in_its_order(self, tmp_path: Path):
+    def test_several_roots_in_order_so_a_move_half_done_still_finds_every_checkout(self, tmp_path: Path):
         roots = project_roots(["D:/repos", "C:/old"], fallback=tmp_path)
 
         assert roots == (Path("D:/repos"), Path("C:/old"))
 
 
 class TestProjectDir:
-    def test_the_first_root_that_holds_the_checkout(self, tmp_path: Path):
+    def test_a_checkout_not_yet_moved_is_found_in_the_old_root_during_a_move(self, tmp_path: Path):
         (tmp_path / "new").mkdir()
         (tmp_path / "old" / "someapp").mkdir(parents=True)
 
         assert project_dir("someapp", (tmp_path / "new", tmp_path / "old")) == tmp_path / "old" / "someapp"
 
-    def test_a_sibling_nobody_has_is_a_path_under_the_first_root_not_a_crash(self, tmp_path: Path):
+    def test_a_sibling_nobody_has_is_a_path_to_check_for_not_an_import_time_crash(self, tmp_path: Path):
         assert project_dir("someapp", (tmp_path / "new", tmp_path / "old")) == tmp_path / "new" / "someapp"
 
     def test_a_renamed_siblings_folder_is_found_under_its_old_name_too(self, tmp_path: Path):
@@ -250,7 +266,7 @@ class TestTheCheckoutsThatImportAPackage:
 
         assert found == [otherapp, someapp]
 
-    def test_a_checkout_holding_the_package_is_a_copy_of_it_and_no_caller(self, checkout_tracking):
+    def test_a_copy_of_the_package_is_no_caller_its_tests_would_count_every_name_as_used(self, checkout_tracking):
         package = {"pyproject.toml": "", "widgetlib/__init__.py": "",
                    "tests/test_hinges.py": "from widgetlib import hinges\n"}
         primary = checkout_tracking("widgetlib", package)

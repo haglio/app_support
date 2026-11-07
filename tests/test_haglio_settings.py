@@ -98,7 +98,8 @@ def test_the_checkouts_are_found_in_the_folders_the_settings_name_in_order(tmp_p
     assert haglio_settings.project_roots() == (Path("W:/workspace"), Path("L:/library/projects"))
 
 
-def test_settings_naming_no_checkout_folders_mean_the_projects_folder_in_the_library(tmp_path, monkeypatch):
+def test_settings_naming_no_checkout_folders_mean_the_librarys_projects_folder_the_repos_lived_in_before(
+        tmp_path, monkeypatch):
     monkeypatch.setenv(haglio_settings.SETTINGS_ENV,
                        str(_settings(tmp_path / "settings.json", {"library_root": "L:/library"})))
 

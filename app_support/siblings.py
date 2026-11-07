@@ -10,8 +10,11 @@ from types import ModuleType
 RENAMED_SIBLINGS = {"player_core": "funestra"}
 
 
+NOT_A_CHECKOUT_PREFIX = "."
+
+
 def not_a_checkout(folder_name: str) -> bool:
-    return folder_name.startswith(".")
+    return folder_name.startswith(NOT_A_CHECKOUT_PREFIX)
 
 
 def names_of(sibling: str) -> tuple[str, ...]:

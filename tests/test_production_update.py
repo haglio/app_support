@@ -74,7 +74,7 @@ class TestBringingOneCheckoutUp:
         ]
         assert "shared-ui v0.1.200" in outcome.said
 
-    def test_a_library_newer_than_its_pin_is_put_back_to_the_pin_that_shipped(self, machine):
+    def test_a_library_newer_than_its_pin_is_put_back_since_older_code_may_not_start_under_it(self, machine):
         checkout = machine.checkout(files={"pyproject.toml": pins(funestra="0.1.498")})
         machine.install(checkout, "funestra", "0.1.507")
 
@@ -224,7 +224,8 @@ class TestBringingOneCheckoutUp:
         assert outcome == failed
         assert machine.ran == []
 
-    def test_code_that_ran_ahead_of_its_libraries_gets_them_even_right_after_a_failure(self, machine):
+    def test_code_that_ran_ahead_of_its_libraries_gets_them_even_right_after_a_failure_or_the_app_stays_dead(
+            self, machine):
         checkout = machine.checkout(files={"pyproject.toml": pins(app_support="0.1.376")})
         machine.install(checkout, "app_support", "0.1.375")
         failed = Outcome("failed: pip install said: no", at=1000.0, failed=True, target=machine.head(checkout))
@@ -798,7 +799,8 @@ class TestTheLibraries:
     def test_a_venv_that_is_not_there_holds_nothing(self, tmp_path):
         assert production_update.installed_versions(tmp_path / ".venv") == {}
 
-    def test_a_library_whose_checkout_here_holds_its_pinned_tag_is_installed_from_that_checkout(self, machine):
+    def test_a_library_whose_checkout_here_holds_its_pinned_tag_is_installed_from_it_github_or_no_github(
+            self, machine):
         library = machine.checkout("example_library", venv=False)
         git("tag", "v0.1.376", cwd=library)
         checkout = machine.checkout(files={"pyproject.toml": pins(example_library="0.1.376")})
@@ -923,7 +925,7 @@ class TestKeepingTheWorkspaceUp:
         assert status["pass_finished"] == 5000.0
         assert status["checkouts"]["app"]["said"] == outcomes["app"].said
 
-    def test_a_pass_asks_github_once_and_fetches_only_the_checkout_whose_main_moved(self, machine):
+    def test_a_pass_asks_github_once_and_fetches_only_what_moved_leaving_github_to_the_agents(self, machine):
         moved = machine.checkout("moved")
         machine.checkout("still")
         machine.ship(moved, {"new.txt": "new\n"}, fetched=False)
@@ -1293,7 +1295,8 @@ class TestAnAppThatIsNeverClosed:
 
         assert started == []
 
-    def test_an_app_just_started_stays_up_a_while_before_it_starts_again(self, checkout, clock):
+    def test_an_app_just_started_stays_up_a_while_since_its_own_launch_may_have_left_the_update_waiting(
+            self, checkout, clock):
         watch, started = self.watching(checkout, clock)
         self.an_update_waits(checkout)
         clock.now += production_update.UP_BEFORE_AN_UPDATE_S - 1

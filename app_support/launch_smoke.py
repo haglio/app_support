@@ -7,7 +7,7 @@ from pathlib import Path
 
 TOLERATED_BY = frozenset({"ImportError", "ModuleNotFoundError"})
 
-Replay = Callable[[list[str]], "subprocess.CompletedProcess[str]"]
+RunsTheStatementsTheLaunchersWay = Callable[[list[str]], "subprocess.CompletedProcess[str]"]
 
 
 def _is_type_checking(test: ast.expr) -> bool:
@@ -49,8 +49,9 @@ def _render(node: ast.Import | ast.ImportFrom, package: str) -> str:
     )
     if isinstance(node, ast.Import):
         return f"import {names}"
-    assert node.level <= 1, f"unexpected relative import depth in {package}"
+    assert node.level <= 1, f"a launch file sits at the top of {package}, so a relative import there is never deeper than one level"
     module = node.module or ""
+    # CPython refuses a relative import in a file run as a bare script, so an empty package needs no branch here.
     if node.level:
         module = f"{package}.{module}" if module else package
     return f"from {module} import {names}"
@@ -75,8 +76,8 @@ def launch_imports(package: str, launch_files: Iterable[Path]) -> list[str]:
 
 
 # Outside pytest, so its assertion rewriting never applies here: a bare `assert x == 0` would fail
-# with no explanation, so every assertion carries its whole diagnostic in the message.
-# that called it.
+# with no explanation, so every assertion carries its whole diagnostic in the message, and hides its
+# own frame with pytest's __tracebackhide__ so the report points at the repo's test that called it.
 
 
 def _replay_report(result) -> str:
@@ -84,25 +85,26 @@ def _replay_report(result) -> str:
             f"--- stderr ---\n{result.stderr}\n--- stdout ---\n{result.stdout}")
 
 
-def assert_every_import_resolves(replay: Replay, statements: list[str]) -> None:
+def assert_every_import_resolves(replay: RunsTheStatementsTheLaunchersWay, statements: list[str]) -> None:
     __tracebackhide__ = True
     result = replay(statements)
 
     assert result.returncode == 0, (
-        f"the launch's own imports do not resolve:\n{_replay_report(result)}")
+        "the launch's own imports do not resolve, which a windowed launch would have shown no traceback for:\n"
+        f"{_replay_report(result)}")
 
 
-def assert_the_walk_reached(statements: Sequence[str], modules: Iterable[str]) -> None:
+def assert_the_walk_reached(statements: Sequence[str], reached_only_inside_main: Iterable[str]) -> None:
     __tracebackhide__ = True
     found = "\n".join(statements)
-    for module in modules:
+    for module in reached_only_inside_main:
         assert module in found, (
             f"the launch imports {module}; the walk missed it. "
             f"The walk found {len(statements)} statements.")
 
 
 def assert_an_unresolvable_import_is_caught(
-    replay: Replay, statements: list[str], through_module: str,
+    replay: RunsTheStatementsTheLaunchersWay, statements: list[str], through_module: str,
 ) -> None:
     __tracebackhide__ = True
     result = replay([*statements, f"from {through_module} import NoSuchSymbol"])

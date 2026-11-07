@@ -4,6 +4,9 @@ import ast
 import os
 from pathlib import Path
 
+# vulture counts an assignment as a use, so it never reports a module constant nothing measures against,
+# a constructor parameter stored on self and never read, a dataclass field every build writes and nobody
+# reads, or an argparse option the parser declares and the app never consults; these scans do.
 _NOT_THE_REPOS = frozenset({".venv", "__pycache__", ".claude", ".git", "state"})
 _GETATTRS_NAME = 1
 
@@ -174,6 +177,8 @@ def _names_imported_from_anywhere(root) -> set[str]:
 
 
 def test_helpers(root, tests_dir) -> list[str]:
+    # An app's dead-code gate points vulture at its packages and never at its tests, where every fake
+    # collaborator's methods would be reported, so a helper left over in a test file is found here.
     imported = _names_imported_from_anywhere(root)
     found: list[str] = []
     for path in sorted(Path(tests_dir).rglob("*.py")):

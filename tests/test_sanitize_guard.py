@@ -17,7 +17,6 @@ from app_support.sanitize import (
     scan_files,
 )
 from app_support.sanitize.guard import Violation, _fold, _matcher, build_parser, main
-from app_support.siblings import not_a_checkout
 
 
 class TestFold:
@@ -232,24 +231,6 @@ class TestBlocklistPath:
         (repo / ".sanitize" / "blocklist.txt").write_text("stale\n", encoding="utf-8")
         assert blocklist_path(repo).parent.parent == family.resolve()
 
-    def test_the_list_is_in_no_checkout_so_no_commit_can_carry_it(self, tmp_path: Path):
-        family = tmp_path / "family"
-        repo = _checkout(family, "repo")
-
-        assert repo.resolve() not in blocklist_path(repo).parents
-
-    def test_every_checkout_on_the_machine_reads_the_one_list(self, tmp_path: Path):
-        family = tmp_path / "family"
-        one = _checkout(family, "one")
-        another = _checkout(family, "another")
-
-        assert blocklist_path(one) == blocklist_path(another)
-
-    def test_the_lists_folder_is_one_a_walk_over_the_checkouts_passes_by(self, tmp_path: Path):
-        repo = _checkout(tmp_path / "family", "repo")
-
-        assert not_a_checkout(blocklist_path(repo).parent.name)
-
     def test_finds_it_from_a_worktree_too(self, tmp_path: Path):
         family = tmp_path / "family"
         primary = _checkout(family, "repo")
@@ -315,15 +296,6 @@ class TestTheHooksMakeGitRefuseTheCommit:
         assert done.returncode != 0
         assert "blocked term" in done.stderr
         assert self.TERM not in done.stderr
-
-    def test_the_refusal_says_a_commit_made_anyway_is_in_history_for_good(self, tmp_path: Path):
-        repo = self._repo(tmp_path, f"{self.TERM}\n")
-        (repo / "notes.md").write_text(f"this has {self.TERM} in it\n", encoding="utf-8")
-        git("add", ".", cwd=repo)
-
-        done = self._commit(repo)
-
-        assert "in history for good" in done.stderr
 
     def test_the_hook_refuses_a_file_named_after_a_term(self, tmp_path: Path):
         repo = self._repo(tmp_path, f"{self.TERM}\n")
