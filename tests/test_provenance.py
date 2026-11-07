@@ -46,7 +46,7 @@ class TestStamp:
         assert git(*IDENTIFIED, "rev-parse", "HEAD", cwd=repo) != first
         assert provenance.stamp("someapp", anchor=anchor)["app_commit"] == first
 
-    def test_says_when_the_checkout_carried_edits_since_a_preview_often_runs_with_them(self, tmp_path: Path):
+    def test_says_when_the_checkout_carried_edits_the_commit_does_not_as_a_previews_often_does(self, tmp_path: Path):
         repo = _a_real_repository_since_reading_one_is_the_whole_job(tmp_path)
         (repo / "someapp" / "app.py").write_text("edited", encoding="utf-8")
 
@@ -63,7 +63,8 @@ class TestStamp:
         assert recorded["app_commit"] is None
         assert recorded["app_dirty"] is None
 
-    def test_records_the_method_and_the_version_of_it_that_ran(self, tmp_path: Path):
+    def test_records_the_method_version_a_person_bumps_by_hand_beside_the_commit_that_moves_for_other_reasons(
+            self, tmp_path: Path):
         recorded = provenance.stamp("origenerator", anchor=tmp_path / "app.py",
                                     method="wan22_i2v", method_version="v007")
 
@@ -94,16 +95,6 @@ class TestStamp:
         assert (provenance.SCHEMA, set(stamped)) == (1, {
             "schema", "app", "app_commit", "app_dirty",
             provenance.METHOD, provenance.METHOD_VERSION, "stamped_at"})
-
-    def test_two_builds_at_one_method_version_are_told_apart_by_the_commit(self, tmp_path: Path):
-        one = _a_real_repository_since_reading_one_is_the_whole_job(tmp_path, "one")
-        two = _a_real_repository_since_reading_one_is_the_whole_job(tmp_path, "two")
-
-        stamps = [provenance.stamp("someapp", anchor=repo / repo.name / "app.py",
-                                   method="wan22_i2v", method_version="v007") for repo in (one, two)]
-
-        assert stamps[0][provenance.METHOD_VERSION] == stamps[1][provenance.METHOD_VERSION]
-        assert stamps[0]["app_commit"] != stamps[1]["app_commit"]
 
     def test_a_git_that_stops_answering_is_given_up_on_rather_than_freezing_the_app(self, tmp_path: Path):
         with patch("app_support.provenance.run_process_tree",

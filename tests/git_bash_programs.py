@@ -41,8 +41,9 @@ class GitBashPrograms:
                                   f"/usr/bin/bash -c 'echo running; read -t 120' {mark}-$0 \"$1\"; true", "it", naming],
                                  stdin=subprocess.PIPE, stdout=subprocess.PIPE, env=env)
         self._shells.append(shell)
-        running_said_before_which_the_runtime_has_no_environment_yet = shell.stdout.readline()
-        assert running_said_before_which_the_runtime_has_no_environment_yet
+        # On Windows, Git Bash's runtime has not set up the program's environment until the program has said running.
+        said_running = shell.stdout.readline()
+        assert said_running
         self._programs.append(waited_for(lambda process: f"{mark}-it" in process.cmdline, mark))
         return shell, self._programs[-1]
 

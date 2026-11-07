@@ -101,7 +101,7 @@ class TestWhatTheWalkLeavesOut:
         """)
         assert got == ["from pkg.window import Window"]
 
-    def test_a_bare_except_does_not_make_an_import_optional(self, tmp_path: Path):
+    def test_a_bare_except_catches_everything_and_promises_nothing_so_the_import_stays_required(self, tmp_path: Path):
         got = _one_file(tmp_path, """
             try:
                 from pkg.window import Window

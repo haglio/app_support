@@ -216,7 +216,8 @@ def _checkout(family: Path, name: str) -> Path:
 
 
 class TestBlocklistPath:
-    def test_reads_the_one_list_beside_the_checkouts(self, tmp_path: Path):
+    def test_reads_the_one_list_beside_the_checkouts_in_no_repo_where_committing_it_would_publish_its_terms(
+            self, tmp_path: Path):
         family = tmp_path / "family"
         repo = _checkout(family, "repo")
         shared = family / ".sanitize" / "blocklist.txt"
@@ -288,7 +289,8 @@ class TestTheHooksMakeGitRefuseTheCommit:
         here = Path(__file__).resolve().parents[1]
         return {**os.environ, "PYTHONPATH": str(guard_on_path or here)}
 
-    def test_the_hook_refuses_a_staged_banned_term(self, tmp_path: Path):
+    def test_the_hook_refuses_a_banned_term_while_still_staged_before_the_suite_could_meet_it_as_a_commit(
+            self, tmp_path: Path):
         repo = self._repo(tmp_path, f"{self.TERM}\n")
         (repo / "notes.md").write_text(f"this has {self.TERM} in it\n", encoding="utf-8")
         git("add", ".", cwd=repo)

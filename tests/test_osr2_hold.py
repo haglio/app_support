@@ -5,7 +5,7 @@ from app_support.osr2_hold import PARK, RESUME, RETRACT, ask_the_broker, hold_tc
 from app_support.state_files import BROKER_CMD
 
 
-def test_asking_the_broker_queues_each_verb_for_its_next_tick(tmp_path):
+def test_asking_the_broker_queues_each_verb_for_its_next_tick_the_one_hold_the_broker_and_every_readout_share(tmp_path):
     ask_the_broker(tmp_path, PARK)
     ask_the_broker(tmp_path, RESUME)
 

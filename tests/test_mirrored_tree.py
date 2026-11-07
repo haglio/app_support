@@ -33,7 +33,7 @@ def test_a_file_under_no_root_has_no_record_as_a_video_parked_outside_the_librar
     ) is None
 
 
-def test_the_first_root_that_holds_the_file_is_the_one_it_is_measured_from_so_the_narrower_goes_first(
+def test_the_first_root_that_holds_the_file_is_the_one_it_is_measured_from_so_the_narrower_goes_first_or_the_record_lands_a_folder_too_deep(
         tmp_path: Path):
     library = tmp_path / "videos" / "videos"
     wider = tmp_path / "videos"

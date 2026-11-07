@@ -19,7 +19,8 @@ SOURCE = Path("C:/example/config.json")
 
 
 class TestReadJsonConfig:
-    def test_a_relative_path_hangs_off_the_default_directory(self, tmp_path: Path):
+    def test_a_relative_path_hangs_off_the_default_directory_and_comes_back_for_the_sections_paths_to_hang_off(
+            self, tmp_path: Path):
         (tmp_path / "config.json").write_text(json.dumps({"a": 1}), encoding="utf-8")
 
         path, data = read_json_config(Path("config.json"), default_dir=tmp_path)
@@ -36,7 +37,7 @@ class TestResolvePath:
     def test_an_absolute_path_is_taken_as_given(self, tmp_path: Path):
         assert resolve_path(tmp_path, tmp_path / "state") == tmp_path / "state"
 
-    def test_a_relative_path_hangs_off_the_base_the_config_files_own_folder(self, tmp_path: Path):
+    def test_a_relative_path_hangs_off_the_base(self, tmp_path: Path):
         assert resolve_path(tmp_path, "state") == (tmp_path / "state").resolve()
 
 
@@ -68,7 +69,7 @@ class TestOptionalSection:
 
 
 class TestRequireValue:
-    def test_a_missing_value_names_itself_and_the_file(self):
+    def test_a_missing_value_names_itself_and_the_file_since_a_launcher_has_no_console_for_a_bare_keyerror(self):
         with pytest.raises(ValueError, match=r"config\.paths\.ahk_exe \(in .*config\.json\)"):
             require_value({}, "ahk_exe", SOURCE, context="config.paths")
 

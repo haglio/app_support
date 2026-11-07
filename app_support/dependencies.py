@@ -235,10 +235,11 @@ def undeclared_siblings(root: Path, packages: Iterable[Path], pyproject: Path) -
     inherited = inherited_siblings(declared, Path(root))
     if inherited is None:
         return wrong
-    wrong += [f"{name} is what {'/'.join(sorted(declared - {name}))} needs and declared nowhere"
+    wrong += [f"{name} is what {'/'.join(sorted(declared - {name}))} needs and declared nowhere, so the CI workflow "
+              "is the only record of it"
               for name in sorted(inherited - declared)]
     return wrong + [f"{name} is declared, imported nowhere, and needed by nothing declared: a clone and an install "
-                    "on every run"
+                    "on every run, and a dependency to whoever decides what may change"
                     for name in sorted(declared - set(needed) - inherited)]
 
 

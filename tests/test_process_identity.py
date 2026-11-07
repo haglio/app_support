@@ -410,7 +410,7 @@ class TestOwnsExeName:
             name = self.NAMER.exe_name("pythonw.exe", role)
             assert self.NAMER.owns_exe_name(name), name
 
-    def test_refuses_the_plain_interpreters_the_wider_pattern_lets_through(self):
+    def test_a_caller_knowing_only_the_image_name_gets_no_plain_interpreter_since_those_may_be_anyones(self):
         for name in ("pythonw.exe", "python.exe", "py.exe"):
             assert re.match(self.NAMER.process_name_pattern, name), name
             assert not self.NAMER.owns_exe_name(name), name

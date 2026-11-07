@@ -51,7 +51,7 @@ def test_a_key_nobody_stood_down_is_not_stood_down(environ):
     assert is_stood_down("Widget", environ=environ) is False
 
 
-def test_standing_down_is_remembered_in_a_file_since_its_writer_is_gone_when_it_matters(environ):
+def test_standing_down_is_remembered(environ):
     stand_down("Widget", environ=environ)
 
     assert is_stood_down("Widget", environ=environ) is True
@@ -77,7 +77,7 @@ def test_one_key_standing_down_says_nothing_about_another(environ):
     assert is_stood_down("Gadget", environ=environ) is False
 
 
-def test_the_marker_lands_under_localappdata_per_user_machine_local_and_outside_the_synced_project_trees(
+def test_the_marker_is_a_file_under_localappdata_since_its_writer_is_gone_when_read_and_the_project_trees_are_synced(
         tmp_path, environ):
     stand_down("Widget", environ=environ)
 
@@ -122,7 +122,7 @@ def test_a_peer_that_is_up_is_left_alone(environ):
     assert launches == []
 
 
-def test_a_peer_that_is_gone_is_started_never_killed_its_own_single_instance_guard_absorbs_a_duplicate(environ):
+def test_a_peer_that_is_gone_is_started_never_killed_since_a_kill_cannot_be_taken_back_and_a_duplicate_only_exits(environ):
     launches: list[str] = []
 
     _watch(up=lambda: False, launches=launches, environ=environ).tick()
@@ -139,7 +139,7 @@ def test_a_peer_that_was_stood_down_is_left_gone(environ):
     assert launches == []
 
 
-def test_a_stand_down_that_was_cleared_stops_holding_the_peer_down_an_app_clears_its_own_as_it_starts(environ):
+def test_a_stand_down_that_was_cleared_stops_holding_the_peer_down_as_launching_an_app_says_it_is_wanted_up(environ):
     launches: list[str] = []
     stand_down("Widget", environ=environ)
     clear_stand_down("Widget", environ=environ)
@@ -208,6 +208,7 @@ def test_the_default_interval_is_the_shared_one_a_quarter_hour_cheap_to_check_an
     watch.tick()
 
     assert checks == ["asked", "asked"]
+    assert DEFAULT_INTERVAL_SECONDS == 15 * 60
 
 
 

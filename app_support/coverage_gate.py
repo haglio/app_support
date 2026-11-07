@@ -137,8 +137,8 @@ def assert_config_is_the_familys(coveragerc, not_unit_tested=(), max_pragmas=0) 
     repo = coveragerc.parent
     for shell in not_unit_tested:
         if not (repo / shell.path).exists():
-            raise AssertionError(f"{coveragerc} excuses {shell.path}, which {repo} no longer has; "
-                                 "an excuse that outlives its file comes to excuse something else")
+            raise AssertionError(f"{coveragerc} excuses {shell.path}, which {repo} no longer has: the omit excludes "
+                                 "nothing, and its reason outlives the code it was about")
     excused = _lines_excused_where_they_stand(repo, (*_NOT_WHAT_A_REPO_SHIPS, *not_unit_tested))
     if len(excused) > max_pragmas:
         raise AssertionError(

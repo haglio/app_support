@@ -26,8 +26,7 @@ def trash_folder_beside(flicks_folder: Path) -> Path:
 def flicks_folder_in(genau: Path) -> Path | None:
     if not genau.is_dir():
         return None
-    by_shape_since_no_tracked_file_may_spell_its_name = [
-        folder for folder in genau.iterdir()
-        if folder.is_dir() and folder != trash_folder_beside(folder) and flat_flicks_in(folder).is_dir()]
-    found = by_shape_since_no_tracked_file_may_spell_its_name
-    return found[0] if len(found) == 1 else None
+    fitting = [folder for folder in genau.iterdir()
+               if folder.is_dir() and folder != trash_folder_beside(folder)
+               and flat_flicks_in(folder).is_dir()]
+    return fitting[0] if len(fitting) == 1 else None

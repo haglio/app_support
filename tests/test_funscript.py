@@ -52,7 +52,7 @@ def test_a_document_that_is_not_an_object_reads_as_no_actions(tmp_path: Path):
     assert read_actions(path) == []
 
 
-def test_a_built_document_carries_every_key_an_external_player_reads():
+def test_a_built_document_carries_every_key_an_external_player_reads_with_the_videos_own_duration_since_a_script_can_stop_before_it():
     built = document([], duration_seconds=100, creator="Example Editor")
 
     assert built == {

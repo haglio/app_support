@@ -31,7 +31,7 @@ def _answered_at(state_dir: Path, when: float) -> None:
     publish_stamp(state_dir / OSR2_SERIAL_ANSWER, when)
 
 
-def test_an_osr2_heard_from_within_the_window_is_switched_on(tmp_path):
+def test_an_osr2_heard_from_within_the_window_is_switched_on_the_one_way_the_broker_and_every_readout_read_it(tmp_path):
     _spoke_at(tmp_path, 100.0)
 
     assert switched_on(tmp_path, now=100.0 + SILENT_ONCE_OFF_S - 0.1)

@@ -274,6 +274,8 @@ class TestTheRendering:
             self, shape):
         text = launcher.render(shape)
 
+        # CPython imports a repo folder on PYTHONPATH as a namespace package that shadows the venv's editable installs,
+        # and a python found on PATH has none of the venv's siblings, so it dies importing before it can log a word.
         assert "PYTHONPATH" not in text
         assert "where " not in text
         assert "py -3" not in text
@@ -749,7 +751,8 @@ class TestALaunch:
         assert f'2>&1 & type nul > "{exited}"' in run.output
         assert "dialog:" not in run.output
 
-    def test_a_launch_that_takes_a_moment_to_come_up_is_waited_for(self, tmp_path: Path):
+    def test_a_launch_that_takes_a_moment_to_come_up_is_waited_for_once_the_last_launchs_exit_stamp_is_gone_or_it_would_read_as_this_one_dying(
+            self, tmp_path: Path):
         checkout = _checkout(tmp_path, WATCHED)
         _venv(checkout, "python.exe")
         (checkout / "state").mkdir()

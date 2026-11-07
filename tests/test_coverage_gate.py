@@ -64,7 +64,7 @@ def test_a_config_that_drifted_anywhere_but_its_floor_is_refused(tmp_path):
         coverage_gate.assert_config_is_the_familys(written)
 
 
-def test_an_excuse_for_a_file_that_has_gone_is_refused_before_it_excuses_something_else(tmp_path):
+def test_an_excuse_for_a_file_that_has_gone_is_refused_since_it_excludes_nothing_and_its_reason_outlives_the_code(tmp_path):
     shell = coverage_gate.NotUnitTested("pkg/shell.py", "needs a headset")
     written = _repo(tmp_path, not_unit_tested=(shell,))
     (tmp_path / "pkg" / "shell.py").unlink()

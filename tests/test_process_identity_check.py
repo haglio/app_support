@@ -53,7 +53,8 @@ class TestWhatItRefuses:
             assert_the_process_is_named(_an_app_that_names_itself(interpreter="pythonw.exe"), tmp_path,
                 ProcessName(app_name="Highdeas", role="Highdeas", interpreter="python.exe"))
 
-    def test_an_app_that_copies_whatever_it_is_running_under(self, tmp_path: Path):
+    def test_an_app_that_copies_whatever_it_is_running_under_names_a_copy_after_a_copy_from_its_second_run_on(
+            self, tmp_path: Path):
         def copies_itself():
             ProcessNamer("Highdeas").named_exe(sys.executable, "Highdeas")
 

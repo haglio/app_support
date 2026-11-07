@@ -265,6 +265,7 @@ def test_on_a_machine_nobody_is_using_the_workers_compete_with_the_runs():
 
 
 @windows_only
+# GitHub's runner starts the whole job below normal priority, which the runs keep too.
 def test_the_runs_keep_the_priority_the_gate_was_started_with_lowered_a_test_waiting_on_its_child_starved(
         tmp_path: Path):
     (tmp_path / "test_own_priority.py").write_text(OWN_PRIORITY, encoding="utf-8")

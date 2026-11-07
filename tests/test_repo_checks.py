@@ -72,7 +72,8 @@ def test_the_familys_checks_lead_then_the_repos_own_then_the_rest(tmp_path: Path
     assert _run_order(repo) == [THE_FAMILYS_CHECK, "test_the_whole_tree", "test_what_the_code_does"]
 
 
-def test_the_checks_still_lead_a_run_another_plugin_reorders_after_everything_else(tmp_path: Path):
+def test_the_checks_still_lead_a_run_another_plugin_reorders_after_everything_else_as_the_merge_gate_shuffles_and_deals_every_run(
+        tmp_path: Path):
     repo = _repo(tmp_path, {"tests/conftest.py": A_PLUGIN_THAT_REVERSES_EVERY_RUN_LAST,
                             "tests/test_a_code.py": A_TEST, "tests/test_z_tree.py": A_CHECK_OF_ITS_OWN})
 
