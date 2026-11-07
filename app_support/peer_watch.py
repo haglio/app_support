@@ -14,13 +14,14 @@ _MARKER_DIR = ("app_support", "peer-watch")
 log = logging.getLogger(__name__)
 
 
-def _stand_down_marker(key: str, environ: Mapping[str, str]) -> Path:
-    base = environ.get("LOCALAPPDATA") or Path.home()
-    return Path(base).joinpath(*_MARKER_DIR) / f"{key}.txt"
+def _the_one_spelling_of_the_marker_both_apps_of_a_pair_find(key_both_apps_spell_alike: str,
+                                                            environ: Mapping[str, str]) -> Path:
+    per_user_machine_local_and_outside_every_synced_project_tree = environ.get("LOCALAPPDATA") or Path.home()
+    return Path(per_user_machine_local_and_outside_every_synced_project_tree).joinpath(*_MARKER_DIR) / f"{key_both_apps_spell_alike}.txt"
 
 
 def stand_down(key: str, *, environ: Mapping[str, str] = os.environ) -> None:
-    marker = _stand_down_marker(key, environ)
+    marker = _the_one_spelling_of_the_marker_both_apps_of_a_pair_find(key, environ)
     try:
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text(
@@ -33,7 +34,7 @@ def stand_down(key: str, *, environ: Mapping[str, str] = os.environ) -> None:
 
 
 def clear_stand_down(key: str, *, environ: Mapping[str, str] = os.environ) -> None:
-    marker = _stand_down_marker(key, environ)
+    marker = _the_one_spelling_of_the_marker_both_apps_of_a_pair_find(key, environ)
     try:
         marker.unlink(missing_ok=True)
     except OSError:
@@ -42,7 +43,7 @@ def clear_stand_down(key: str, *, environ: Mapping[str, str] = os.environ) -> No
 
 def is_stood_down(key: str, *, environ: Mapping[str, str] = os.environ) -> bool:
     try:
-        return _stand_down_marker(key, environ).exists()
+        return _the_one_spelling_of_the_marker_both_apps_of_a_pair_find(key, environ).exists()
     except OSError:
         return False
 

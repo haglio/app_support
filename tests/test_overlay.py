@@ -23,13 +23,14 @@ def _json(path: Path, data: dict) -> Path:
 
 
 class TestReadOverlay:
-    def test_the_committed_example_answers_when_there_is_no_local_overlay(self, tmp_path: Path):
+    def test_the_committed_example_of_tame_placeholders_answers_when_there_is_no_local_overlay(self, tmp_path: Path):
         example = _json(tmp_path / "content.example.json", {"library_root": "C:/example"})
 
         assert read_overlay(tmp_path / "content.local.json", example) == {"library_root": "C:/example"}
         assert overlay_path(tmp_path / "content.local.json", example) == example
 
-    def test_the_local_overlay_answers_instead_when_it_is_there(self, tmp_path: Path):
+    def test_the_local_overlay_answers_instead_when_it_is_there_as_written_merging_and_caching_are_each_repos(
+            self, tmp_path: Path):
         example = _json(tmp_path / "content.example.json", {"library_root": "C:/example", "acts": ["a"]})
         local = _json(tmp_path / "content.local.json", {"library_root": "D:/mine"})
 
@@ -42,7 +43,7 @@ _EXAMPLE = {"_comment": "what this file is", "phrases": ["skip ahead"],
 
 
 class TestBackfilled:
-    def test_a_missing_key_takes_the_examples_value(self):
+    def test_a_missing_key_takes_the_examples_value_where_the_placeholder_is_a_usable_fallback(self):
         data = backfilled({"acts": {"zeta": ["zeta"]}}, _EXAMPLE, empty_when_absent={})
 
         assert data["phrases"] == ["skip ahead"]
@@ -52,7 +53,8 @@ class TestBackfilled:
 
         assert data["phrases"] == ["rewind that"]
 
-    def test_a_key_named_empty_when_absent_takes_that_value_not_the_placeholder(self):
+    def test_a_key_named_empty_when_absent_takes_that_value_not_a_placeholder_that_would_be_written_onto_a_record(
+            self):
         data = backfilled({"acts": {}}, _EXAMPLE, empty_when_absent={"web_providers": []})
 
         assert data["web_providers"] == []
@@ -67,7 +69,8 @@ class TestBackfilled:
 
 
 class TestMissingKeys:
-    def test_a_local_overlay_missing_a_key_the_example_documents_is_named(self, tmp_path: Path):
+    def test_a_local_overlay_missing_a_key_the_example_documents_is_named_before_a_launch_fails_far_from_the_cause(
+            self, tmp_path: Path):
         example = _json(tmp_path / "content.example.json",
                         {"library_root": "C:/x", "genau_source": "a", "labels": ["b"]})
         local = _json(tmp_path / "content.local.json", {"labels": ["mine"]})
@@ -80,7 +83,7 @@ class TestMissingKeys:
 
         assert missing_keys(local, example) == ()
 
-    def test_a_key_present_but_empty_is_not_missing(self, tmp_path: Path):
+    def test_a_key_present_but_empty_is_not_missing_since_empty_is_how_a_feature_is_switched_off(self, tmp_path: Path):
         example = _json(tmp_path / "content.example.json", {"library_root": "C:/x", "synonyms": [["a"]]})
         local = _json(tmp_path / "content.local.json", {"library_root": "D:/y", "synonyms": []})
 
@@ -100,7 +103,7 @@ class TestMissingKeys:
 
 
 class TestOverlayValue:
-    def test_the_value_at_a_path_of_keys(self):
+    def test_the_value_at_a_path_of_keys_for_what_an_app_cannot_run_without_optional_ones_are_read_with_get(self):
         assert overlay_value({"a": {"b": 1}}, "a", "b") == 1
 
     def test_an_absent_key_is_named_with_how_far_the_path_got(self, tmp_path: Path):

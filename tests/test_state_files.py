@@ -20,7 +20,7 @@ from app_support.file_channel import (
 _NAMES = {name: value for name, value in vars(state_files).items() if name.isupper()}
 
 
-def test_every_name_is_a_distinct_text_file_spelled_here_once():
+def test_every_name_is_a_distinct_text_file_spelled_here_once_each_one_two_repos_meet_at():
     assert len(set(_NAMES.values())) == len(_NAMES)
     for value in _NAMES.values():
         assert value.endswith(".txt")
@@ -58,7 +58,7 @@ class TestTheBrokersHeartbeat:
 
 
 @pytest.mark.parametrize("name", [state_files.OSR2_SERIAL_RX, state_files.OSR2_SERIAL_TX])
-class TestTheDevicesLastWords:
+class TestTheLastWordsFromAndToTheDevice:
     def test_what_the_broker_stamps_is_the_age_the_session_reads(self, tmp_path: Path, name: str):
         path = tmp_path / name
         publish_stamp(path, 100.0)
@@ -78,7 +78,7 @@ class TestBrokerMode:
         write_flag(path, False)
         assert read_flag(path, default=False) is False
 
-    def test_no_broker_yet_means_the_broker_is_not_in_auto(self, tmp_path: Path):
+    def test_no_broker_yet_means_the_osr2_is_not_in_its_own_auto_mode(self, tmp_path: Path):
         assert read_flag(tmp_path / state_files.BROKER_MODE, default=False) is False
 
 

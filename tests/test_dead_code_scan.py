@@ -239,8 +239,10 @@ def test_a_package_the_gate_does_not_name_is_reported(tmp_path):
         assert_every_package_is_scanned(tmp_path, ("app",))
 
 
-def test_an_import_unused_in_its_own_file_is_reported_even_if_a_sibling_uses_the_name(tmp_path):
+def test_an_import_unused_in_its_own_file_is_reported_though_a_sibling_uses_the_name_and_the_repos_ruff_toml_excuses_it(
+        tmp_path):
     (tmp_path / "pkg").mkdir()
+    (tmp_path / "ruff.toml").write_text('[lint.per-file-ignores]\n"pkg/b.py" = ["F401"]\n', encoding="utf-8")
     (tmp_path / "pkg" / "__init__.py").write_text("", encoding="utf-8")
     (tmp_path / "pkg" / "a.py").write_text("import os\n\n\ndef a():\n    return os.sep\n", encoding="utf-8")
     (tmp_path / "pkg" / "b.py").write_text("import os\n\n\ndef b():\n    return 1\n", encoding="utf-8")

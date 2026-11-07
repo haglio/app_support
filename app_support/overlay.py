@@ -47,8 +47,9 @@ class MissingOverlayKey(LookupError):
         self.path = path
         where = f"the content overlay {path}" if path is not None else "the content overlay"
         super().__init__(
-            f"{where} has no {' -> '.join(self.keys)}. It replaces content.example.json "
-            f"rather than merging with it, so it has to carry every key that one does."
+            f"{where} has no {' -> '.join(self.keys)}. The git-ignored content.local.json replaces "
+            f"content.example.json rather than merging with it, so it has to carry every key that one does, "
+            f"and a file kept by hand gains none when the app does."
         )
 
 

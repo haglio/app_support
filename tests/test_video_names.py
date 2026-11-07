@@ -83,7 +83,7 @@ class TestClipTitle:
         assert clip_title({"clip": "Alpha Study 3"}) == ""
 
 
-def test_a_videos_version_family_is_the_group_evolver_recorded():
+def test_a_videos_version_family_is_the_group_evolver_recorded_and_fun_time_reads():
     assert version_group_of({"version": {"group": "y", "processed": True}}) == "y"
     assert version_group_of({"clip": {"compilation": "Vol6"}}) == ""
     assert version_group_of({"version": "y"}) == ""

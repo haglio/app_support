@@ -270,7 +270,8 @@ class TestTheRendering:
 
         assert code[0] == "Option Explicit"
 
-    def test_nothing_goes_on_the_python_path_and_no_interpreter_is_searched_for(self, shape):
+    def test_nothing_goes_on_pythonpath_and_no_python_on_path_is_used_so_the_siblings_come_from_the_venv(
+            self, shape):
         text = launcher.render(shape)
 
         assert "PYTHONPATH" not in text

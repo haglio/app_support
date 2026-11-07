@@ -108,7 +108,8 @@ class TestInstallExceptionLogging:
         content = log_file.read_text(encoding="utf-8")
         assert "KeyboardInterrupt" not in content
 
-    def test_an_exception_that_kills_a_thread_reaches_the_log(self, tmp_path: Path):
+    def test_an_exception_that_kills_a_real_thread_reaches_the_log_a_hook_merely_installed_could_still_swallow_it(
+            self, tmp_path: Path):
         log_file = tmp_path / "exc.log"
         logger = configure_logging("test.exc.threadcrash", log_file)
         install_exception_logging(logger)
@@ -152,7 +153,7 @@ class TestEnableFaulthandler:
             handle.close()
 
     def test_arms_faulthandler_not_just_the_file(self, tmp_path: Path):
-        faulthandler.disable()
+        faulthandler.disable()  # pytest arms it for its own crash report, and would pass this with the function doing nothing
         log_file = tmp_path / "fault.log"
 
         handle = enable_faulthandler(log_file)
@@ -161,7 +162,7 @@ class TestEnableFaulthandler:
         finally:
             handle.close()
 
-    def test_appends_rather_than_truncating(self, tmp_path: Path):
+    def test_appends_rather_than_truncating_so_the_last_crash_survives_while_the_next_is_diagnosed(self, tmp_path: Path):
         log_file = tmp_path / "fault.log"
         log_file.write_text("earlier crash\n", encoding="utf-8")
 

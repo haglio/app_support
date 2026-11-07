@@ -24,7 +24,7 @@ def test_a_record_sits_at_the_same_relative_place_under_the_other_root(tmp_path:
     ) == records / "2D" / "outbox" / "clip.json"
 
 
-def test_a_file_under_no_root_has_no_record(tmp_path: Path):
+def test_a_file_under_no_root_has_no_record_as_a_video_parked_outside_the_library_wants_none(tmp_path: Path):
     assert mirrored_path(
         tmp_path / "elsewhere" / "clip.mp4",
         roots=(tmp_path / "videos" / "videos",),
@@ -33,7 +33,8 @@ def test_a_file_under_no_root_has_no_record(tmp_path: Path):
     ) is None
 
 
-def test_the_first_root_that_holds_the_file_is_the_one_it_is_measured_from(tmp_path: Path):
+def test_the_first_root_that_holds_the_file_is_the_one_it_is_measured_from_so_the_narrower_goes_first(
+        tmp_path: Path):
     library = tmp_path / "videos" / "videos"
     wider = tmp_path / "videos"
     records = tmp_path / "videos" / "metadata"

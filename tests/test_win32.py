@@ -107,7 +107,7 @@ class TestSetAppUserModelId:
             set_app_user_model_id("Example.App", shell32=lambda: shell32)
 
 
-def _guid_to_uuid(guid) -> uuid.UUID:
+def _read_back_as_a_uuid_since_restating_the_packing_proves_nothing(guid) -> uuid.UUID:
     return uuid.UUID(fields=(
         guid.Data1, guid.Data2, guid.Data3,
         guid.Data4[0], guid.Data4[1],
@@ -122,7 +122,7 @@ class TestTheShortcutProperty:
         # and leaves the second taskbar button this whole module exists to
         # prevent. The key is System.AppUserModel.ID, documented as
         # {9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3}, 5.
-        assert _guid_to_uuid(_PKEY_AppUserModel_ID.fmtid) == uuid.UUID(
+        assert _read_back_as_a_uuid_since_restating_the_packing_proves_nothing(_PKEY_AppUserModel_ID.fmtid) == uuid.UUID(
             "9f4c2855-9f79-4b39-a8d0-e1d42de1d5f3")
         assert _PKEY_AppUserModel_ID.pid == 5
 
@@ -186,7 +186,7 @@ class TestReadShortcut:
         assert len(ole32.CoUninitialize.calls) == 1
 
 
-def _through_the_script_host(tmp_path: pathlib.Path, script: str, **env: str) -> str:
+def _through_the_script_host_paths_in_the_environment_never_in_the_script(tmp_path: pathlib.Path, script: str, **env: str) -> str:
     path = tmp_path / f"probe-{uuid.uuid4().hex}.vbs"
     path.write_text(script, encoding="ascii")
     host = pathlib.Path(os.environ.get("SYSTEMROOT", r"C:\Windows")) / "System32" / "cscript.exe"
@@ -198,7 +198,7 @@ def _through_the_script_host(tmp_path: pathlib.Path, script: str, **env: str) ->
 
 def _a_shortcut(tmp_path: pathlib.Path) -> pathlib.Path:
     lnk = tmp_path / "Example.lnk"
-    _through_the_script_host(
+    _through_the_script_host_paths_in_the_environment_never_in_the_script(
         tmp_path,
         'Set shell = CreateObject("WScript.Shell")\n'
         'Set link = shell.CreateShortcut(shell.Environment("Process")("LNK_PATH"))\n'
@@ -210,7 +210,7 @@ def _a_shortcut(tmp_path: pathlib.Path) -> pathlib.Path:
 
 
 def _what_the_shell_reads_off(tmp_path: pathlib.Path, lnk: pathlib.Path) -> dict[str, str]:
-    output = _through_the_script_host(
+    output = _through_the_script_host_paths_in_the_environment_never_in_the_script(
         tmp_path,
         'Set shell = CreateObject("WScript.Shell")\n'
         'Set link = shell.CreateShortcut(shell.Environment("Process")("LNK_PATH"))\n'
@@ -262,7 +262,8 @@ class TestStampPinnedShortcuts:
         assert stamped == [(str(pins / "example app.lnk"), "Example.App")]
         assert result == {pins / "example app.lnk": None}
 
-    def test_a_pin_whose_name_only_begins_the_same_is_left_alone(self, tmp_path: pathlib.Path):
+    def test_a_pin_whose_name_only_begins_the_same_is_left_alone_as_a_retired_pin_beside_the_live_one_would_be(
+            self, tmp_path: pathlib.Path):
         pins = self._pins(tmp_path, "Example App VR.lnk", "Other.lnk", "Example App.txt")
         stamped: list[str] = []
 
@@ -272,7 +273,7 @@ class TestStampPinnedShortcuts:
         assert stamped == []
         assert result == {}
 
-    def test_a_refusal_is_held_against_its_own_shortcut_and_the_rest_are_still_stamped(
+    def test_a_refusal_is_held_against_its_own_shortcut_and_the_rest_are_still_stamped_whether_it_matters_is_the_apps(
         self, tmp_path: pathlib.Path,
     ):
         pins = self._pins(tmp_path, "Example.lnk", "Example Too.lnk")
@@ -357,7 +358,7 @@ class TestAShortcutWrittenOnWindows:
 
     def test_writing_over_a_shortcut_keeps_what_it_was_not_told(self, tmp_path: pathlib.Path):
         lnk = tmp_path / "Example.lnk"
-        _through_the_script_host(
+        _through_the_script_host_paths_in_the_environment_never_in_the_script(
             tmp_path,
             'Set shell = CreateObject("WScript.Shell")\n'
             'Set link = shell.CreateShortcut(shell.Environment("Process")("LNK_PATH"))\n'
@@ -548,7 +549,7 @@ class TestMutexName:
         assert mutex_name("Global\\ExampleApp", "C:/Example App/example_config.json") \
             == "Global\\ExampleApp.dce3a7c5ad9e"
 
-    def test_a_different_identity_gets_a_different_mutex(self):
+    def test_a_different_identity_gets_a_different_mutex_so_a_suites_own_instance_is_not_refused_by_the_live_one(self):
         first = mutex_name("Global\\ExampleApp", "C:/Example App/example_config.json")
         second = mutex_name("Global\\ExampleApp", "C:/Example App/other_config.json")
 
@@ -637,7 +638,8 @@ class TestTryAcquireMutex:
 
         assert log == ["CreateMutexW", "read the error"]
 
-    def test_a_refusal_to_make_the_mutex_at_all_is_not_a_second_instance(self):
+    def test_a_refusal_to_make_the_mutex_at_all_is_not_a_second_instance_a_caller_telling_them_apart_asks_is_mutex_held(
+            self):
         kernel32 = _FakeKernel32(handle=0)
 
         assert try_acquire_mutex("Global\\ExampleApp.dce3a7c5ad9e",

@@ -10,12 +10,13 @@ logger = logging.getLogger(__name__)
 
 VERSION = "1.0"
 
-RANGE = 100
+POS_RUNS_FROM_0_TO = 100
 
 
 def document(
     actions: list[dict], *, duration_seconds: int, creator: str = ""
 ) -> dict:
+    the_videos_length_which_no_last_action_can_tell = duration_seconds
     return {
         "actions": sorted(actions, key=lambda action: action["at"]),
         "inverted": False,
@@ -24,7 +25,7 @@ def document(
             "chapters": [],
             "creator": creator,
             "description": "",
-            "duration": duration_seconds,
+            "duration": the_videos_length_which_no_last_action_can_tell,
             "license": "",
             "notes": "",
             "performers": [],
@@ -34,7 +35,7 @@ def document(
             "type": "basic",
             "video_url": "",
         },
-        "range": RANGE,
+        "range": POS_RUNS_FROM_0_TO,
         "version": VERSION,
     }
 

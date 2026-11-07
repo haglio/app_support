@@ -17,10 +17,13 @@ __all__ = [
     "Osr2Mode", "Osr2Trouble", "mode", "switched_on", "trouble",
 ]
 
+# The OSR2's USB adapter takes whatever is sent to it, switched on or not, so only the OSR2's own words say it has
+# power; a switched-off OSR2 and one whose words no longer reach the computer both say nothing.
 SILENT_ONCE_OFF_S = 20.0
 ANSWERS_ONCE_OFF_S = 1.0
 ANSWERING_TRUSTED_S = 30.0
-TROUBLE_RENEWED_WITHIN_S = 3.0
+THE_BROKER_RENEWS_TROUBLE_EVERY_S = 1.0
+TROUBLE_RENEWED_WITHIN_S = 3 * THE_BROKER_RENEWS_TROUBLE_EVERY_S
 
 
 class Osr2Mode(StrEnum):

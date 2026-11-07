@@ -7,6 +7,8 @@ import threading
 
 
 def test_no_test_before_this_left_this_packages_hooks_installed():
+    # pytest puts a threading.excepthook of its own in place while a test runs, so the question is whether
+    # app_support's hook is still installed, never whether the default one is back.
     for hook in (sys.excepthook, threading.excepthook):
         assert getattr(hook, "__module__", None) != "app_support.logging_utils", (
             f"{hook!r} is still installed — a thread that dies from here on is "
