@@ -7,6 +7,7 @@ import pytest
 
 from app_support import unread
 from app_support.dead_code import (
+    SCAN_DEADLINE_S,
     assert_no_dead_code,
     assert_no_function_takes_an_argument_it_never_reads,
     assert_nothing_is_imported_or_assigned_and_left_unread,
@@ -17,6 +18,8 @@ from app_support.gates import Checkout
 from app_support.siblings import checkouts_that_import
 
 pytestmark = pytest.mark.repo_check
+
+_OUTLASTS_THE_SCAN = pytest.mark.timeout(SCAN_DEADLINE_S + 60)
 
 
 def _allowed(checkout: Checkout, kind: str) -> tuple[str, ...]:
@@ -45,6 +48,7 @@ def _vulture(checkout: Checkout) -> _Scan:
     return _Scan(checkout.code, each_alone, callers)
 
 
+@_OUTLASTS_THE_SCAN
 def test_no_dead_code(pytestconfig):
     checkout = Checkout.of(pytestconfig)
     scan = _vulture(checkout)
@@ -52,6 +56,7 @@ def test_no_dead_code(pytestconfig):
                         callers=scan.callers)
 
 
+@_OUTLASTS_THE_SCAN
 def test_the_whitelist_still_suppresses_what_it_claims_to(pytestconfig):
     checkout = Checkout.of(pytestconfig)
     if checkout.whitelist is not None:

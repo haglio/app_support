@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from app_support.dead_code import (
+    SCAN_DEADLINE_S,
     ScanDidNotRun,
     assert_every_package_is_scanned,
     assert_no_dead_code,
@@ -209,6 +210,21 @@ def test_a_file_vulture_cannot_parse_is_refused_rather_than_called_clean(tmp_pat
 
     with pytest.raises(ScanDidNotRun):
         scan(package)
+
+
+def test_a_scan_still_reading_at_its_deadline_is_refused_with_how_long_it_had(tmp_path):
+    package = _tree(tmp_path, widgets="def polish_the_brass():\n    pass\n")
+
+    with pytest.raises(ScanDidNotRun, match=r"still reading after 0\.001 s"):
+        scan(package, deadline_s=0.001)
+
+
+def test_the_gate_checks_that_scan_run_on_a_clock_longer_than_the_scans_deadline_so_a_slow_scan_fails_rather_than_kills_its_worker():
+    from app_support.gates import test_dead_code as gate  # noqa: PLC0415
+
+    for check in (gate.test_no_dead_code, gate.test_the_whitelist_still_suppresses_what_it_claims_to):
+        (clock,) = [mark.args[0] for mark in check.pytestmark if mark.name == "timeout"]
+        assert clock > SCAN_DEADLINE_S, check.__name__
 
 
 def test_a_package_the_gate_does_not_name_is_reported(tmp_path):
