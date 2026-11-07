@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from app_support.sanitize.guard import (
+    Violation,
     blocklist_path,
     find_violations,
     load_blocklist,
@@ -17,7 +18,7 @@ from app_support.sanitize.guard import (
 
 pytestmark = pytest.mark.repo_check
 
-_A_WHOLE_WORD = re.compile(r"(?<!\w)[A-Za-z]{4,}(?!\w)")
+_A_WORD_WELL_INSIDE_THE_MATCHERS_RULES = re.compile(r"(?<!\w)[A-Za-z]{4,}(?!\w)")
 
 
 def _repo_under_test(rootpath: Path) -> Path:
@@ -45,12 +46,17 @@ def _a_control_word_from(paths: Sequence[Path], terms: Sequence[str]) -> str | N
             text = path.read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
             continue
-        for match in _A_WHOLE_WORD.finditer(text):
+        for match in _A_WORD_WELL_INSIDE_THE_MATCHERS_RULES.finditer(text):
             word = match.group()
             if word.lower().endswith("s") or find_violations(word, terms):
                 continue
             return word
     return None
+
+
+def _one_scan_of_the_terms_and_the_control(tracked: Sequence[Path], terms: Sequence[str], control: str,
+                                           repo: Path, *, scan=scan_files) -> list[Violation]:
+    return scan(tracked, [*terms, control], root=repo)
 
 
 def test_no_blocklisted_terms_in_the_tracked_tree(pytestconfig):
@@ -71,7 +77,7 @@ def test_no_blocklisted_terms_in_the_tracked_tree(pytestconfig):
         f"the tracked-tree walk read no text at all: git named {len(tracked)} "
         f"files under {repo} and none of them could be read"
     )
-    violations = scan_files(tracked, [*terms, control], root=repo)
+    violations = _one_scan_of_the_terms_and_the_control(tracked, terms, control, repo)
     assert any(v.term == control for v in violations), (
         f"the scan came back without the control word carried out of {repo}, "
         "so it did not read the tree it is reporting on"

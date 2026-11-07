@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 
 from app_support import launcher, scheduled_tasks, win32
-from app_support.siblings import workspace_of
+from app_support.siblings import not_a_checkout, workspace_of
 from app_support.wording import listed
 
 PLACES = ("taskbar", "start-menu", "startup", "checkout")
@@ -205,7 +205,7 @@ def changes(workspace: Path, *, run=scheduled_tasks.schtasks) -> list[Change]:
 def _lists(workspace: Path) -> dict[str, tuple[Path, Declarations]]:
     found = {}
     for checkout in sorted(Path(workspace).iterdir()):
-        if checkout.name.startswith(".") or not (checkout / "pyproject.toml").is_file():
+        if not_a_checkout(checkout.name) or not (checkout / "pyproject.toml").is_file():
             continue
         try:
             found[checkout.name] = (checkout, declared(checkout))
