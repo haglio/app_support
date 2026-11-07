@@ -31,8 +31,8 @@ def test_what_a_process_left_running_on_it_is_ended_when_it_closes(tmp_path):
 
 @windows_only
 def test_a_pid_it_listed_that_now_names_a_process_elsewhere_is_left_running(
-        child_on_its_own_desktop, desktop_of_its_own, monkeypatch):
-    _, elsewhere = child_on_its_own_desktop
+        child_suspended_on_its_own_desktop_so_it_runs_nothing, desktop_of_its_own, monkeypatch):
+    _, elsewhere = child_suspended_on_its_own_desktop_so_it_runs_nothing
     desktop = DesktopOfItsOwn()
     listings = [[processes.Process(pid=elsewhere, ppid=0, started=0.0, name="python.exe", exe="", cmdline="")], []]
     monkeypatch.setattr(desktop, "running_on_it", lambda: listings.pop(0))

@@ -13,6 +13,7 @@ from . import ports
 __all__ = ["Osr2Sender", "Osr2Slot"]
 
 _TAKEN = b"taken\n"
+_LOOPBACK_SO_ONLY_THIS_MACHINE_CAN_DRIVE_THE_DEVICE = "127.0.0.1"
 
 Writer = Callable[[str, str], None]
 
@@ -58,7 +59,7 @@ class Osr2Slot:
     def start(self) -> None:
         self._listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
-            self._listener.bind(("127.0.0.1", self._port))
+            self._listener.bind((_LOOPBACK_SO_ONLY_THIS_MACHINE_CAN_DRIVE_THE_DEVICE, self._port))
             self._listener.listen()
         except OSError:
             self._logger.exception("The OSR2's slot could not listen on 127.0.0.1:%s, "
@@ -92,6 +93,7 @@ class Osr2Slot:
             try:
                 connection, _address = listener.accept()
             except OSError as exc:
+                # Windows fails an accept for a connection its sender dropped before it was taken.
                 if not self._closed.is_set():
                     self._logger.warning("The OSR2's slot could not take a connection: %s", exc)
                     self._closed.wait(self.ACCEPT_AGAIN_AFTER_S)
@@ -168,6 +170,7 @@ class Osr2Slot:
 
     @staticmethod
     def _hear_out(sender: _Sender) -> None:
+        # Windows resets a connection closed with data unread, and the word that the OSR2 was taken would go with it.
         with contextlib.suppress(OSError):
             while sender.connection.recv(4096):
                 pass
@@ -187,6 +190,12 @@ class Osr2Slot:
                 return
             self._holder = None
         self._logger.info("%s let go of the OSR2", sender.name)
+
+
+def _a_connection_that_never_makes_the_sending_loop_wait() -> socket.socket:
+    connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    connection.setblocking(False)
+    return connection
 
 
 class Osr2Sender:
@@ -229,8 +238,7 @@ class Osr2Sender:
     def _dial(self) -> None:
         if self._clock() < self._dial_again_at:
             return
-        connection = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        connection.setblocking(False)
+        connection = _a_connection_that_never_makes_the_sending_loop_wait()
         connection.connect_ex(self._address)
         self._connection = connection
 

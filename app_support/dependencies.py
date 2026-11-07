@@ -136,7 +136,8 @@ def assert_every_import_is_declared(
 ) -> None:
     missing = undeclared_imports(root, packages, pyproject, local=local, import_names=import_names)
     assert not missing, (
-        "Third-party imports no [project.dependencies] entry provides:\n  " + "\n  ".join(missing))
+        "Third-party imports no [project.dependencies] entry provides, so the merge gate and a fresh machine "
+        "install nothing for them:\n  " + "\n  ".join(missing))
 
 
 def unimported_dependencies(
@@ -229,14 +230,15 @@ def inherited_siblings(declared: Iterable[str], near: Path) -> set[str] | None:
 def undeclared_siblings(root: Path, packages: Iterable[Path], pyproject: Path) -> list[str]:
     needed = sibling_imports(root, packages, pyproject)
     declared = declared_siblings(pyproject)
-    wrong = [f"{name} is imported by {_some_of(files)} and declared nowhere"
+    wrong = [f"{name} is imported by {_some_of(files)} and declared nowhere, so the CI workflow is the only record of it"
              for name, files in needed.items() if name not in declared]
     inherited = inherited_siblings(declared, Path(root))
     if inherited is None:
         return wrong
     wrong += [f"{name} is what {'/'.join(sorted(declared - {name}))} needs and declared nowhere"
               for name in sorted(inherited - declared)]
-    return wrong + [f"{name} is declared, imported nowhere, and needed by nothing declared"
+    return wrong + [f"{name} is declared, imported nowhere, and needed by nothing declared: a clone and an install "
+                    "on every run"
                     for name in sorted(declared - set(needed) - inherited)]
 
 
@@ -354,7 +356,8 @@ def assert_every_sibling_is_pinned(pyproject: Path) -> None:
         siblings = set(tomllib.load(handle).get("tool", {}).get("haglio", {}).get("siblings", []))
     pinned = pinned_siblings(pyproject)
     assert siblings <= set(pinned), (
-        "a sibling with no pin runs whatever copy sits beside this checkout: "
+        "a sibling with no pin runs whatever copy sits beside this checkout, so a change there turns this repo's "
+        "gate red with no cause in its own history: "
         + ", ".join(sorted(siblings - set(pinned))))
     assert set(pinned) <= siblings, (
         "a pinned family repo that is not a declared sibling is one nobody counted: "

@@ -29,17 +29,17 @@ _LIMIT_S = 1.0
 _PROMPTLY_S = 5.0
 
 
-def _platform(name: str):
+def _only_the_platform_patched_so_a_wrong_constant_still_fails(name: str):
     return patch("app_support.subprocess_utils.sys.platform", name)
 
 
 def test_off_windows_no_creation_flags_are_asked_for():
-    with _platform("linux"):
+    with _only_the_platform_patched_so_a_wrong_constant_still_fails("linux"):
         assert hidden_subprocess_kwargs() == {}
 
 
 def test_off_windows_the_added_flag_has_nowhere_to_go_either():
-    with _platform("linux"):
+    with _only_the_platform_patched_so_a_wrong_constant_still_fails("linux"):
         assert hidden_subprocess_kwargs(creationflags=8) == {}
 
 
@@ -48,7 +48,7 @@ def test_both_suppressions_are_applied_not_just_one():
     # Windows: CREATE_NO_WINDOW alone leaves a child that explicitly asks for a window
     # showing one, and SW_HIDE alone still allocates the console; a console
     # flashing over the video is the bug either half on its own permits.
-    with _platform("win32"):
+    with _only_the_platform_patched_so_a_wrong_constant_still_fails("win32"):
         result = hidden_subprocess_kwargs()
 
     assert set(result) == {"creationflags", "startupinfo"}
@@ -61,7 +61,7 @@ def test_both_suppressions_are_applied_not_just_one():
 
 @_windows_half
 def test_a_flag_the_caller_adds_rides_with_the_hiding_one():
-    with _platform("win32"):
+    with _only_the_platform_patched_so_a_wrong_constant_still_fails("win32"):
         result = hidden_subprocess_kwargs(creationflags=8)
 
     assert result["creationflags"] == subprocess.CREATE_NO_WINDOW | 8
@@ -196,7 +196,7 @@ def test_off_windows_a_child_is_run_without_asking_for_a_job(monkeypatch):
     monkeypatch.setattr(win32, "JobObject", asked)
     hidden = hidden_subprocess_kwargs()
 
-    with _platform("linux"):
+    with _only_the_platform_patched_so_a_wrong_constant_still_fails("linux"):
         finished = run_process_tree([sys._base_executable, "-c", "print('said')"], timeout=60, text=True, **hidden)
 
     assert finished.stdout == "said\n"

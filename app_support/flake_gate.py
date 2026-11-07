@@ -44,6 +44,7 @@ class Effort(NamedTuple):
 def assert_they_hold_up(root: Path, ids: list[str], effort: Effort, *, python: str = sys.executable,
                         load: Callable[[], AbstractContextManager] = nullcontext) -> Repeats:
     if not ids:
+        # pytest handed no test ids runs the whole suite, and would here as many times as the runs ask.
         return Repeats([], [])
     runs, budget = effort
     command = [python, "-m", "pytest", "-q", "-p", "no:cacheprovider"]
@@ -86,7 +87,7 @@ _LONGEST_COMMAND_LINE = 32_766  # Win32 CreateProcessW's limit, less its termina
 
 
 class _Pace:
-    _TO_MEASURE_ON = 20
+    _ENOUGH_TO_PACE_BY_FEW_ENOUGH_TO_LOSE = 20
 
     def __init__(self) -> None:
         self.spent = 0.0
@@ -98,7 +99,7 @@ class _Pace:
 
     def tests_that_fit(self, seconds: float, runs: int) -> int:
         if not self.spent:
-            return self._TO_MEASURE_ON
+            return self._ENOUGH_TO_PACE_BY_FEW_ENOUGH_TO_LOSE
         return max(0, int(seconds * self.test_runs / (self.spent * runs)))
 
     def seconds_for(self, chunk: list[str]) -> float:

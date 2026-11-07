@@ -47,7 +47,7 @@ class TestDeclaredDependencies:
 
         assert declared_dependencies(root / "pyproject.toml") == {"examplelib", "other-thing", "third"}
 
-    def test_an_extra_is_a_declaration_too(self, tmp_path: Path):
+    def test_an_extra_is_a_declaration_too_installing_it_is_the_launchers_job(self, tmp_path: Path):
         root = _repo(tmp_path, source="")
         pyproject = (
             "[project]\n"
@@ -184,11 +184,11 @@ class TestTheDeclaredPythonFloor:
         workflow.write_text(f"jobs:\n{jobs}", encoding="utf-8")
         return workflow
 
-    def test_the_floor_is_the_lowest_version_the_gate_proves(self, tmp_path: Path):
+    def test_the_floor_is_the_lowest_version_the_gate_proves_not_the_first_it_lists(self, tmp_path: Path):
         root = _repo(tmp_path, source="", requires_python=">=3.12")
 
         assert_the_declared_floor_is_the_one_the_gate_runs(
-            root / "pyproject.toml", self._gate(root, "3.12", "3.14"))
+            root / "pyproject.toml", self._gate(root, "3.14", "3.12"))
 
     def test_a_floor_no_run_proves_is_named_with_both_numbers(self, tmp_path: Path):
         root = _repo(tmp_path, source="", requires_python=">=3.10")
@@ -283,13 +283,13 @@ class TestDeclaredSiblings:
         root = self._repo(tmp_path, source="from voice_core.listener import CommandListener\n")
 
         assert undeclared_siblings(root, [root / "someapp"], root / "pyproject.toml") == [
-            "voice_core is imported by someapp/app.py and declared nowhere"]
+            "voice_core is imported by someapp/app.py and declared nowhere, so the CI workflow is the only record of it"]
 
     def test_an_imported_sibling_no_pyproject_names_is_reported_with_its_files(self, tmp_path: Path):
         root = self._repo(tmp_path, source="import app_support.cli\n")
 
         assert undeclared_siblings(root, [root / "someapp"], root / "pyproject.toml") == [
-            "app_support is imported by someapp/app.py and declared nowhere"]
+            "app_support is imported by someapp/app.py and declared nowhere, so the CI workflow is the only record of it"]
 
     def test_a_siblings_package_counts_for_the_repo_that_ships_it(self, tmp_path: Path):
         root = self._repo(tmp_path, source="from funestra.playlist import PlaylistItem\n",
@@ -308,13 +308,13 @@ class TestDeclaredSiblings:
         root = self._repo(tmp_path, source="import funestra_core.funestra\n")
 
         assert undeclared_siblings(root, [root / "someapp"], root / "pyproject.toml") == [
-            "funestra is imported by someapp/app.py and declared nowhere"]
+            "funestra is imported by someapp/app.py and declared nowhere, so the CI workflow is the only record of it"]
 
     def test_a_declared_sibling_nothing_needs_is_reported_too(self, tmp_path: Path):
         root = self._repo(tmp_path, source="", siblings='"funestra"', beside=["funestra"])
 
         assert undeclared_siblings(root, [root / "someapp"], root / "pyproject.toml") == [
-            "funestra is declared, imported nowhere, and needed by nothing declared"]
+            "funestra is declared, imported nowhere, and needed by nothing declared: a clone and an install on every run"]
 
     def test_a_sibling_the_pytest_config_loads_as_a_plugin_counts_as_imported(self, tmp_path: Path):
         root = self._repo(tmp_path, source="", siblings='"app_support"',

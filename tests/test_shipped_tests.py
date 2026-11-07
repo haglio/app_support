@@ -122,7 +122,8 @@ class TestWhichRunsAreEnforced:
 
         assert shipped_tests.collected_beside_the_trees(config) == SHIPPED[:2]
 
-    def test_a_narrowed_run_collects_no_check_beside_what_it_named(self):
+    def test_a_narrowed_run_collects_no_check_beside_what_it_named_since_tests_run_pytest_on_one_file_and_count(
+            self):
         named = str(APP_SUPPORT / "tests" / "test_cli.py")
         config = self._Config([named], started_with=[named])
 
@@ -132,7 +133,7 @@ class TestWhichRunsAreEnforced:
 
 
 class TestWhatShippingReachesInAConsumer:
-    def test_this_repo_root_offers_a_consumer_only_the_one_name(self):
+    def test_this_repo_root_offers_a_consumer_only_the_one_name_or_every_app_would_import_its_tests(self):
         published = sorted(
             entry.name for entry in APP_SUPPORT.iterdir()
             if (entry.is_dir() and (entry / "__init__.py").exists())
@@ -201,10 +202,10 @@ class TestWhatShippingReachesInAConsumer:
         assert done.returncode == pytest.ExitCode.OK, done.stdout + done.stderr
         assert done.stdout.count(THE_BLOCKED_WORD_CHECK) == 1, done.stdout
 
-    def test_this_package_declares_no_pytest_entry_point(self):
-        pyproject = (APP_SUPPORT / "pyproject.toml").read_text(encoding="utf-8")
+    def test_this_package_declares_no_pytest_entry_point_so_no_suite_runs_its_checks_unasked(self):
+        the_declaration_since_without_one_nothing_runs = (APP_SUPPORT / "pyproject.toml").read_text(encoding="utf-8")
 
-        assert "pytest11" not in pyproject
+        assert "pytest11" not in the_declaration_since_without_one_nothing_runs
 
     def test_a_shuffled_run_dealt_into_parts_runs_the_blocked_word_check_in_exactly_one_part(
         self, tmp_path: Path,

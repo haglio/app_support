@@ -286,7 +286,8 @@ class TestWhenTheLaunchersLoadingScreenGoes:
 
         assert not launch.showing.over()
 
-    def test_it_goes_when_the_app_the_launcher_started_never_takes_over(self, launch):
+    def test_it_goes_when_the_app_the_launcher_started_never_takes_over_after_longer_than_any_app_needs(
+            self, launch):
         self.the_launcher_says(launch, loading_screen.STARTED)
         launch.clock.now += loading_screen.TAKING_OVER_WITHIN_S + 1
 

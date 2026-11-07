@@ -32,7 +32,8 @@ EXAMPLE: dict[str, Any] = {
 
 def settings_file() -> Path:
     named = os.environ.get(SETTINGS_ENV)
-    return Path(named) if named else Path.home() / ".haglio" / "settings.json"
+    outside_the_library_whose_place_it_names = Path.home() / ".haglio" / "settings.json"
+    return Path(named) if named else outside_the_library_whose_place_it_names
 
 
 def load() -> dict[str, Any]:

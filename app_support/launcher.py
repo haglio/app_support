@@ -228,7 +228,7 @@ def render(launcher: Launcher) -> str:
     if launcher.waits_out_a_rebase:
         sections.append(_rebase_folders().splitlines())
     if launcher.loading_screen:
-        sections.append(_loading_screen(launcher).splitlines())
+        sections.append(_loading_screen_on_the_updaters_interpreter(launcher).splitlines())
     if launcher.log:
         sections.append(_LOG.splitlines())
     if launcher.watch:
@@ -650,7 +650,7 @@ End Sub
 """
 
 
-def _loading_screen(launcher: Launcher) -> str:
+def _loading_screen_on_the_updaters_interpreter(launcher: Launcher) -> str:
     flag = f"fso.BuildPath(screenFolder, {_text(loading_screen.CANCELED)})"
     said = ", ".join(_text(name) for name in loading_screen.SAID_AT_EACH_LAUNCH)
     snapshots = "picturesFolder" if launcher.preview else "screenFolder"

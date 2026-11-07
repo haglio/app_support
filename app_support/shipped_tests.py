@@ -12,6 +12,8 @@ import pytest
 
 
 def is_a_full_run(config) -> bool:
+    # pytest's config.option already holds what plugins added to a run started on paths; known_args_namespace
+    # is the command line as it was given.
     return all((config.invocation_params.dir / named).is_dir()
                for named in config.known_args_namespace.file_or_dir)
 

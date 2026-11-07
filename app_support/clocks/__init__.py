@@ -5,6 +5,8 @@ import re
 _PER_TEST = re.compile(r"--timeout=([0-9]+)")
 _JOB = re.compile(r'  "?([A-Za-z0-9_-]+)"?:\s*(#.*)?')
 _CLOCK = re.compile(r'    "?timeout-minutes"?:\s*"?[1-9][0-9]*"?\s*(#.*)?')
+# GitHub Actions ends a job at six hours and names no test; a job calling a reusable workflow may not declare
+# timeout-minutes of its own, so the family's gate workflow is the clock on a job that calls it.
 _THE_FAMILYS_GATE = re.compile(r'    "?uses"?:\s*"?haglio/\.github/\.github/workflows/[a-z-]+\.yml@\S+"?\s*(#.*)?')
 
 
