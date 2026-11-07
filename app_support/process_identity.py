@@ -175,6 +175,10 @@ def read_version_field(exe: Path, field: str) -> str | None:
     return ctypes.wstring_at(value.value, length.value - 1)
 
 
+def _launcher_beside_the_running_copy(interpreter: str) -> Path:
+    return Path(sys.executable).with_name(interpreter)
+
+
 class ProcessNamer:
     def __init__(self, app_name: str, icon: str | Path | None = None, *,
                  stamp=stamp_identity, read_field=read_version_field) -> None:
@@ -187,7 +191,7 @@ class ProcessNamer:
     def exe_name(self, python_exe: str | Path, role: str) -> str:
         if not _ROLE_RE.match(role):
             raise ValueError(f"role must be plain letters, got {role!r}")
-        return f"{self.prefix}{role}{Path(python_exe).suffix}"
+        return f"{self.prefix}{role}{Path(python_exe).suffix}"  # the prefix leads, so Windows' task list sorts an app's rows together
 
     def description(self, role: str) -> str:
         if _squash(role) == _squash(self.app_name):
@@ -246,7 +250,7 @@ class ProcessNamer:
 
     def name_this_process(self, role: str, interpreter: str = "pythonw.exe") -> None:
         try:
-            self.named_exe(Path(sys.executable).with_name(interpreter), role)
+            self.named_exe(_launcher_beside_the_running_copy(interpreter), role)
         except Exception:
             logger.warning("Not naming this process (%s); launching unnamed", role, exc_info=True)
 

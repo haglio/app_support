@@ -55,8 +55,8 @@ def _a_control_word_from(paths: Sequence[Path], terms: Sequence[str]) -> str | N
 
 
 def _one_scan_of_the_terms_and_the_control(tracked: Sequence[Path], terms: Sequence[str], control: str,
-                                           repo: Path, *, scan=scan_files) -> list[Violation]:
-    return scan(tracked, [*terms, control], root=repo)
+                                           repo: Path) -> list[Violation]:
+    return scan_files(tracked, [*terms, control], root=repo)
 
 
 def test_no_blocklisted_terms_in_the_tracked_tree(pytestconfig):

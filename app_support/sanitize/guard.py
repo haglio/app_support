@@ -10,12 +10,12 @@ from dataclasses import dataclass, field
 from functools import cache
 from pathlib import Path
 
-from app_support.siblings import primary_checkout_of
+from app_support.siblings import NOT_A_CHECKOUT_PREFIX, primary_checkout_of
 
 _MAX_EXCERPT = 160
 _MOST_LISTED = 20
 _LONGEST_WORD_KEPT_WHOLE = 3
-_BLOCKLIST = Path(".sanitize") / "blocklist.txt"
+_ONE_LIST_FOR_THE_MACHINE = Path(NOT_A_CHECKOUT_PREFIX + "sanitize") / "blocklist.txt"
 _SEPARATOR = r"[\s\-_.]*"
 _NAME_JOINERS = re.compile(r"[\s\-_.]+")
 _INFLECTION = r"(?:'?s|es|ed|ing)?"
@@ -126,7 +126,8 @@ def _violations_in(text: str, matchers: Sequence[_Matcher], path: str) -> list[V
 
 
 def blocklist_path(repo: Path) -> Path:
-    return primary_checkout_of(repo).resolve().parent / _BLOCKLIST
+    beside_the_checkouts_in_none_of_them = primary_checkout_of(repo).resolve().parent
+    return beside_the_checkouts_in_none_of_them / _ONE_LIST_FOR_THE_MACHINE
 
 
 def load_blocklist(path: Path) -> list[str]:

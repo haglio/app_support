@@ -84,7 +84,7 @@ class TestWriteFlag:
 
 
 class TestStamps:
-    def test_the_stamp_is_the_wall_clock_as_text(self, tmp_path: Path):
+    def test_the_stamp_is_the_wall_clock_the_one_clock_another_process_shares(self, tmp_path: Path):
         path = tmp_path / "state" / "heartbeat.txt"
 
         with patch("app_support.file_channel.time.time", return_value=123.45):

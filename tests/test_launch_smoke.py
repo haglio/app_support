@@ -46,6 +46,10 @@ class TestWhatTheWalkFinds:
         got = _one_file(tmp_path, "from . import state\nfrom .window import Window\n")
         assert got == ["from pkg import state", "from pkg.window import Window"]
 
+    def test_a_launch_file_at_the_top_of_its_package_never_imports_from_deeper_than_one_level(self, tmp_path: Path):
+        with pytest.raises(AssertionError, match="top of pkg"):
+            _one_file(tmp_path, "from ..deeper import thing\n")
+
     def test_reads_every_launch_file_it_is_given(self, tmp_path: Path):
         entry = _write(tmp_path / "pkg" / "__main__.py", "from pkg.app import main\n")
         app = _write(tmp_path / "pkg" / "app.py", "import json\n")
@@ -88,6 +92,15 @@ class TestWhatTheWalkLeavesOut:
         """)
         assert got == []
 
+    def test_an_import_inside_a_crash_reporters_except_exception_is_still_required(self, tmp_path: Path):
+        got = _one_file(tmp_path, """
+            try:
+                from pkg.window import Window
+            except Exception:
+                report_the_crash()
+        """)
+        assert got == ["from pkg.window import Window"]
+
     def test_a_bare_except_does_not_make_an_import_optional(self, tmp_path: Path):
         got = _one_file(tmp_path, """
             try:
@@ -103,14 +116,14 @@ class TestWhatTheWalkLeavesOut:
 
 
 class TestAgainstARealInterpreter:
-    def _package(self, tmp_path: Path, *, app_body: str) -> Path:
+    def _a_made_up_package_so_the_walk_is_tested_not_a_repo(self, tmp_path: Path, *, app_body: str) -> Path:
         _write(tmp_path / "pkg" / "__init__.py", "")
         _write(tmp_path / "pkg" / "window.py", "class Window:\n    pass\n")
         _write(tmp_path / "pkg" / "__main__.py", "from pkg.app import main\n")
         _write(tmp_path / "pkg" / "app.py", app_body)
         return tmp_path
 
-    def _run(self, root: Path):
+    def _run_the_launchs_way_without_pytests_path(self, root: Path):
         def run(statements: list[str]) -> subprocess.CompletedProcess:
             env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
             return subprocess.run(
@@ -123,32 +136,33 @@ class TestAgainstARealInterpreter:
         return [root / "pkg" / "__main__.py", root / "pkg" / "app.py"]
 
     def test_a_launch_whose_imports_all_resolve_passes(self, tmp_path: Path):
-        root = self._package(tmp_path, app_body="""
+        root = self._a_made_up_package_so_the_walk_is_tested_not_a_repo(tmp_path, app_body="""
             def main():
                 from pkg.window import Window
                 return Window
         """)
         assert_every_import_resolves(
-            self._run(root), launch_imports("pkg", self._files(root)))
+            self._run_the_launchs_way_without_pytests_path(root), launch_imports("pkg", self._files(root)))
 
-    def test_a_launch_naming_a_symbol_that_is_gone_fails(self, tmp_path: Path):
-        root = self._package(tmp_path, app_body="""
+    def test_a_symbol_the_launch_names_and_the_module_lost_fails_here_not_silently_at_the_icon(self, tmp_path: Path):
+        root = self._a_made_up_package_so_the_walk_is_tested_not_a_repo(tmp_path, app_body="""
             def main():
                 from pkg.window import NoLongerHere
                 return NoLongerHere
         """)
         with pytest.raises(AssertionError):
             assert_every_import_resolves(
-                self._run(root), launch_imports("pkg", self._files(root)))
+                self._run_the_launchs_way_without_pytests_path(root), launch_imports("pkg", self._files(root)))
 
     def test_the_negative_control_catches_an_unresolvable_import(self, tmp_path: Path):
-        root = self._package(tmp_path, app_body="""
+        root = self._a_made_up_package_so_the_walk_is_tested_not_a_repo(tmp_path, app_body="""
             def main():
                 from pkg.window import Window
                 return Window
         """)
         assert_an_unresolvable_import_is_caught(
-            self._run(root), launch_imports("pkg", self._files(root)), "pkg.window")
+            self._run_the_launchs_way_without_pytests_path(root), launch_imports("pkg", self._files(root)),
+            "pkg.window")
 
 
 class TestTheAssertionsGoRed:
@@ -180,10 +194,13 @@ class TestTheAssertionsGoRed:
         assert_the_walk_reached(
             ["from pkg.state import Store", "import json"], ["pkg.state"])
 
-    def test_a_negative_control_that_reported_success_fails_the_assertion(self):
+    def test_only_the_negative_control_catches_a_replay_that_reports_success_regardless(self):
+        succeeds_regardless_yet_names_the_symbol = self._reports(0, "NoSuchSymbol")
+        assert_every_import_resolves(succeeds_regardless_yet_names_the_symbol, ["import json"])
+
         with pytest.raises(AssertionError):
             assert_an_unresolvable_import_is_caught(
-                self._reports(0, "NoSuchSymbol"), ["import json"], "pkg.window")
+                succeeds_regardless_yet_names_the_symbol, ["import json"], "pkg.window")
 
     def test_a_negative_control_failing_for_some_other_reason_fails(self):
         with pytest.raises(AssertionError):

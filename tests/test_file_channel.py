@@ -8,6 +8,7 @@ from unittest.mock import call, patch
 
 import pytest
 
+from app_support import file_channel
 from app_support.file_channel import (
     append_command,
     consume_command_file,
@@ -15,6 +16,7 @@ from app_support.file_channel import (
     read_paused_state,
     read_whole,
     retried_while_held,
+    write_flag,
     write_whole,
 )
 
@@ -58,7 +60,7 @@ def test_append_command_creates_the_file_and_its_directory(tmp_path: Path):
     assert consume_command_file(path) == ["QUIT"]
 
 
-def test_append_command_retries_past_a_drain_then_gives_up(tmp_path: Path, held_open):
+def test_a_verb_the_drain_outlasts_is_given_up_with_false_never_a_raise_into_the_loop(tmp_path: Path, held_open):
     path = tmp_path / "cmd.txt"
 
     with held_open(path, access=_GENERIC_READ, share=_SHARED_WITH_NOBODY,
@@ -165,6 +167,22 @@ def test_consume_takes_the_queue_away(tmp_path: Path):
     assert not path.with_suffix(path.suffix + ".consuming").exists()
 
 
+def test_a_verb_appended_while_the_queue_is_being_read_is_drained_next_tick(tmp_path: Path):
+    path = tmp_path / "cmd.txt"
+    path.write_text("NEXT", encoding="utf-8")
+    read = file_channel._read_text
+
+    def a_late_verb_arrives_as_the_queue_is_read(claimed: Path) -> str:
+        text = read(claimed)
+        append_command(path, "LATE")
+        return text
+
+    with patch("app_support.file_channel._read_text", side_effect=a_late_verb_arrives_as_the_queue_is_read):
+        assert consume_command_file(path) == ["NEXT"]
+
+    assert consume_command_file(path) == ["LATE"]
+
+
 def test_a_verb_appended_after_a_consume_is_read_by_the_next(tmp_path: Path):
     path = tmp_path / "cmd.txt"
     path.write_text("NEXT", encoding="utf-8")
@@ -184,13 +202,13 @@ def test_consume_uppercases_commands(tmp_path: Path):
     assert result == ["RESUME", "HUD_ON"]
 
 
-def test_consume_preserves_case_when_uppercase_disabled(tmp_path: Path):
+def test_with_uppercase_off_nothing_is_folded_the_keyword_is_the_callers_to_fold(tmp_path: Path):
     cmd_file = tmp_path / "cmd.txt"
-    cmd_file.write_text("PLAY_FILE C:/Videos/MyClip.mp4\n", encoding="utf-8")
+    cmd_file.write_text("play_file C:/Videos/MyClip.mp4\n", encoding="utf-8")
 
     commands = consume_command_file(cmd_file, uppercase=False)
 
-    assert commands == ["PLAY_FILE C:/Videos/MyClip.mp4"]
+    assert commands == ["play_file C:/Videos/MyClip.mp4"]
 
 
 def test_consume_strips_a_byte_order_mark(tmp_path: Path):
@@ -212,6 +230,13 @@ def test_read_paused_state_reads_flag(tmp_path: Path):
 
     paused_file.write_text("0", encoding="utf-8")
     assert read_paused_state(paused_file) is False
+
+
+def test_pause_is_a_state_read_again_and_again_not_an_event_consumed_once(tmp_path: Path):
+    paused = tmp_path / "paused.txt"
+    write_flag(paused, True)
+
+    assert [read_paused_state(paused) for _ in range(3)] == [True, True, True]
 
 
 def test_read_paused_state_strips_a_byte_order_mark(tmp_path: Path):
@@ -248,7 +273,7 @@ def test_a_publish_keeps_the_line_endings_the_format_asks_for(tmp_path: Path):
     assert path.read_bytes() == b"one\r\ntwo\r\n"
 
 
-def test_a_write_that_could_not_land_raises_rather_than_reporting_it(tmp_path: Path):
+def test_a_rewrite_that_could_not_land_raises_since_an_unread_false_reads_as_landed(tmp_path: Path):
     path = tmp_path / "session.json"
 
     with (
@@ -322,10 +347,21 @@ def test_a_write_that_dies_part_way_leaves_the_old_file_whole(tmp_path: Path):
         write_whole(path, "the new one", attempts=1)
 
     assert path.read_text(encoding="utf-8") == "the old one"
-    assert [entry.name for entry in tmp_path.iterdir()] == ["record.json"]
 
 
-def test_a_publish_keeps_its_temp_file_to_itself_and_never_dies_tidying_it(tmp_path: Path):
+def test_a_write_that_dies_part_way_leaves_no_temp_file_that_reads_as_someones(tmp_path: Path):
+    path = tmp_path / "record.json"
+
+    with (
+        patch("app_support.file_channel.os.replace", side_effect=OSError("interrupted")),
+        pytest.raises(OSError, match="could not replace"),
+    ):
+        write_whole(path, "the new one", attempts=1)
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_two_publishers_of_one_file_never_share_a_temp_file_nor_die_tidying_it(tmp_path: Path):
     path = tmp_path / "status.txt"
     shared = path.with_suffix(".tmp")
     still_open = ExitStack()
