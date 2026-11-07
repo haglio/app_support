@@ -22,7 +22,7 @@ def mirrored_path(
     suffix: str,
 ) -> Path | None:
     for root in roots:
-        for spelling in _SPELLINGS:
+        for spelling in _SPELLINGS_CHEAPEST_FIRST_THE_DISK_LAST:
             try:
                 relative = spelling(source).relative_to(spelling(root))
             except ValueError:
@@ -64,7 +64,7 @@ def _as_the_disk_has_it(path: Path) -> Path:
         return Path(path)
 
 
-_SPELLINGS: tuple[Callable[[Path], Path], ...] = (
+_SPELLINGS_CHEAPEST_FIRST_THE_DISK_LAST: tuple[Callable[[Path], Path], ...] = (
     _as_spelled,
     _as_folded,
     _as_the_disk_has_it,

@@ -473,6 +473,7 @@ def _before_the_app_runs(launcher: Launcher) -> list[str]:
         lines.append("  shell.CurrentDirectory = directory")
     if launcher.watch:
         lines += ["  If fso.FileExists(readyFile) Then fso.DeleteFile readyFile",
+                  "  ' An exit stamp an earlier launch left would read as this launch dying before it had a chance.",
                   "  If fso.FileExists(exitedFlag) Then fso.DeleteFile exitedFlag"]
     if launcher.note:
         lines.append("  If fso.FileExists(notePath) Then fso.DeleteFile notePath")
@@ -824,7 +825,7 @@ def differences(checkout: Path) -> list[str]:
             problems.append(f"{file}: declared in pyproject.toml and never rendered")
         elif path.read_text(encoding="utf-8", errors="replace") != render(launcher):
             problems.append(f"{file}: differs from its spec in pyproject.toml")
-    problems += [f"{path.name}: a launcher with no spec in pyproject.toml"
+    problems += [f"{path.name}: a launcher with no spec in pyproject.toml, written by hand beside the rendered ones"
                  for path in sorted(checkout.glob("*.vbs")) if path.name not in specs]
     return problems
 
@@ -890,7 +891,8 @@ def dry_run(launcher: Path, *arguments: str) -> ScriptHostRun:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m app_support.launcher",
-        description="Render a checkout's launchers from the specs in its pyproject.toml.")
+        description="Render a checkout's launchers from the specs in its pyproject.toml: the .vbs a pinned "
+                    "shortcut, a scheduled task or another app runs to start its app with no window.")
     parser.add_argument("checkout", nargs="?", default=".", type=Path)
     parser.add_argument("--write", action="store_true",
                         help="render them, rather than only naming the ones that differ")

@@ -200,7 +200,7 @@ def _hotfix_of(app: Path, app_fix: _Fix | None, shared: list[_Fix], built: _Shar
                 route.check(python, tests, each.place, pythonpath)
         route.sweep(python, place, pythonpath)
         for each in hotfixes:
-            _tag(each, run=run)
+            _tag_here_never_pushed(each, run=run)
         _ask_for(app, made, asked_before, run=run)
     return _what_production_did(app, made, route.bring_up(app), run=run) + _what_else_it_brings(brought_along, hotfixes)
 
@@ -298,7 +298,7 @@ def _next_tag(library: Path, on: str, *, run: Run) -> str:
     return f"{release}.{max((int(number) for number in numbers if number.isdigit()), default=0) + 1}"
 
 
-def _tag(shared_hotfix: _SharedHotfix, *, run: Run) -> None:
+def _tag_here_never_pushed(shared_hotfix: _SharedHotfix, *, run: Run) -> None:
     if not shared_hotfix.tagged:
         try:
             git(shared_hotfix.fix.production, "tag", shared_hotfix.tag, shared_hotfix.commit, run=run)

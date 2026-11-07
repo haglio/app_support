@@ -392,7 +392,7 @@ class TestProcessNamePattern:
         pattern = ProcessNamer("Fun Time").process_name_pattern
         assert all(re.match(pattern, name) for name in ("pythonw.exe", "python.exe", "py.exe"))
 
-    def test_leaves_everything_else_alone(self):
+    def test_leaves_everything_else_alone_since_the_sweeps_that_use_it_force_kill_what_it_matches(self):
         pattern = ProcessNamer("Fun Time").process_name_pattern
         for name in ("notepad.exe", "mypythonw.exe", "FunTimeOther.exe", "Genau-MainFunestra.exe"):
             assert not re.match(pattern, name), name

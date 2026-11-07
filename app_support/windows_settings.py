@@ -275,6 +275,7 @@ def _shortcut_change(path: Path, shortcut: win32.Shortcut, place: str) -> list[C
 
 
 def _retirement(lnk: Path, place: str, owner: str) -> Change:
+    # Windows lets no program pin to or unpin from the taskbar, so a pin is only ever corrected and a person does the rest.
     if place == "taskbar":
         return Change(f"unpin {lnk.stem} from the taskbar: {owner} no longer lists it")
     return Change(f"remove {lnk}: {owner} no longer lists it", lnk.unlink)

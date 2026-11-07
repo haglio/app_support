@@ -90,7 +90,8 @@ def test_a_second_writer_waits_rather_than_writing_over_the_first(tmp_path):
     assert inside.wait(5)
     second = threading.Thread(target=locked_update, args=(path, add_beta))
     second.start()
-    second.join(0.3)
+    long_enough_to_have_read_the_document_had_the_lock_let_it_in = 0.3
+    second.join(long_enough_to_have_read_the_document_had_the_lock_let_it_in)
     may_finish.set()
     first.join(5)
     second.join(5)
@@ -113,7 +114,7 @@ def test_a_lock_a_dead_process_left_behind_is_taken_over_once_it_is_stale(tmp_pa
     assert not lock.exists()
 
 
-def test_a_lock_its_holder_still_owns_is_waited_for_and_then_refused(tmp_path):
+def test_a_lock_its_holder_still_owns_is_waited_for_and_then_refused_aloud_since_a_lost_update_is_silent(tmp_path):
     path = tmp_path / "clip.json"
     _write(path, {"video": {"act": "alpha"}})
     (tmp_path / "clip.json.lock").touch()

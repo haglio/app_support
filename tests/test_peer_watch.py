@@ -51,7 +51,7 @@ def test_a_key_nobody_stood_down_is_not_stood_down(environ):
     assert is_stood_down("Widget", environ=environ) is False
 
 
-def test_standing_down_is_remembered(environ):
+def test_standing_down_is_remembered_in_a_file_since_its_writer_is_gone_when_it_matters(environ):
     stand_down("Widget", environ=environ)
 
     assert is_stood_down("Widget", environ=environ) is True
@@ -77,12 +77,31 @@ def test_one_key_standing_down_says_nothing_about_another(environ):
     assert is_stood_down("Gadget", environ=environ) is False
 
 
-def test_the_marker_lands_under_localappdata(tmp_path, environ):
+def test_the_marker_lands_under_localappdata_per_user_machine_local_and_outside_the_synced_project_trees(
+        tmp_path, environ):
     stand_down("Widget", environ=environ)
 
     markers = list(tmp_path.rglob("Widget.txt"))
     assert len(markers) == 1
     assert markers[0].read_text(encoding="utf-8").strip()
+
+
+def test_a_marker_with_any_text_or_none_still_holds_the_peer_down_only_its_existence_counts(tmp_path, environ):
+    stand_down("Widget", environ=environ)
+    (marker,) = tmp_path.rglob("Widget.txt")
+    marker.write_text("", encoding="utf-8")
+
+    assert is_stood_down("Widget", environ=environ) is True
+
+
+def test_a_marker_that_cannot_be_checked_reads_as_not_stood_down_so_a_disk_problem_never_ends_supervision(
+        environ, monkeypatch):
+    def refuse(_self):
+        raise OSError("the state directory cannot be read")
+
+    monkeypatch.setattr(Path, "exists", refuse)
+
+    assert is_stood_down("Widget", environ=environ) is False
 
 
 def test_a_marker_that_cannot_be_written_does_not_take_the_quit_down(tmp_path):
@@ -103,7 +122,7 @@ def test_a_peer_that_is_up_is_left_alone(environ):
     assert launches == []
 
 
-def test_a_peer_that_is_gone_is_started(environ):
+def test_a_peer_that_is_gone_is_started_never_killed_its_own_single_instance_guard_absorbs_a_duplicate(environ):
     launches: list[str] = []
 
     _watch(up=lambda: False, launches=launches, environ=environ).tick()
@@ -120,7 +139,7 @@ def test_a_peer_that_was_stood_down_is_left_gone(environ):
     assert launches == []
 
 
-def test_a_stand_down_that_was_cleared_stops_holding_the_peer_down(environ):
+def test_a_stand_down_that_was_cleared_stops_holding_the_peer_down_an_app_clears_its_own_as_it_starts(environ):
     launches: list[str] = []
     stand_down("Widget", environ=environ)
     clear_stand_down("Widget", environ=environ)
@@ -174,7 +193,7 @@ def test_a_tick_once_the_interval_has_passed_checks_again(environ):
     assert checks == ["asked", "asked"]
 
 
-def test_the_default_interval_is_the_shared_one(environ):
+def test_the_default_interval_is_the_shared_one_a_quarter_hour_cheap_to_check_and_the_most_work_lost(environ):
     checks: list[str] = []
     clock = _Clock()
     watch = _watch(
@@ -234,7 +253,8 @@ def test_a_launcher_that_always_fails_is_retried_on_the_interval_not_every_beat(
     )
 
     watch.tick()
-    for _ in range(20):
+    beats_enough_for_the_interval_to_come_round_once = 20
+    for _ in range(beats_enough_for_the_interval_to_come_round_once):
         clock.advance(5.0)
         watch.tick()
 

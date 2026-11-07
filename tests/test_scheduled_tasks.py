@@ -45,7 +45,7 @@ class TestTheRendering:
         assert _leaf(xml, "Triggers/LogonTrigger/UserId") == "EXAMPLE\\someone"
         assert _leaf(xml, "Triggers/TimeTrigger/Repetition/Interval") == "PT2M"
 
-    def test_the_repeats_need_no_date_of_registration(self):
+    def test_the_repeats_need_no_date_of_registration_so_two_registrations_of_one_task_differ_in_nothing(self):
         assert (scheduled_tasks.render(EXAMPLE, user="EXAMPLE\\someone")
                 == scheduled_tasks.render(EXAMPLE, user="EXAMPLE\\someone"))
         assert _leaf(scheduled_tasks.render(EXAMPLE, user="EXAMPLE\\someone"),
@@ -179,7 +179,7 @@ class TestTheCommandLineTool:
         assert scheduled_tasks.tasks_in("\\Example", run=schtasks) == [
             "\\Example\\Example Tray", "\\Example\\Other"]
 
-    def test_only_the_folder_is_asked_for(self):
+    def test_only_the_folder_is_asked_for_since_listing_every_folder_took_a_busy_machine_a_minute(self):
         schtasks = _Schtasks(LISTING)
 
         scheduled_tasks.tasks_in("\\Example", run=schtasks)
@@ -290,7 +290,8 @@ class TestARealRegistration:
         with contextlib.suppress(OSError):
             scheduled_tasks.delete(path)
 
-    def test_every_value_rendered_is_registered(self, path, tmp_path):
+    def test_every_value_rendered_is_registered_from_an_ordinary_users_session_with_no_administrator(
+            self, path, tmp_path):
         task = dataclasses.replace(EXAMPLE, path=path, working_directory=str(tmp_path),
                                    arguments=f'"{tmp_path / "launch_example.vbs"}"')
         xml = _never_started(scheduled_tasks.render(task, user=scheduled_tasks.this_user()))

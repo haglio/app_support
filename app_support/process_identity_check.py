@@ -95,8 +95,9 @@ def assert_the_process_is_named(name_this_process: Callable[[], object], where: 
     namer = ProcessNamer(app_name)
     scripts = _a_venv_with_the_real_launchers(where)
     before = set(scripts.iterdir())
-    other = "python.exe" if interpreter == "pythonw.exe" else "pythonw.exe"
-    with _running_under(str(scripts / other)):
+    the_other_launcher_so_an_app_copying_whatever_it_runs_under_is_caught = (
+        "python.exe" if interpreter == "pythonw.exe" else "pythonw.exe")
+    with _running_under(str(scripts / the_other_launcher_so_an_app_copying_whatever_it_runs_under_is_caught)):
         name_this_process()
     made = sorted(set(scripts.iterdir()) - before)
     expected = scripts / namer.exe_name(interpreter, role)
@@ -112,7 +113,7 @@ def assert_the_process_is_named(name_this_process: Callable[[], object], where: 
     wanted = _CONSOLE if interpreter == "python.exe" else _WINDOWED
     assert _subsystem(expected) == wanted, (
         f"the copy was not made from {interpreter}: it is "
-        f"{'a console' if _subsystem(expected) == _CONSOLE else 'a windowed'} image")
+        f"{'a console' if _subsystem(expected) == _CONSOLE else 'a windowed'} image, one the launcher never starts")
     if icon is not None:
         images, _directory = build_icon_resources(Path(icon).read_bytes())
         assert _resource(expected, _RT_ICON, 1) == images[0], (

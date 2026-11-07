@@ -10,9 +10,11 @@ from app_support.file_channel import read_whole, write_whole
 
 LOCK_SUFFIX = ".lock"
 
-WAIT_S = 2.0
+_ONE_HOLD_TAKES_AT_MOST_S = 0.1
+WAIT_S = 20 * _ONE_HOLD_TAKES_AT_MOST_S
 
-STALE_S = 30.0
+_ERRING_LONG_IS_THE_SAFE_SIDE = 15
+STALE_S = _ERRING_LONG_IS_THE_SAFE_SIDE * WAIT_S
 
 _POLL_S = 0.005
 

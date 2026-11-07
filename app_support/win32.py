@@ -52,18 +52,21 @@ def _close_handle(dll):
     return _declare(dll, "CloseHandle", wintypes.BOOL, ctypes.c_void_p)
 
 
-def _hresult(call: str, hr: int) -> OSError:
+def _a_refusal_for_the_caller_to_weigh(call: str, hr: int) -> OSError:
     """The failure of *call*, spelled as its HRESULT is written: ``0x{hr:08x}`` on a signed value prints ``0x-7ffefefa``."""
     return OSError(f"{call} failed: HRESULT 0x{hr & 0xFFFFFFFF:08x}")
 
 
 def set_app_user_model_id(app_id: str, *, shell32=_shell32) -> None:
-    """Claim *app_id* as this process's taskbar identity. Windows reads it as a window is created, so it must run before any window exists. Raises ``OSError`` when Windows refuses."""
+    """Claim *app_id* as this process's taskbar identity. Windows reads it as a window is created, so it must run before any window exists. Raises ``OSError`` when Windows refuses.
+
+    Unclaimed, Windows groups a process by its executable, which the family's apps share with every other program run on this interpreter: they would wear whichever registered that path first's icon and name.
+    """
     set_id = _declare(shell32(), "SetCurrentProcessExplicitAppUserModelID",
                       ctypes.c_long, wintypes.LPCWSTR)
     hr = set_id(app_id)
     if hr < 0:  # Win32's FAILED() macro
-        raise _hresult("SetCurrentProcessExplicitAppUserModelID", hr)
+        raise _a_refusal_for_the_caller_to_weigh("SetCurrentProcessExplicitAppUserModelID", hr)
 
 
 # The vtable indices are each interface's methods in header order; Windows reports no error for a wrong one.
@@ -158,7 +161,7 @@ def _query_interface(obj_addr: int, iid: _GUID) -> int:
                     ctypes.POINTER(_GUID), ctypes.POINTER(ctypes.c_void_p))(
         obj_addr, ctypes.byref(iid), ctypes.byref(out))
     if hr < 0:
-        raise _hresult("QueryInterface", hr)
+        raise _a_refusal_for_the_caller_to_weigh("QueryInterface", hr)
     return out.value
 
 
@@ -168,7 +171,7 @@ def _apartment(ole32):
     com = ole32()
     hr = com.CoInitializeEx(None, _COINIT_APARTMENTTHREADED)
     if hr < 0:
-        raise _hresult("CoInitializeEx", hr)
+        raise _a_refusal_for_the_caller_to_weigh("CoInitializeEx", hr)
     try:
         yield com
     finally:
@@ -182,7 +185,7 @@ def _create_shell_link(com) -> int:
         ctypes.byref(_IID_IShellLinkW), ctypes.byref(shell_link),
     )
     if hr < 0:
-        raise _hresult("CoCreateInstance(ShellLink)", hr)
+        raise _a_refusal_for_the_caller_to_weigh("CoCreateInstance(ShellLink)", hr)
     return shell_link.value
 
 
@@ -191,7 +194,7 @@ def _load_shortcut(persist_file: int, lnk_path: str, mode: int) -> None:
                     ctypes.HRESULT, wintypes.LPCWSTR, ctypes.c_ulong)(
         persist_file, lnk_path, mode)
     if hr < 0:
-        raise _hresult("IPersistFile::Load", hr)
+        raise _a_refusal_for_the_caller_to_weigh("IPersistFile::Load", hr)
 
 
 def _save(shell_link: int, lnk_path: str) -> None:
@@ -201,7 +204,7 @@ def _save(shell_link: int, lnk_path: str) -> None:
                         ctypes.HRESULT, wintypes.LPCWSTR, wintypes.BOOL)(
             persist_file, lnk_path, True)
         if hr < 0:
-            raise _hresult("IPersistFile::Save", hr)
+            raise _a_refusal_for_the_caller_to_weigh("IPersistFile::Save", hr)
     finally:
         _release(persist_file)
 
@@ -226,10 +229,10 @@ def _store_values(prop_store: int, values: Iterable[tuple[_PROPERTYKEY, str | No
             pv.pwszVal = value
         hr = set_value(prop_store, ctypes.byref(key), ctypes.byref(pv))
         if hr < 0:
-            raise _hresult("IPropertyStore::SetValue", hr)
+            raise _a_refusal_for_the_caller_to_weigh("IPropertyStore::SetValue", hr)
     hr = _vtbl_call(prop_store, _VTBL_IPS_COMMIT, ctypes.HRESULT)(prop_store)
     if hr < 0:
-        raise _hresult("IPropertyStore::Commit", hr)
+        raise _a_refusal_for_the_caller_to_weigh("IPropertyStore::Commit", hr)
 
 
 def _loaded_shell_link(com, lnk_path: str, mode: int) -> int:
@@ -282,7 +285,7 @@ def write_shortcut(lnk_path: str, shortcut: Shortcut, *, ole32=_ole32) -> None:
             ):
                 hr = _vtbl_call(shell_link, index, ctypes.HRESULT, *kinds)(shell_link, *values)
                 if hr < 0:
-                    raise _hresult(f"IShellLinkW::{method}", hr)
+                    raise _a_refusal_for_the_caller_to_weigh(f"IShellLinkW::{method}", hr)
             _store_app_id(shell_link, shortcut.app_id)
             _save(shell_link, lnk_path)
         finally:
@@ -324,7 +327,7 @@ def _read_text(shell_link: int, index: int, method: str, *after_the_buffer) -> s
                           *(argtype for argtype, _ in after_the_buffer))
     hr = function(shell_link, buffer, _TEXT_BUFFER, *(value for _, value in after_the_buffer))
     if hr < 0:
-        raise _hresult(f"IShellLinkW::{method}", hr)
+        raise _a_refusal_for_the_caller_to_weigh(f"IShellLinkW::{method}", hr)
     return buffer.value
 
 
@@ -340,7 +343,7 @@ def _app_id_of(shell_link: int, com) -> str | None:
             ctypes.byref(_PKEY_AppUserModel_ID),
             ctypes.byref(pv))
         if hr < 0:
-            raise _hresult("IPropertyStore::GetValue", hr)
+            raise _a_refusal_for_the_caller_to_weigh("IPropertyStore::GetValue", hr)
         try:
             return pv.pwszVal if pv.vt == _VT_LPWSTR else None
         finally:
@@ -352,6 +355,7 @@ def _app_id_of(shell_link: int, com) -> str | None:
 
 
 def taskbar_pins() -> Path:
+    # Windows' taskbar keeps its own copy of every pinned shortcut here, apart from the shortcut it was pinned from.
     return (Path(os.environ.get("APPDATA", "")) / "Microsoft" / "Internet Explorer"
             / "Quick Launch" / "User Pinned" / "TaskBar")
 
@@ -385,13 +389,13 @@ class TaskbarApp:
 
 def dress_window(hwnd: int, app_id: str, app: TaskbarApp | None = None, *,
                  shell32=_shell32) -> None:
-    """Put *app_id* on *hwnd*, and with *app* what a shortcut would give its taskbar button. Windows reads them as it makes the button, so they go on before the window is first shown, and it uses the name and relaunch command only together."""
+    """Put *app_id* on *hwnd*, and with *app* what a shortcut would give its taskbar button. Windows reads them as it makes the button, so they go on before the window is first shown, and it uses the name and relaunch command only together; without them the button wears the executable's icon whenever the window is too busy to say its own."""
     get_store = _declare(shell32(), "SHGetPropertyStoreForWindow", ctypes.c_long,
                          wintypes.HWND, ctypes.POINTER(_GUID), ctypes.POINTER(ctypes.c_void_p))
     prop_store = ctypes.c_void_p()
     hr = get_store(hwnd, ctypes.byref(_IID_IPropertyStore), ctypes.byref(prop_store))
     if hr < 0:
-        raise _hresult("SHGetPropertyStoreForWindow", hr)
+        raise _a_refusal_for_the_caller_to_weigh("SHGetPropertyStoreForWindow", hr)
     try:
         _store_values(prop_store.value, (
             (_PKEY_AppUserModel_RelaunchCommand, app and app.relaunch),
@@ -433,6 +437,8 @@ _SYNCHRONIZE = 0x00100000
 
 
 def mutex_name(base: str, identity: str | Path) -> str:
+    # Win32 object names share one flat namespace and read a backslash as a separator, so the identity goes in as a
+    # digest; a name spelled differently refuses nothing and lets a second copy start beside the first.
     suffix = hashlib.md5(str(identity).encode()).hexdigest()[:12]
     return f"{base}.{suffix}"
 
@@ -477,6 +483,7 @@ _STILL_ACTIVE = 259
 
 
 def process_started(pid: int, *, kernel32=_kernel32) -> int | None:
+    # Windows hands a freed pid out again within seconds, so a pid names a process only beside this start time.
     dll = kernel32()
     open_process = _declare(dll, "OpenProcess", ctypes.c_void_p, wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
     exit_code_of = _declare(dll, "GetExitCodeProcess", wintypes.BOOL, ctypes.c_void_p,
@@ -667,7 +674,7 @@ _MB_SETFOREGROUND = 0x00010000
 _MB_TOPMOST = 0x00040000
 
 
-def show_error_popup(title: str, message: str, *, user32=_user32) -> None:
+def show_error_popup(title: str, message: str, *, user32=_user32) -> None:  # the one name a suite patches: ctypes.windll exists only on Windows
     """Put *message* on the screen under *title*, in front of everything. A hidden Windows process has no claim on the foreground, so a plain message dialog opens underneath; ``MB_SETFOREGROUND`` and ``MB_TOPMOST`` prevent that. Raises nothing, being the last thing a dying process does."""
     show = _declare(user32(), "MessageBoxW", ctypes.c_int,
                     wintypes.HWND, wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.UINT)

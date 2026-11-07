@@ -15,7 +15,7 @@ from app_support.threading_utils import start_daemon_thread
 
 pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="Win32's consoles")
 
-PYPROJECT = '[tool.pytest.ini_options]\naddopts = "-p no:cacheprovider -p app_support.sanitize.pytest_plugin"\n'
+PYPROJECT_NAMING_THE_BLOCKED_WORD_PLUGIN_AS_EVERY_REPO_DOES = '[tool.pytest.ini_options]\naddopts = "-p no:cacheprovider -p app_support.sanitize.pytest_plugin"\n'
 CLOSING_ITS_OWN_CONSOLE = """\
 import ctypes
 import os
@@ -48,7 +48,7 @@ def test_a_python_child_started_after_it():
 def _repo(tmp_path: Path) -> Path:
     repo = tmp_path / "family" / "repo"
     (repo / "tests").mkdir(parents=True)
-    (repo / "pyproject.toml").write_text(PYPROJECT, encoding="utf-8")
+    (repo / "pyproject.toml").write_text(PYPROJECT_NAMING_THE_BLOCKED_WORD_PLUGIN_AS_EVERY_REPO_DOES, encoding="utf-8")
     (repo / "tests" / "test_stopped.py").write_text(CLOSING_ITS_OWN_CONSOLE, encoding="utf-8")
     (repo / "outer_console").write_text(str(console_host_of(os.getpid())), encoding="utf-8")
     return repo

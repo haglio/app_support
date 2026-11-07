@@ -26,16 +26,17 @@ def test_a_document_lists_the_actions_it_lists():
     assert actions_of({"actions": actions}) == actions
 
 
-def test_a_script_that_is_not_there_reads_as_a_document_with_no_actions(tmp_path: Path):
+def test_a_script_that_is_not_there_reads_quietly_as_no_actions_most_videos_have_none(tmp_path: Path, caplog):
     assert read(tmp_path / "absent.funscript") == {}
     assert read_actions(tmp_path / "absent.funscript") == []
+    assert caplog.text == ""
 
 
-def test_no_path_at_all_reads_as_no_actions():
+def test_no_path_at_all_reads_as_no_actions_the_answer_a_video_with_no_script_gives():
     assert read_actions(None) == []
 
 
-def test_a_script_that_will_not_parse_reads_as_no_actions_and_says_so(tmp_path, caplog):
+def test_a_script_that_will_not_parse_reads_as_no_actions_and_says_so_never_raising_into_a_run_loop(tmp_path, caplog):
     path = tmp_path / "torn.funscript"
     path.write_text('{"actions": [{"at": 0,', encoding="utf-8")
 
@@ -103,7 +104,7 @@ def test_a_script_read_while_it_is_being_replaced_reads_whole(tmp_path: Path, be
         assert read(path) == built
 
 
-def test_a_script_is_written_minified_on_one_line_as_other_players_write_it(tmp_path: Path):
+def test_a_script_is_written_on_one_line_as_other_players_write_one_that_runs_to_thousands_of_actions(tmp_path: Path):
     path = tmp_path / "clip.funscript"
 
     write(path, document([{"at": 0, "pos": 10}], duration_seconds=1))

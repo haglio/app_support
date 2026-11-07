@@ -39,7 +39,7 @@ class TestAnAppThatNamesItself:
 
 
 class TestWhatItRefuses:
-    def test_an_app_that_names_nothing(self, tmp_path: Path):
+    def test_an_app_that_names_nothing_as_when_the_call_sits_in_a_branch_that_never_runs(self, tmp_path: Path):
         with pytest.raises(AssertionError, match=r"Highdeas-Highdeas\.exe and nothing else"):
             assert_the_process_is_named(lambda: None, tmp_path, ProcessName(app_name="Highdeas", role="Highdeas"))
 
