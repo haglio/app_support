@@ -6,10 +6,11 @@ import sys
 from pathlib import Path
 
 import pytest
+from armed_guard import arm_where_the_guard_looks
 from consumer_runs import run_pytest_in
 from production_machine import git
 
-from app_support.sanitize import blocklist_path, test_tracked_tree
+from app_support.sanitize import find_violations, test_tracked_tree
 
 APP_SUPPORT = Path(__file__).resolve().parents[1]
 TERM = "plantedterm"
@@ -46,13 +47,6 @@ def pytest_configure(config):
 """
 
 
-def _arm(repo: Path, terms: str) -> Path:
-    path = blocklist_path(repo)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(terms, encoding="utf-8")
-    return path
-
-
 class TestTheControlWordTheCheckCarries:
     def _file(self, tmp_path: Path, text: str) -> Path:
         path = tmp_path / "notes.md"
@@ -69,12 +63,32 @@ class TestTheControlWordTheCheckCarries:
 
         assert test_tracked_tree._a_control_word_from([path], []) == "plain"
 
-    def test_a_word_in_the_plural_is_passed_over(self, tmp_path: Path):
+    def test_the_control_is_a_word_the_matchers_boundaries_let_the_scan_find(self, tmp_path: Path):
+        text = "unremarkable_compound plain"
+        path = self._file(tmp_path, text)
+
+        control = test_tracked_tree._a_control_word_from([path], [])
+
+        assert find_violations(text, [control])
+
+    def test_the_control_rides_in_the_one_scan_the_terms_do(self, tmp_path: Path):
+        scans: list[list[str]] = []
+
+        def recording(paths, terms, *, root):
+            scans.append(list(terms))
+            return []
+
+        test_tracked_tree._one_scan_of_the_terms_and_the_control(
+            [tmp_path / "notes.md"], [TERM], "ordinary", tmp_path, scan=recording)
+
+        assert scans == [[TERM, "ordinary"]]
+
+    def test_a_plural_is_passed_over_since_the_guard_scans_for_its_stem(self, tmp_path: Path):
         path = self._file(tmp_path, "notes belong here")
 
         assert test_tracked_tree._a_control_word_from([path], []) == "belong"
 
-    def test_a_word_carrying_a_blocked_term_is_passed_over(self, tmp_path: Path):
+    def test_a_word_carrying_a_term_is_passed_over_so_no_real_hit_passes_as_the_control(self, tmp_path: Path):
         path = self._file(tmp_path, f"{TERM} and something ordinary")
 
         assert test_tracked_tree._a_control_word_from([path], [TERM]) == "something"
@@ -85,7 +99,7 @@ class TestTheControlWordTheCheckCarries:
 
         assert test_tracked_tree._a_control_word_from([gone, readable], []) == "ordinary"
 
-    def test_a_tree_with_nothing_readable_in_it_yields_no_control(self, tmp_path: Path):
+    def test_the_control_comes_out_of_the_tree_so_nothing_readable_means_no_control(self, tmp_path: Path):
         binary = tmp_path / "mark.ico"
         binary.write_bytes(bytes(range(256)))
 
@@ -99,7 +113,7 @@ class TestTheGuardPlugin:
         repo.mkdir(parents=True)
         (repo / "pyproject.toml").write_text(PYPROJECT, encoding="utf-8")
         if blocklist is not None:
-            _arm(repo, blocklist)
+            arm_where_the_guard_looks(repo, blocklist)
         (repo / "notes.md").write_text(tracked, encoding="utf-8")
         git("init", "-b", "main", cwd=repo)
         git("config", "user.email", "guard@example.test", cwd=repo)
@@ -145,7 +159,7 @@ class TestTheGuardPlugin:
 
         assert run_pytest_in(repo).returncode == 0
 
-    def test_a_checkout_with_no_blocklist_says_so_instead_of_passing(self, tmp_path: Path):
+    def test_a_checkout_with_no_blocklist_skips_rather_than_pass_as_if_scanned(self, tmp_path: Path):
         repo = self._repo(tmp_path, blocklist=None, tracked=f"this has {TERM} in it\n")
 
         done = run_pytest_in(repo)
@@ -155,7 +169,7 @@ class TestTheGuardPlugin:
         assert "1 skipped" in done.stdout
         assert "NOT scanned" in done.stdout
 
-    def test_a_source_tree_with_no_git_at_all_says_so_too(self, tmp_path: Path):
+    def test_a_source_tree_with_no_git_at_all_is_not_taken_down_either(self, tmp_path: Path):
         repo = tmp_path / "unpacked"
         (repo / "tests").mkdir(parents=True)
         (repo / "pyproject.toml").write_text(PYPROJECT, encoding="utf-8")
@@ -168,7 +182,7 @@ class TestTheGuardPlugin:
         assert "1 passed, 1 skipped" in done.stdout
         assert "NOT scanned" in done.stdout
 
-    def test_the_reason_reaches_a_log_that_was_not_asked_for_skip_reasons(self, tmp_path: Path):
+    def test_the_reason_rides_in_the_warnings_which_a_bare_q_run_prints(self, tmp_path: Path):
         repo = self._repo(tmp_path, blocklist=None, tracked="perfectly clean\n")
 
         done = run_pytest_in(repo)
@@ -176,7 +190,7 @@ class TestTheGuardPlugin:
         assert "warnings summary" in done.stdout
         assert "SANITIZE GUARD UNARMED" in done.stdout
 
-    def test_an_untracked_file_is_not_the_repos_problem(self, tmp_path: Path):
+    def test_an_untracked_file_cannot_leak_so_it_is_not_the_repos_problem(self, tmp_path: Path):
         repo = self._repo(tmp_path, blocklist=f"{TERM}\n", tracked="perfectly clean\n")
         (repo / "scratch.md").write_text(f"this has {TERM} in it\n", encoding="utf-8")
 
@@ -188,7 +202,7 @@ class TestTheGuardPlugin:
         repo = tmp_path / "family" / "empty"
         repo.mkdir(parents=True)
         (repo / "pyproject.toml").write_text(PYPROJECT, encoding="utf-8")
-        _arm(repo, f"{TERM}\n")
+        arm_where_the_guard_looks(repo, f"{TERM}\n")
         (repo / "test_local.py").write_text(
             "def test_local():\n    assert True\n", encoding="utf-8")
         git("init", "-b", "main", cwd=repo)
@@ -216,8 +230,9 @@ class TestTheGuardPlugin:
     ):
         repo = tmp_path / "family" / "gone"
         repo.mkdir(parents=True)
-        _arm(repo, f"{TERM}\n")
-        (repo / "pyproject.toml").write_text(PYPROJECT, encoding="utf-8")
+        arm_where_the_guard_looks(repo, f"{TERM}\n")
+        pytest_reads_this_but_the_walk_never_will = repo / "pyproject.toml"
+        pytest_reads_this_but_the_walk_never_will.write_text(PYPROJECT, encoding="utf-8")
         (repo / "notes.md").write_text(
             f"this has {TERM} in it\n", encoding="utf-8")
         git("init", "-b", "main", cwd=repo)
@@ -244,7 +259,7 @@ class TestTheGuardPlugin:
         assert done.returncode != 0, done.stdout
         assert "locked.md:0  (could not be read: PermissionError)" in done.stdout
 
-    def test_a_directory_run_is_still_a_run_of_the_whole_tree(self, tmp_path: Path):
+    def test_pytest_tests_the_familys_own_command_is_still_a_run_of_the_whole_tree(self, tmp_path: Path):
         repo = self._repo(
             tmp_path, blocklist=f"{TERM}\n", tracked=f"this has {TERM} in it\n")
         (repo / "tests").mkdir()
@@ -253,7 +268,7 @@ class TestTheGuardPlugin:
 
         assert run_pytest_in(repo, "tests").returncode != 0
 
-    def test_a_run_started_from_a_subdirectory_still_enforces(self, tmp_path: Path):
+    def test_a_subdirectory_run_still_enforces_since_testpaths_is_relative_to_the_root(self, tmp_path: Path):
         repo = self._repo(
             tmp_path, blocklist=f"{TERM}\n", tracked=f"this has {TERM} in it\n")
         (repo / "pyproject.toml").write_text(
@@ -265,6 +280,20 @@ class TestTheGuardPlugin:
         done = run_pytest_in(repo / "tests")
 
         assert done.returncode != 0, done.stdout
+
+    def test_a_configuration_kept_in_a_subfolder_still_scans_the_whole_checkout(self, tmp_path: Path):
+        repo = self._repo(
+            tmp_path, blocklist=f"{TERM}\n", tracked=f"ordinary prose with {TERM} in it\n")
+        (repo / "pyproject.toml").unlink()
+        (repo / "tests").mkdir()
+        (repo / "tests" / "pyproject.toml").write_text(PYPROJECT, encoding="utf-8")
+        (repo / "tests" / "test_local.py").write_text(
+            "def test_local():\n    assert True\n", encoding="utf-8")
+
+        done = run_pytest_in(repo, "tests")
+
+        assert done.returncode != 0, done.stdout
+        assert "notes.md" in done.stdout
 
     def test_a_run_that_names_one_file_leaves_the_tree_alone(self, tmp_path: Path):
         repo = self._repo(
@@ -290,7 +319,7 @@ class TestTheGuardPlugin:
         assert done.returncode == 0, done.stdout
         assert "1 passed" in done.stdout
 
-    def test_the_guard_itself_never_reaches_for_pytest(self):
+    def test_the_guard_a_git_hook_imports_never_reaches_for_pytest(self):
         probe = (
             "import sys, app_support.sanitize\n"
             "print(sorted(m for m in sys.modules if m.startswith('pytest')"

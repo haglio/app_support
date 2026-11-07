@@ -3,6 +3,8 @@
 Windows takes the task list's Name, Processes-tab description and icon from the file a process started from.
 The copy stays in the venv's ``Scripts`` directory, where Python finds ``pyvenv.cfg``. It is the launcher,
 not the base ``python.exe`` it redirects to: a copy of the base interpreter loses the DLL search path PyQt6 needs.
+CPython's launcher runs the real interpreter as a child named ``python.exe``, held in a Win32 job object, so ending
+the named parent ends that unnamed worker with it.
 """
 from __future__ import annotations
 
@@ -24,6 +26,11 @@ _DISCARD_EDITS = True
 _KEEP_EDITS = False
 _LANG_EN_US = 0x0409
 _CODEPAGE_UNICODE = 0x04B0
+_VS_FFI_SIGNATURE = 0xFEEF04BD
+_VS_FFI_STRUCVERSION = 0x00010000
+_VS_FFI_FILEFLAGSMASK = 0x3F
+_VOS_NT_WINDOWS32 = 0x00040004
+_VFT_APP = 0x00000001
 
 STAMP_FIELD = "AppSupportSource"
 
@@ -58,6 +65,8 @@ def _node(key: str, value: bytes, *, value_length: int, wtype: int) -> bytes:
 
 
 def build_version_info(fields: dict[str, str]) -> bytes:
+    """Built whole rather than patched into the interpreter's own: Win32's VS_VERSIONINFO holds every length
+    relative to its node, so one longer string moves everything after it."""
     strings = b"".join(
         _pad4(_node(key, _wstr(value), value_length=len(value) + 1, wtype=1))
         for key, value in fields.items()
@@ -72,14 +81,14 @@ def build_version_info(fields: dict[str, str]) -> bytes:
     # Win32's VS_FIXEDFILEINFO, in field order from dwSignature to dwFileDateLS.
     fixed = struct.pack(
         "<LLLLLLLLLLLLL",
-        0xFEEF04BD,
-        0x00010000,
+        _VS_FFI_SIGNATURE,
+        _VS_FFI_STRUCVERSION,
         0, 0,
         0, 0,
-        0x3F,
+        _VS_FFI_FILEFLAGSMASK,
         0,
-        0x00040004,
-        0x00000001,
+        _VOS_NT_WINDOWS32,
+        _VFT_APP,
         0,
         0, 0,
     )
@@ -191,6 +200,7 @@ class ProcessNamer:
 
     @property
     def process_name_pattern(self) -> str:
+        # Read by PowerShell's -match, in the apps' process sweeps.
         return r"^pythonw?\.exe$|^py\.exe$|" + self._copy_name_pattern
 
     def owns_exe_name(self, name: str) -> bool:

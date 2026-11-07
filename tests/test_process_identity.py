@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ctypes
 import logging
+import os
 import re
 import shutil
 import struct
@@ -14,9 +15,11 @@ import pytest
 from app_support.process_identity import (
     STAMP_FIELD,
     ProcessNamer,
+    _node,
     build_icon_resources,
     exe_prefix,
     read_version_field,
+    stamp_identity,
 )
 
 # Stamping runs UpdateResource, which only works on a real PE, so the Windows
@@ -114,6 +117,24 @@ class TestNaming:
         assert ProcessNamer("Genau VR").description("GenauVR") == "Genau VR"
         assert ProcessNamer("Fun Time").description("RFBWindow") == "Fun Time \u2013 RFB Window"
 
+    def test_one_apps_roles_sort_together_in_a_task_list_sorted_by_name(self):
+        namer = ProcessNamer("Fun Time")
+        ours = sorted(namer.exe_name("pythonw.exe", role) for role in ("Portrait", "AudioCompanion", "Dashboard"))
+
+        rows = sorted([*ours, "Genau-MainFunestra.exe", "notepad.exe", "pythonw.exe", "FunTimeOther.exe"])
+
+        first = rows.index(ours[0])
+        assert rows[first:first + len(ours)] == ours
+
+
+class TestVersionInfoNode:
+    def test_the_length_counts_the_padding_before_the_value_and_not_after_it(self):
+        node = _node("Key", b"ab\x00\x00\x00\x00", value_length=3, wtype=1)
+
+        (length,) = struct.unpack_from("<H", node, 0)
+        assert length == len(node)
+        assert len(node) % 4 == 2, "the trailing padding is the next node's, so this one ends short of a boundary"
+
 
 class TestBuildIconResources:
     def test_reindexes_the_directory_onto_resource_ids(self, tmp_path: Path):
@@ -123,6 +144,11 @@ class TestBuildIconResources:
         assert struct.unpack_from("<HHH", directory, 0) == (0, 1, 2)
         ids = [struct.unpack_from("<H", directory, 6 + i * 14 + 12)[0] for i in range(2)]
         assert ids == [1, 2]
+
+    def test_the_images_go_in_as_the_ico_file_holds_them(self, tmp_path: Path):
+        images, _directory = build_icon_resources(_icon(tmp_path).read_bytes())
+
+        assert images == [b"\x01" * 40, b"\x02" * 60]
 
     def test_refuses_something_that_is_not_an_icon(self):
         with pytest.raises(ValueError, match="not an icon file"):
@@ -151,7 +177,7 @@ class TestNamedExe:
         assert read_version_field(result, "ProductName") == "Highdeas"
         assert read_version_field(result, STAMP_FIELD)
 
-    def test_keeps_the_interpreters_own_application_manifest(self, tmp_path: Path):
+    def test_keeps_the_manifest_windows_reads_the_dpi_awareness_from(self, tmp_path: Path):
         source = _interpreter(tmp_path)
 
         result = Path(ProcessNamer("Evolver").named_exe(source, "Evolver"))
@@ -165,6 +191,16 @@ class TestNamedExe:
         result = Path(namer.named_exe(source, "Scripture"))
 
         assert _has_resource(result, kind=14, name=1), "no icon directory in the copy"
+
+    def test_a_stamp_that_fails_part_way_leaves_the_copy_as_it_was(self, tmp_path: Path):
+        copy = _interpreter(tmp_path)
+        before = read_version_field(copy, "FileDescription")
+
+        with pytest.raises(ValueError, match="not an icon file"):
+            stamp_identity(copy, fields={"FileDescription": "Scripture", STAMP_FIELD: "1:2:x"}, icon=b"not an icon")
+
+        assert read_version_field(copy, "FileDescription") == before
+        assert read_version_field(copy, STAMP_FIELD) is None
 
     def test_works_for_an_app_with_no_icon_at_all(self, tmp_path: Path):
         source = _interpreter(tmp_path)
@@ -181,6 +217,17 @@ class TestNamedExe:
         first = Path(namer.named_exe(source, "Genau"))
 
         assert Path(namer.named_exe(source, "Genau")) == first
+        assert resources.stamp_calls == 1
+
+    def test_stays_current_though_stamping_changed_its_size_and_date(self, tmp_path: Path):
+        source = _stub_interpreter(tmp_path)
+        resources = _FakeResources()
+        namer = ProcessNamer("Genau", stamp=resources.stamp, read_field=resources.read_field)
+        copy = Path(namer.named_exe(source, "Genau"))
+        copy.write_bytes(copy.read_bytes() + b" the version resource, written into the copy afterwards")
+        os.utime(copy, (0, 0))
+
+        assert Path(namer.named_exe(source, "Genau")) == copy
         assert resources.stamp_calls == 1
 
     def test_refreshes_a_copy_made_from_an_older_interpreter(self, tmp_path: Path):
@@ -255,6 +302,22 @@ class TestNamedExe:
             .named_exe(source, "Clipper") == str(existing)
         assert resources.stamped[existing]["FileDescription"] == "Clipper"
 
+    def test_knows_its_own_copy_by_the_stamp_after_the_label_it_writes_changed(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ):
+        source = _stub_interpreter(tmp_path)
+        resources = _FakeResources()
+        existing = Path(ProcessNamer("Old Name", stamp=resources.stamp, read_field=resources.read_field)
+                        .named_exe(source, "Dashboard"))
+        monkeypatch.setattr(
+            "app_support.process_identity.shutil.copyfile",
+            lambda *a, **k: (_ for _ in ()).throw(PermissionError("in use")),
+        )
+
+        assert ProcessNamer("OldName", stamp=resources.stamp, read_field=resources.read_field) \
+            .named_exe(source, "Dashboard") == str(existing)
+        assert existing.is_file()
+
     @pytest.mark.parametrize("failure", [
         struct.error("unpack_from requires a buffer of at least 6 bytes"),
         AttributeError("module 'ctypes' has no attribute 'WinDLL'"),
@@ -309,6 +372,22 @@ class TestNameThisProcess:
 
         assert console.with_name("Highdeas-Highdeas.exe").read_bytes() == console.read_bytes()
 
+    def test_a_later_run_under_its_own_copy_still_copies_the_launcher_beside_it(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ):
+        console, windowed = self._launchers(tmp_path)
+        resources = _FakeResources()
+        namer = ProcessNamer("Highdeas", stamp=resources.stamp, read_field=resources.read_field)
+        monkeypatch.setattr(sys, "executable", str(console))
+        namer.name_this_process("Highdeas")
+        copy = console.with_name("Highdeas-Highdeas.exe")
+        monkeypatch.setattr(sys, "executable", str(copy))
+        windowed.write_bytes(b"MZ the upgrade's windowed launcher")
+
+        namer.name_this_process("Highdeas")
+
+        assert copy.read_bytes() == windowed.read_bytes()
+
     def test_never_raises_when_python_cannot_say_what_it_is_running_under(
         self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
     ):
@@ -356,8 +435,9 @@ class TestOwnsExeName:
             name = self.NAMER.exe_name("pythonw.exe", role)
             assert self.NAMER.owns_exe_name(name), name
 
-    def test_does_not_claim_the_interpreters_a_copy_falls_back_to(self):
+    def test_refuses_the_plain_interpreters_the_wider_pattern_lets_through(self):
         for name in ("pythonw.exe", "python.exe", "py.exe"):
+            assert re.match(self.NAMER.process_name_pattern, name), name
             assert not self.NAMER.owns_exe_name(name), name
 
     def test_does_not_claim_a_name_that_merely_starts_the_same(self):

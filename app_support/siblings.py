@@ -10,6 +10,10 @@ from types import ModuleType
 RENAMED_SIBLINGS = {"player_core": "funestra"}
 
 
+def not_a_checkout(folder_name: str) -> bool:
+    return folder_name.startswith(".")
+
+
 def names_of(sibling: str) -> tuple[str, ...]:
     return (sibling, *(old for old, new in RENAMED_SIBLINGS.items() if new == sibling))
 

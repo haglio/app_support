@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from armed_guard import arm_where_the_guard_looks
 from production_machine import git
 
 from app_support.sanitize import (
@@ -16,6 +17,7 @@ from app_support.sanitize import (
     scan_files,
 )
 from app_support.sanitize.guard import Violation, _fold, _matcher, build_parser, main
+from app_support.siblings import not_a_checkout
 
 
 class TestFold:
@@ -33,7 +35,7 @@ class TestFold:
 
 
 class TestViolation:
-    def test_its_repr_names_the_place_and_not_the_term(self):
+    def test_its_repr_which_pytest_prints_on_a_failure_names_the_place_not_the_term(self):
         shown = repr(Violation("notes.md", 3, "forbiddenterm", "has *** in it"))
 
         assert "forbiddenterm" not in shown
@@ -53,8 +55,10 @@ class TestFindViolations:
         for spelled in ("m\u0131\u017fplacedterm", "MİSPLACEDTERM"):
             assert find_violations(f"the {spelled} here", ["misplacedterm"]), spelled
 
-    def test_word_boundary_prevents_substring_false_positive(self):
-        assert find_violations("a concatenated list", ["cat"]) == []
+    def test_the_right_boundary_refuses_a_term_starting_a_longer_word(self):
+        assert find_violations("a catalog here", ["cat"]) == []
+
+    def test_the_left_boundary_refuses_a_term_ending_a_longer_word(self):
         assert find_violations("a bobcat here", ["cat"]) == []
 
     def test_matches_a_multi_word_term_across_flexible_whitespace(self):
@@ -68,7 +72,7 @@ class TestFindViolations:
         found = find_violations("clean\nclean\nhas badterm\nclean", ["badterm"])
         assert [v.line for v in found] == [3]
 
-    def test_violations_come_back_sorted_by_line_not_grouped_by_term(self):
+    def test_violations_come_back_sorted_by_line_since_only_the_first_twenty_are_shown(self):
         found = find_violations("has beta\nclean\nhas alpha\n", ["alpha", "beta"])
 
         assert [(v.line, v.term) for v in found] == [(1, "beta"), (3, "alpha")]
@@ -80,6 +84,8 @@ class TestFindViolations:
     def test_matches_an_inflected_form(self):
         for form in ("badterms", "badterm's", "badtermed", "badterming"):
             assert find_violations(f"the {form} here", ["badterm"]), form
+
+    def test_a_sibilants_plural_takes_es_which_a_bare_s_cannot_reach(self):
         assert find_violations("all the foxes here", ["fox"])
 
     def test_an_entry_written_in_the_plural_matches_its_own_stem(self):
@@ -135,7 +141,7 @@ class TestScanFiles:
         found = scan_files([tmp_path / "a.txt", tmp_path / "b.txt"], ["badterm"], root=tmp_path)
         assert [(v.path, v.term) for v in found] == [("a.txt", "badterm")]
 
-    def test_skips_undecodable_binary_files(self, tmp_path: Path):
+    def test_skips_binary_contents_leaving_media_to_gitignore(self, tmp_path: Path):
         (tmp_path / "img.bin").write_bytes(b"\x00\xff\xfe badterm \x00")
         assert scan_files([tmp_path / "img.bin"], ["badterm"], root=tmp_path) == []
 
@@ -162,7 +168,7 @@ class TestScanFiles:
 
         assert [(v.line, v.excerpt) for v in found] == [(0, "(in the file's name)")]
 
-    def test_a_terms_matcher_is_built_once_however_many_files_are_scanned(
+    def test_a_terms_matcher_is_built_once_so_a_large_tree_stays_under_its_time_limit(
             self, tmp_path: Path):
         for name in ("a.txt", "b.txt", "c.txt"):
             (tmp_path / name).write_text("clean", encoding="utf-8")
@@ -201,13 +207,6 @@ class TestScanFiles:
         assert all("badterm" not in repr(v) for v in found)
 
 
-def _arm(repo: Path, terms: str) -> Path:
-    path = blocklist_path(repo)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(terms, encoding="utf-8")
-    return path
-
-
 def _checkout(family: Path, name: str) -> Path:
     repo = family / name
     repo.mkdir(parents=True)
@@ -226,12 +225,30 @@ class TestBlocklistPath:
         shared.write_text("alpha\n", encoding="utf-8")
         assert blocklist_path(repo) == shared.resolve()
 
-    def test_ignores_a_copy_left_inside_a_checkout(self, tmp_path: Path):
+    def test_a_copy_inside_a_checkout_is_ignored_so_the_lists_cannot_drift_apart(self, tmp_path: Path):
         family = tmp_path / "family"
         repo = _checkout(family, "repo")
         (repo / ".sanitize").mkdir()
         (repo / ".sanitize" / "blocklist.txt").write_text("stale\n", encoding="utf-8")
         assert blocklist_path(repo).parent.parent == family.resolve()
+
+    def test_the_list_is_in_no_checkout_so_no_commit_can_carry_it(self, tmp_path: Path):
+        family = tmp_path / "family"
+        repo = _checkout(family, "repo")
+
+        assert repo.resolve() not in blocklist_path(repo).parents
+
+    def test_every_checkout_on_the_machine_reads_the_one_list(self, tmp_path: Path):
+        family = tmp_path / "family"
+        one = _checkout(family, "one")
+        another = _checkout(family, "another")
+
+        assert blocklist_path(one) == blocklist_path(another)
+
+    def test_the_lists_folder_is_one_a_walk_over_the_checkouts_passes_by(self, tmp_path: Path):
+        repo = _checkout(tmp_path / "family", "repo")
+
+        assert not_a_checkout(blocklist_path(repo).parent.name)
 
     def test_finds_it_from_a_worktree_too(self, tmp_path: Path):
         family = tmp_path / "family"
@@ -254,14 +271,14 @@ class TestBlocklistPath:
         assert not blocklist_path(clone).exists()
 
 
-class TestHookEntryPoint:
+class TestTheHooksMakeGitRefuseTheCommit:
     TERM = "nonceterm"
 
     def _repo(self, tmp_path: Path, terms: str | None) -> Path:
         repo = tmp_path / "family" / "repo"
         repo.mkdir(parents=True)
         if terms is not None:
-            _arm(repo, terms)
+            arm_where_the_guard_looks(repo, terms)
         here = Path(__file__).resolve().parent.parent
         for rel in ("tools/githooks/pre-commit", "tools/githooks/commit-msg"):
             dest = repo / rel
@@ -278,13 +295,17 @@ class TestHookEntryPoint:
         git("config", "core.hooksPath", "tools/githooks", cwd=repo)
         return repo
 
-    def _commit(self, repo: Path, message: str = "seed", *, pythonpath: Path | None = None):
-        here = Path(__file__).resolve().parents[1]
-        env = {**os.environ, "PYTHONPATH": str(pythonpath or here)}
+    def _commit(self, repo: Path, message: str = "seed", *, guard_on_path: Path | None = None):
         return subprocess.run(
             ["git", "-C", str(repo), "commit", "-m", message],
-            capture_output=True, text=True, env=env, check=False,
+            capture_output=True, text=True, env=self._the_guard_for_a_repo_with_no_venv(guard_on_path),
+            check=False,
         )
+
+    @staticmethod
+    def _the_guard_for_a_repo_with_no_venv(guard_on_path: Path | None) -> dict[str, str]:
+        here = Path(__file__).resolve().parents[1]
+        return {**os.environ, "PYTHONPATH": str(guard_on_path or here)}
 
     def test_the_hook_refuses_a_staged_banned_term(self, tmp_path: Path):
         repo = self._repo(tmp_path, f"{self.TERM}\n")
@@ -294,6 +315,15 @@ class TestHookEntryPoint:
         assert done.returncode != 0
         assert "blocked term" in done.stderr
         assert self.TERM not in done.stderr
+
+    def test_the_refusal_says_a_commit_made_anyway_is_in_history_for_good(self, tmp_path: Path):
+        repo = self._repo(tmp_path, f"{self.TERM}\n")
+        (repo / "notes.md").write_text(f"this has {self.TERM} in it\n", encoding="utf-8")
+        git("add", ".", cwd=repo)
+
+        done = self._commit(repo)
+
+        assert "in history for good" in done.stderr
 
     def test_the_hook_refuses_a_file_named_after_a_term(self, tmp_path: Path):
         repo = self._repo(tmp_path, f"{self.TERM}\n")
@@ -323,7 +353,7 @@ class TestHookEntryPoint:
         git("add", ".", cwd=repo)
         assert self._commit(repo).returncode == 0
 
-    def test_no_blocklist_means_no_enforcement(self, tmp_path: Path):
+    def test_no_blocklist_means_no_enforcement_said_aloud_as_the_only_sign_it_is_missing(self, tmp_path: Path):
         repo = self._repo(tmp_path, None)
         (repo / "notes.md").write_text(f"this has {self.TERM} in it\n", encoding="utf-8")
         git("add", ".", cwd=repo)
@@ -331,13 +361,13 @@ class TestHookEntryPoint:
         assert done.returncode == 0
         assert "no blocklist" in done.stderr
 
-    def _shadow(self, tmp_path: Path) -> Path:
+    def _shadow_app_support_so_the_import_fails_everywhere(self, tmp_path: Path) -> Path:
         shadow = tmp_path / "shadow"
         shadow.mkdir()
         (shadow / "app_support.py").write_text("", encoding="utf-8")
         return shadow
 
-    def _only(self, repo: Path, hook_name: str) -> None:
+    def _only_this_hook_so_the_other_cannot_answer_for_it(self, repo: Path, hook_name: str) -> None:
         alone = repo / "tools" / f"githooks-{hook_name}-only"
         alone.mkdir()
         hook = alone / hook_name
@@ -349,9 +379,9 @@ class TestHookEntryPoint:
         repo = self._repo(tmp_path, f"{self.TERM}\n")
         (repo / "notes.md").write_text("perfectly clean\n", encoding="utf-8")
         git("add", ".", cwd=repo)
-        self._only(repo, "pre-commit")
+        self._only_this_hook_so_the_other_cannot_answer_for_it(repo, "pre-commit")
 
-        done = self._commit(repo, pythonpath=self._shadow(tmp_path))
+        done = self._commit(repo, guard_on_path=self._shadow_app_support_so_the_import_fails_everywhere(tmp_path))
 
         assert done.returncode != 0
         assert "app_support" in done.stderr
@@ -360,9 +390,9 @@ class TestHookEntryPoint:
         repo = self._repo(tmp_path, f"{self.TERM}\n")
         (repo / "notes.md").write_text("perfectly clean\n", encoding="utf-8")
         git("add", ".", cwd=repo)
-        self._only(repo, "commit-msg")
+        self._only_this_hook_so_the_other_cannot_answer_for_it(repo, "commit-msg")
 
-        done = self._commit(repo, pythonpath=self._shadow(tmp_path))
+        done = self._commit(repo, guard_on_path=self._shadow_app_support_so_the_import_fails_everywhere(tmp_path))
 
         assert done.returncode != 0
         assert "app_support" in done.stderr
