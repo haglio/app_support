@@ -16,6 +16,8 @@ from app_support import lint, unread
 _NOTHING_TO_REPORT = 0
 _REPORT_IS_NOT_EMPTY = 3
 
+SCAN_DEADLINE_S = 180
+
 
 class ScanDidNotRun(RuntimeError): ...
 
@@ -62,7 +64,10 @@ def scan(
     whitelist: Path | str | None = None,
     min_confidence: int = 60,
     callers: Iterable[Path | str] = (),
+    deadline_s: float = SCAN_DEADLINE_S,
 ) -> str:
+    from app_support.subprocess_utils import run_process_tree  # noqa: PLC0415
+
     callers = tuple(Path(caller).resolve() for caller in callers)
     _refuse_a_target_inside_a_caller(targets, callers)
     if whitelist is not None:
@@ -74,7 +79,12 @@ def scan(
         config.write_text(_vulture_config_reading(*targets, *callers), encoding="utf-8")
         command = [sys.executable, "-m", "vulture", "--config", str(config),
                    "--min-confidence", str(min_confidence)]
-        result = subprocess.run(command, capture_output=True, text=True, check=False)
+        try:
+            result = run_process_tree(command, timeout=deadline_s, text=True)
+        except subprocess.TimeoutExpired:
+            raise ScanDidNotRun(
+                f"vulture was still reading after {deadline_s} s: "
+                f"{', '.join(str(target) for target in targets)}") from None
     if result.returncode == _REPORT_IS_NOT_EMPTY:
         return _without_what_is_inside(callers, result.stdout)
     if result.returncode != _NOTHING_TO_REPORT:
