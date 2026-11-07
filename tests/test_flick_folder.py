@@ -37,7 +37,7 @@ def _genau_holding_flicks_in(root: Path, name: str) -> Path:
     return root / "genau"
 
 
-def test_finds_the_flicks_by_the_shape_of_their_folder_whatever_it_is_called(tmp_path):
+def test_finds_the_flicks_by_the_shape_of_their_folder_whatever_it_is_called_since_no_tracked_file_may_spell_it(tmp_path):
     assert flicks_folder_in(_genau_holding_flicks_in(tmp_path / "a", "clips")) == tmp_path / "a" / "genau" / "clips"
     assert flicks_folder_in(_genau_holding_flicks_in(tmp_path / "b", "flicks")) == tmp_path / "b" / "genau" / "flicks"
 

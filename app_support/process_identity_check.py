@@ -95,9 +95,8 @@ def assert_the_process_is_named(name_this_process: Callable[[], object], where: 
     namer = ProcessNamer(app_name)
     scripts = _a_venv_with_the_real_launchers(where)
     before = set(scripts.iterdir())
-    the_other_launcher_so_an_app_copying_whatever_it_runs_under_is_caught = (
-        "python.exe" if interpreter == "pythonw.exe" else "pythonw.exe")
-    with _running_under(str(scripts / the_other_launcher_so_an_app_copying_whatever_it_runs_under_is_caught)):
+    other_launcher = "python.exe" if interpreter == "pythonw.exe" else "pythonw.exe"
+    with _running_under(str(scripts / other_launcher)):
         name_this_process()
     made = sorted(set(scripts.iterdir()) - before)
     expected = scripts / namer.exe_name(interpreter, role)

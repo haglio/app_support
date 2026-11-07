@@ -16,7 +16,6 @@ POS_RUNS_FROM_0_TO = 100
 def document(
     actions: list[dict], *, duration_seconds: int, creator: str = ""
 ) -> dict:
-    the_videos_length_which_no_last_action_can_tell = duration_seconds
     return {
         "actions": sorted(actions, key=lambda action: action["at"]),
         "inverted": False,
@@ -25,7 +24,7 @@ def document(
             "chapters": [],
             "creator": creator,
             "description": "",
-            "duration": the_videos_length_which_no_last_action_can_tell,
+            "duration": duration_seconds,
             "license": "",
             "notes": "",
             "performers": [],

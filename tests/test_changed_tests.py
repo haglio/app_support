@@ -23,7 +23,8 @@ def test_a_test_the_branch_edited_is_named_and_its_neighbor_is_not(branch_from):
     assert changed_test_ids(branch.path, "main") == ["tests/test_things.py::test_two"]
 
 
-def test_an_edited_helper_names_the_tests_that_call_it_and_no_others_never_every_test_in_its_file(branch_from):
+def test_an_edited_helper_names_the_tests_that_call_it_and_no_others_since_one_helper_line_would_repeat_every_test_in_its_file(
+        branch_from):
     branch = branch_from({"tests/test_things.py": BASE})
     branch.commit({"tests/test_things.py": BASE.replace("return 1", "return 2 - 1")})
 

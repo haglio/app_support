@@ -203,9 +203,11 @@ class TestWhatShippingReachesInAConsumer:
         assert done.stdout.count(THE_BLOCKED_WORD_CHECK) == 1, done.stdout
 
     def test_this_package_declares_no_pytest_entry_point_so_no_suite_runs_its_checks_unasked(self):
-        the_declaration_since_without_one_nothing_runs = (APP_SUPPORT / "pyproject.toml").read_text(encoding="utf-8")
+        pyproject = (APP_SUPPORT / "pyproject.toml").read_text(encoding="utf-8")
 
-        assert "pytest11" not in the_declaration_since_without_one_nothing_runs
+        assert "pytest11" not in pyproject, (
+            "only the declaration can show this: without an entry point there is no code path to run, so a test of "
+            "behavior is green either way")
 
     def test_a_shuffled_run_dealt_into_parts_runs_the_blocked_word_check_in_exactly_one_part(
         self, tmp_path: Path,

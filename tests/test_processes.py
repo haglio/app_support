@@ -144,8 +144,8 @@ class TestTheMarksOnAProcess:
     def test_reads_the_desktop_this_very_process_runs_on(self):
         assert processes.desktop_of(os.getpid())
 
-    def test_reads_the_desktop_of_a_process_started_on_another_one(self, child_suspended_on_its_own_desktop_so_it_runs_nothing):
-        desktop, pid = child_suspended_on_its_own_desktop_so_it_runs_nothing
+    def test_reads_the_desktop_of_a_process_started_on_another_one(self, child_suspended_on_its_own_desktop_named_from_the_start):
+        desktop, pid = child_suspended_on_its_own_desktop_named_from_the_start
 
         assert processes.desktop_of(pid) == desktop
 
@@ -212,8 +212,8 @@ class TestWhoseItIs:
         assert processes.whose_process(stub, {10: stub, 12: stranger}) == processes.HIS
 
     @windows_only
-    def test_whose_a_running_process_is_comes_from_its_desktop(self, child_suspended_on_its_own_desktop_so_it_runs_nothing):
-        _, pid = child_suspended_on_its_own_desktop_so_it_runs_nothing
+    def test_whose_a_running_process_is_comes_from_its_desktop(self, child_suspended_on_its_own_desktop_named_from_the_start):
+        _, pid = child_suspended_on_its_own_desktop_named_from_the_start
         among = {process.pid: process for process in processes.running()}
 
         assert processes.whose_process(among[pid], among) == processes.OFFSCREEN

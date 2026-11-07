@@ -253,7 +253,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"  {v.path}:{v.line}  {v.excerpt}", file=sys.stderr)
     if len(violations) > _MOST_LISTED:
         print(f"  ... {len(violations) - _MOST_LISTED} more", file=sys.stderr)
-    # For good: GitHub keeps a commit reachable after a history rewrite, and clones and forks outlive it.
+    # In history for good: GitHub keeps a commit reachable after a history rewrite, and clones and forks outlive it.
     print(
         "\nFabricate the value instead -- invent it from scratch rather than\n"
         "editing a real one, which leaves the same thing named. `--no-verify`\n"

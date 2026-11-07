@@ -228,7 +228,7 @@ def render(launcher: Launcher) -> str:
     if launcher.waits_out_a_rebase:
         sections.append(_rebase_folders().splitlines())
     if launcher.loading_screen:
-        sections.append(_loading_screen_on_the_updaters_interpreter(launcher).splitlines())
+        sections.append(_loading_screen_while_the_apps_venv_may_be_installing(launcher).splitlines())
     if launcher.log:
         sections.append(_LOG.splitlines())
     if launcher.watch:
@@ -473,7 +473,6 @@ def _before_the_app_runs(launcher: Launcher) -> list[str]:
         lines.append("  shell.CurrentDirectory = directory")
     if launcher.watch:
         lines += ["  If fso.FileExists(readyFile) Then fso.DeleteFile readyFile",
-                  "  ' An exit stamp an earlier launch left would read as this launch dying before it had a chance.",
                   "  If fso.FileExists(exitedFlag) Then fso.DeleteFile exitedFlag"]
     if launcher.note:
         lines.append("  If fso.FileExists(notePath) Then fso.DeleteFile notePath")
@@ -651,7 +650,7 @@ End Sub
 """
 
 
-def _loading_screen_on_the_updaters_interpreter(launcher: Launcher) -> str:
+def _loading_screen_while_the_apps_venv_may_be_installing(launcher: Launcher) -> str:
     flag = f"fso.BuildPath(screenFolder, {_text(loading_screen.CANCELED)})"
     said = ", ".join(_text(name) for name in loading_screen.SAID_AT_EACH_LAUNCH)
     snapshots = "picturesFolder" if launcher.preview else "screenFolder"
@@ -825,7 +824,7 @@ def differences(checkout: Path) -> list[str]:
             problems.append(f"{file}: declared in pyproject.toml and never rendered")
         elif path.read_text(encoding="utf-8", errors="replace") != render(launcher):
             problems.append(f"{file}: differs from its spec in pyproject.toml")
-    problems += [f"{path.name}: a launcher with no spec in pyproject.toml, written by hand beside the rendered ones"
+    problems += [f"{path.name}: a launcher with no spec in pyproject.toml, a fork from the rendered ones"
                  for path in sorted(checkout.glob("*.vbs")) if path.name not in specs]
     return problems
 

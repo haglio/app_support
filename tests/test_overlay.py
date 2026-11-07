@@ -23,13 +23,13 @@ def _json(path: Path, data: dict) -> Path:
 
 
 class TestReadOverlay:
-    def test_the_committed_example_of_tame_placeholders_answers_when_there_is_no_local_overlay(self, tmp_path: Path):
+    def test_the_committed_example_answers_when_there_is_no_local_overlay(self, tmp_path: Path):
         example = _json(tmp_path / "content.example.json", {"library_root": "C:/example"})
 
         assert read_overlay(tmp_path / "content.local.json", example) == {"library_root": "C:/example"}
         assert overlay_path(tmp_path / "content.local.json", example) == example
 
-    def test_the_local_overlay_answers_instead_when_it_is_there_as_written_merging_and_caching_are_each_repos(
+    def test_the_local_overlay_answers_instead_when_it_is_there_as_written_never_merged_what_a_missing_key_means_is_the_repos(
             self, tmp_path: Path):
         example = _json(tmp_path / "content.example.json", {"library_root": "C:/example", "acts": ["a"]})
         local = _json(tmp_path / "content.local.json", {"library_root": "D:/mine"})
@@ -103,7 +103,7 @@ class TestMissingKeys:
 
 
 class TestOverlayValue:
-    def test_the_value_at_a_path_of_keys_for_what_an_app_cannot_run_without_optional_ones_are_read_with_get(self):
+    def test_the_value_at_a_path_of_keys(self):
         assert overlay_value({"a": {"b": 1}}, "a", "b") == 1
 
     def test_an_absent_key_is_named_with_how_far_the_path_got(self, tmp_path: Path):

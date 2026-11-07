@@ -107,7 +107,7 @@ class TestSetAppUserModelId:
             set_app_user_model_id("Example.App", shell32=lambda: shell32)
 
 
-def _read_back_as_a_uuid_since_restating_the_packing_proves_nothing(guid) -> uuid.UUID:
+def _read_back_through_uuid_not_our_own_packing(guid) -> uuid.UUID:
     return uuid.UUID(fields=(
         guid.Data1, guid.Data2, guid.Data3,
         guid.Data4[0], guid.Data4[1],
@@ -122,7 +122,7 @@ class TestTheShortcutProperty:
         # and leaves the second taskbar button this whole module exists to
         # prevent. The key is System.AppUserModel.ID, documented as
         # {9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3}, 5.
-        assert _read_back_as_a_uuid_since_restating_the_packing_proves_nothing(_PKEY_AppUserModel_ID.fmtid) == uuid.UUID(
+        assert _read_back_through_uuid_not_our_own_packing(_PKEY_AppUserModel_ID.fmtid) == uuid.UUID(
             "9f4c2855-9f79-4b39-a8d0-e1d42de1d5f3")
         assert _PKEY_AppUserModel_ID.pid == 5
 
@@ -638,8 +638,7 @@ class TestTryAcquireMutex:
 
         assert log == ["CreateMutexW", "read the error"]
 
-    def test_a_refusal_to_make_the_mutex_at_all_is_not_a_second_instance_a_caller_telling_them_apart_asks_is_mutex_held(
-            self):
+    def test_a_refusal_to_make_the_mutex_at_all_is_not_a_second_instance(self):
         kernel32 = _FakeKernel32(handle=0)
 
         assert try_acquire_mutex("Global\\ExampleApp.dce3a7c5ad9e",

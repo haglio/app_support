@@ -361,7 +361,7 @@ def test_a_write_that_dies_part_way_leaves_no_temp_file_that_reads_as_someones(t
     assert list(tmp_path.iterdir()) == []
 
 
-def test_two_publishers_of_one_file_never_share_a_temp_file_nor_die_tidying_it(tmp_path: Path):
+def test_two_publishers_of_one_file_never_share_a_temp_file_and_the_run_loop_hears_false_never_a_raise(tmp_path: Path):
     path = tmp_path / "status.txt"
     shared = path.with_suffix(".tmp")
     still_open = ExitStack()

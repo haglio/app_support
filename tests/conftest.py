@@ -126,7 +126,7 @@ def desktop_of_its_own():
 
 
 @pytest.fixture
-def child_suspended_on_its_own_desktop_so_it_runs_nothing(desktop_of_its_own):
+def child_suspended_on_its_own_desktop_named_from_the_start(desktop_of_its_own):
     pid = desktop_of_its_own.start([sys._base_executable, "-c", "import time; time.sleep(120)"], suspended=True)
     return desktop_of_its_own.name, pid
 
@@ -170,8 +170,9 @@ def _the_process_is_given_back():
         for handler in list(logger.handlers):
             logger.removeHandler(handler)
             handler.close()
-    # CPython's faulthandler is one switch for the whole process, which pytest turns on for its own crash traceback,
-    # and it cannot say which stream it had: back on, to the one a crash should reach.
+    # CPython's faulthandler is one switch for the whole process, which pytest turns on for its own crash traceback;
+    # it keeps the file descriptor a test last gave it even once that file is closed, and cannot say which stream it
+    # had, so it goes back on to the one a crash should reach.
     if faulthandler_was_on:
         faulthandler.enable(sys.__stderr__, all_threads=True)
     else:

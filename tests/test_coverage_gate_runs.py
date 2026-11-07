@@ -115,7 +115,8 @@ class TestTheFloorAgainstARealRun:
         assert done.returncode != 0, done.stdout + done.stderr
         assert "Required test coverage of 90.0% not reached" in done.stdout
 
-    def test_a_run_that_only_collects_is_not_asked_to_raise_the_floor_it_measured_the_imports_alone(self, tmp_path):
+    def test_a_run_that_only_collects_is_not_asked_to_raise_the_floor_it_measured_the_imports_alone_and_is_how_an_agent_shows_a_runs_checks(
+            self, tmp_path):
         done = run_pytest_in(self._repo(tmp_path, 10.0), "--collect-only")
 
         assert done.returncode == 0, done.stdout + done.stderr

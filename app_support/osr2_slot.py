@@ -13,7 +13,7 @@ from . import ports
 __all__ = ["Osr2Sender", "Osr2Slot"]
 
 _TAKEN = b"taken\n"
-_LOOPBACK_SO_ONLY_THIS_MACHINE_CAN_DRIVE_THE_DEVICE = "127.0.0.1"
+_LOOPBACK = "127.0.0.1"
 
 Writer = Callable[[str, str], None]
 
@@ -59,11 +59,11 @@ class Osr2Slot:
     def start(self) -> None:
         self._listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
-            self._listener.bind((_LOOPBACK_SO_ONLY_THIS_MACHINE_CAN_DRIVE_THE_DEVICE, self._port))
+            self._listener.bind((_LOOPBACK, self._port))
             self._listener.listen()
         except OSError:
-            self._logger.exception("The OSR2's slot could not listen on 127.0.0.1:%s, "
-                                   "so no sender can connect to it", self._port)
+            self._logger.exception("The OSR2's slot could not listen on %s:%s, "
+                                   "so no sender can connect to it", _LOOPBACK, self._port)
             return
         self._logger.info("OSR2 slot: %s:%s", *self.address)
         self._start_thread(target=self._accept, args=(self._listener,), name="broker-osr2-slot")

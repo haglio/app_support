@@ -357,7 +357,7 @@ class TestTheBrokersSide:
         finally:
             slot.close()
 
-    def test_the_slot_listens_on_loopback_only(self, listening):
+    def test_the_slot_listens_on_loopback_only_so_nobody_on_the_network_can_drive_the_device(self, listening):
         host, _port = listening.address
 
         assert host == "127.0.0.1"
@@ -467,6 +467,21 @@ def _a_sender(listening: Osr2Slot, name: str, **kwargs) -> Osr2Sender:
 
 
 class TestASendersSide:
+    def test_a_send_with_no_broker_listening_returns_at_once_never_making_the_loop_wait(self):
+        nobody = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        nobody.bind(("127.0.0.1", 0))
+        closed_port = nobody.getsockname()[1]
+        nobody.close()
+        sender = Osr2Sender("portrait", port=closed_port)
+        sender.want(True)
+
+        started = time.monotonic()
+        sender.send("L05000I33")
+        took = time.monotonic() - started
+
+        sender.close()
+        assert took < 0.5, took
+
     def test_a_sender_that_wants_the_osr2_connects_and_holds_it_under_its_name(self, listening):
         sender = _a_sender(listening, "Portrait")
         sender.want(True)

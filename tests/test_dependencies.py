@@ -314,7 +314,8 @@ class TestDeclaredSiblings:
         root = self._repo(tmp_path, source="", siblings='"funestra"', beside=["funestra"])
 
         assert undeclared_siblings(root, [root / "someapp"], root / "pyproject.toml") == [
-            "funestra is declared, imported nowhere, and needed by nothing declared: a clone and an install on every run"]
+            "funestra is declared, imported nowhere, and needed by nothing declared: a clone and an install on every run, "
+            "and a dependency to whoever decides what may change"]
 
     def test_a_sibling_the_pytest_config_loads_as_a_plugin_counts_as_imported(self, tmp_path: Path):
         root = self._repo(tmp_path, source="", siblings='"app_support"',

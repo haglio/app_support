@@ -87,7 +87,7 @@ _LONGEST_COMMAND_LINE = 32_766  # Win32 CreateProcessW's limit, less its termina
 
 
 class _Pace:
-    _ENOUGH_TO_PACE_BY_FEW_ENOUGH_TO_LOSE = 20
+    _FIRST_CHUNK_TO_MEASURE_ON_FEW_ENOUGH_TO_LOSE_TO_A_TIGHT_CAP = 20
 
     def __init__(self) -> None:
         self.spent = 0.0
@@ -99,7 +99,7 @@ class _Pace:
 
     def tests_that_fit(self, seconds: float, runs: int) -> int:
         if not self.spent:
-            return self._ENOUGH_TO_PACE_BY_FEW_ENOUGH_TO_LOSE
+            return self._FIRST_CHUNK_TO_MEASURE_ON_FEW_ENOUGH_TO_LOSE_TO_A_TIGHT_CAP
         return max(0, int(seconds * self.test_runs / (self.spent * runs)))
 
     def seconds_for(self, chunk: list[str]) -> float:

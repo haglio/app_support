@@ -20,7 +20,7 @@ from app_support.file_channel import (
 _NAMES = {name: value for name, value in vars(state_files).items() if name.isupper()}
 
 
-def test_every_name_is_a_distinct_text_file_spelled_here_once_each_one_two_repos_meet_at():
+def test_every_name_is_a_distinct_text_file_spelled_here_once():
     assert len(set(_NAMES.values())) == len(_NAMES)
     for value in _NAMES.values():
         assert value.endswith(".txt")
@@ -29,7 +29,7 @@ def test_every_name_is_a_distinct_text_file_spelled_here_once_each_one_two_repos
 
 
 class TestTheBrokersCommandFile:
-    def test_a_verb_fun_time_queues_is_the_verb_the_broker_drains(self, tmp_path: Path):
+    def test_a_verb_any_app_queues_is_the_verb_the_broker_drains(self, tmp_path: Path):
         path = tmp_path / state_files.BROKER_CMD
 
         assert append_command(path, "park")
@@ -96,7 +96,7 @@ class TestGenausChannel:
         write_flag(path, True)
         assert read_paused_state(path) is True
 
-    def test_the_status_genau_publishes_is_the_record_fun_time_reads(self, tmp_path: Path):
+    def test_the_status_genau_publishes_is_the_record_fun_time_reads_with_funestras_genau_status_keys(self, tmp_path: Path):
         path = tmp_path / state_files.GENAU_STATUS
 
         assert publish_whole(path, "cruise=1\nlocked=0\nshape=sine\nclip=example.mp4\n")
@@ -104,7 +104,8 @@ class TestGenausChannel:
         assert read_key_values(path) == {
             "cruise": "1", "locked": "0", "shape": "sine", "clip": "example.mp4"}
 
-    def test_the_drive_genau_publishes_is_read_whole_by_the_main_funestra(self, tmp_path: Path):
+    def test_the_drive_genau_publishes_is_read_whole_by_the_main_funestra_in_funestras_drive_readout_lines(
+            self, tmp_path: Path):
         path = tmp_path / state_files.GENAU_DRIVE
 
         assert publish_whole(path, "speed=3\ndepth=40\n")

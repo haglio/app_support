@@ -99,7 +99,8 @@ def test_a_second_writer_waits_rather_than_writing_over_the_first(tmp_path):
     assert read_json(path) == {"alpha": 1, "beta": 2}
 
 
-def test_a_lock_a_dead_process_left_behind_is_taken_over_once_it_is_stale(tmp_path):
+def test_a_lock_a_dead_process_left_behind_is_taken_over_once_stale_far_past_the_wait_since_taking_a_live_holders_is_the_lost_update(
+        tmp_path):
     path = tmp_path / "clip.json"
     _write(path, {"video": {"act": "alpha"}})
     lock = tmp_path / "clip.json.lock"

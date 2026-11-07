@@ -30,7 +30,7 @@ def _family(tmp_path: Path) -> Path:
     return family
 
 
-class TestSiblingCheckout:
+class TestSiblingCheckoutForAPackageBesideThisOne:
     def test_found_beside_this_checkout(self, tmp_path: Path):
         family = _family(tmp_path)
 
@@ -127,14 +127,15 @@ class TestProjectRoots:
         assert roots == (Path("D:/repos"), Path("C:/old"))
 
 
-class TestProjectDir:
+class TestProjectDirForAnAppsFilesUnderTheRoots:
     def test_a_checkout_not_yet_moved_is_found_in_the_old_root_during_a_move(self, tmp_path: Path):
         (tmp_path / "new").mkdir()
         (tmp_path / "old" / "someapp").mkdir(parents=True)
 
         assert project_dir("someapp", (tmp_path / "new", tmp_path / "old")) == tmp_path / "old" / "someapp"
 
-    def test_a_sibling_nobody_has_is_a_path_to_check_for_not_an_import_time_crash(self, tmp_path: Path):
+    def test_a_sibling_nobody_has_is_a_path_under_the_first_root_for_callers_to_check_never_an_import_time_crash(
+            self, tmp_path: Path):
         assert project_dir("someapp", (tmp_path / "new", tmp_path / "old")) == tmp_path / "new" / "someapp"
 
     def test_a_renamed_siblings_folder_is_found_under_its_old_name_too(self, tmp_path: Path):

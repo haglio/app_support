@@ -46,6 +46,8 @@ def _claim(lock: Path, *, wait_s: float, stale_s: float) -> int:
             return os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         except FileExistsError:
             if _abandoned(lock, stale_s):
+                # Windows refuses to unlink a lock another writer holds open through this handle, so a second taker
+                # meets a PermissionError here rather than joining the first writer.
                 lock.unlink(missing_ok=True)
                 continue
             if time.monotonic() >= deadline:

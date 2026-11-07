@@ -25,7 +25,7 @@ def _dotted(context: str, key: str) -> str:
     return f"{context}.{key}" if context else key
 
 
-def _a_refusal_a_launcher_with_no_console_still_tells(what: str, context: str, key: str, source: Path) -> str:
+def _naming_the_key_and_its_file(what: str, context: str, key: str, source: Path) -> str:
     return f"{what}: {_dotted(context, key)} (in {source})"
 
 
@@ -34,10 +34,10 @@ def require_section(
 ) -> dict[str, Any]:
     value = parent.get(key)
     if value is None:
-        raise ValueError(_a_refusal_a_launcher_with_no_console_still_tells(
+        raise ValueError(_naming_the_key_and_its_file(
             "Missing required config section", context, key, source))
     if not isinstance(value, dict):
-        raise TypeError(_a_refusal_a_launcher_with_no_console_still_tells(
+        raise TypeError(_naming_the_key_and_its_file(
             "Expected object for config section", context, key, source))
     return value
 
@@ -49,7 +49,7 @@ def optional_section(
     if value is None:
         return None
     if not isinstance(value, dict):
-        raise TypeError(_a_refusal_a_launcher_with_no_console_still_tells(
+        raise TypeError(_naming_the_key_and_its_file(
             "Expected object for config section", context, key, source))
     return value
 
@@ -57,7 +57,7 @@ def optional_section(
 def require_value(parent: dict[str, Any], key: str, source: Path, *, context: str = "config") -> Any:
     value = parent.get(key)
     if value is None:
-        raise ValueError(_a_refusal_a_launcher_with_no_console_still_tells(
+        raise ValueError(_naming_the_key_and_its_file(
             "Missing required config value", context, key, source))
     return value
 
