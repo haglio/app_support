@@ -48,8 +48,3 @@ def with_actions(record: dict, actions: Sequence[str]) -> dict | None:
     others = {key: value for key, value in video.items() if key != STORED_ACTIONS_KEY}
     return {**record, VIDEO_BLOCK: others | ({STORED_ACTIONS_KEY: list(actions)} if actions else {})}
 
-
-ACTION_KEY = SITE_ACTION_KEY
-LABELS_KEY = STORED_ACTIONS_KEY
-labels_of = actions_of
-labeled = with_actions
