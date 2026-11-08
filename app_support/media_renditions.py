@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from app_support import kino_folder
 from app_support.video_names import UPSCALE_SUFFIX
 
-_UPSCALED_ROOT = ("2_outbox", "upscaled_by_orientation")
 _ORIGINAL_ROOT = "1_sorted"
 
 
@@ -13,14 +13,9 @@ def original_rendition(video_path: str | Path, media_root: str | Path | None) ->
         return ""
     video = Path(video_path)
     try:
-        relative = video.relative_to(media_root)
+        orientation, source, _name = video.relative_to(kino_folder.upscales_in(kino_folder.kino_dir())).parts
     except ValueError:
         return ""
-
-    parts = relative.parts
-    if parts[: len(_UPSCALED_ROOT)] != _UPSCALED_ROOT or len(parts) != len(_UPSCALED_ROOT) + 3:
-        return ""
-    orientation, source = parts[len(_UPSCALED_ROOT)], parts[len(_UPSCALED_ROOT) + 1]
 
     stem = video.stem.removesuffix(UPSCALE_SUFFIX)
     original = Path(media_root) / _ORIGINAL_ROOT / source / orientation / (stem + video.suffix)
