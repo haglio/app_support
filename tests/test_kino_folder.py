@@ -25,3 +25,25 @@ def test_an_upscale_is_filed_by_orientation_then_source():
 
 def test_kinos_trash_is_in_kinos_folder_as_genaus_is_in_genaus():
     assert kino_folder.trash_folder_in(Path("C:/videos/kino")) == Path("C:/videos/kino/trash")
+
+
+LIBRARY = Path("L:/library")
+KINO = LIBRARY / "videos" / "videos" / "kino"
+RETIRED = LIBRARY / "videos" / "videos" / "2D" / "AI" / "2_outbox"
+
+
+def test_an_upscale_filed_in_the_retired_2_outbox_went_to_kinos_folder():
+    assert kino_folder.where_it_went(
+        RETIRED / "upscaled_by_orientation" / "portrait" / "provider" / "video one_topaz.mp4",
+        LIBRARY, KINO) == KINO / "2D" / "AI" / "portrait" / "provider" / "video one_topaz.mp4"
+
+
+def test_a_video_in_the_retired_trash_went_to_kinos_trash():
+    assert kino_folder.where_it_went(RETIRED / "trash" / "video one_topaz.mp4", LIBRARY, KINO) == (
+        KINO / "trash" / "video one_topaz.mp4")
+
+
+def test_anything_else_went_nowhere():
+    for elsewhere in (LIBRARY / "videos" / "videos" / "2D" / "AI" / "1_sorted" / "a.mp4",
+                      RETIRED / "stray.txt", Path("C:/elsewhere/a.mp4")):
+        assert kino_folder.where_it_went(elsewhere, LIBRARY, KINO) is None
