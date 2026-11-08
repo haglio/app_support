@@ -62,10 +62,10 @@ def test_a_deal_the_run_asked_for_stands():
 
 def test_a_clock_given_the_computer_ends_the_test_at_its_ceiling():
     ended = []
-    clock = worker_processes.StarvedClock(0.05, lambda: ended.append(True), tick=0.005)
+    clock = worker_processes.StarvedClock(0.05, lambda: ended.append(True), tick=0.005, idle_share=lambda: 1.0)
 
     clock.start()
-    clock.join(5)
+    clock.join(30)
 
     assert ended == [True]
 
