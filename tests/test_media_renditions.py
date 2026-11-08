@@ -102,3 +102,12 @@ class TestTheVersionsAClipCanBeSwitchedBetween:
         stray = _original(media_root, "abc.mp4")
 
         assert renditions(str(stray), media_root) == []
+
+
+def test_an_upscale_still_in_the_retired_2_outbox_finds_its_original_until_evolver_moves_it(kino, media_root):
+    upscaled = media_root / "2_outbox" / "upscaled_by_orientation" / "portrait" / "provider" / "abc_topaz.mp4"
+    upscaled.parent.mkdir(parents=True)
+    upscaled.write_bytes(b"")
+    original = _original(media_root, "abc.mp4")
+
+    assert original_rendition(str(upscaled), media_root) == str(original)
