@@ -6,9 +6,9 @@ from pathlib import Path
 from app_support.json_store import locked_update
 
 VIDEO_BLOCK = "video"
-ACTION_KEY = "action"
+SITE_ACTION_KEY = "action"
 WRONG_ACTION_KEY = "wrong_action"
-LABELS_KEY = "labels"
+STORED_ACTIONS_KEY = "labels"
 
 
 def strike(record_path: Path) -> str:
@@ -22,7 +22,7 @@ def strike(record_path: Path) -> str:
         video = record.get(VIDEO_BLOCK)
         if not isinstance(video, dict):
             return None
-        struck = str(video.pop(ACTION_KEY, "") or "").strip()
+        struck = str(video.pop(SITE_ACTION_KEY, "") or "").strip()
         if not struck:
             return None
         video[WRONG_ACTION_KEY] = struck
@@ -35,15 +35,21 @@ def strike(record_path: Path) -> str:
     return struck
 
 
-def labels_of(record: dict) -> tuple[str, ...]:
+def actions_of(record: dict) -> tuple[str, ...]:
     video = record.get(VIDEO_BLOCK)
-    labels = video.get(LABELS_KEY) if isinstance(video, dict) else None
-    return tuple(labels) if isinstance(labels, list) else ()
+    actions = video.get(STORED_ACTIONS_KEY) if isinstance(video, dict) else None
+    return tuple(actions) if isinstance(actions, list) else ()
 
 
-def labeled(record: dict, labels: Sequence[str]) -> dict | None:
+def with_actions(record: dict, actions: Sequence[str]) -> dict | None:
     video = record.get(VIDEO_BLOCK, {})
-    if not isinstance(video, dict) or labels_of(record) == tuple(labels):
+    if not isinstance(video, dict) or actions_of(record) == tuple(actions):
         return None
-    others = {key: value for key, value in video.items() if key != LABELS_KEY}
-    return {**record, VIDEO_BLOCK: others | ({LABELS_KEY: list(labels)} if labels else {})}
+    others = {key: value for key, value in video.items() if key != STORED_ACTIONS_KEY}
+    return {**record, VIDEO_BLOCK: others | ({STORED_ACTIONS_KEY: list(actions)} if actions else {})}
+
+
+ACTION_KEY = SITE_ACTION_KEY
+LABELS_KEY = STORED_ACTIONS_KEY
+labels_of = actions_of
+labeled = with_actions
