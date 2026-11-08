@@ -2,10 +2,7 @@ from __future__ import annotations
 
 import json
 
-from app_support import video_action
 from app_support.video_action import (
-    SITE_ACTION_KEY,
-    STORED_ACTIONS_KEY,
     actions_of,
     strike,
     with_actions,
@@ -82,9 +79,3 @@ def test_giving_a_record_with_no_video_in_it_actions_gives_it_one():
 def test_a_record_whose_video_is_no_document_is_somebody_elses_and_gets_no_actions():
     assert with_actions({"video": "a note"}, ("alpha",)) is None
 
-
-def test_the_old_names_answer_as_the_new_ones_until_no_app_spells_them():
-    assert video_action.labels_of is actions_of
-    assert video_action.labeled is with_actions
-    assert video_action.LABELS_KEY == STORED_ACTIONS_KEY
-    assert video_action.ACTION_KEY == SITE_ACTION_KEY
