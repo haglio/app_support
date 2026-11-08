@@ -18,6 +18,7 @@ EXAMPLE: dict[str, Any] = {
     "genau_source": "example-loop-clips",
     "ambient_audio_dir": "videos/example-folder/ambient-clips",
     "genau_dir": "C:/path/to/library-root/videos/videos/genau",
+    "kino_dir": "C:/path/to/library-root/videos/videos/kino",
     "genau_audio_dir": "C:/path/to/library-root/videos/audio/genau",
     "origenerator_images_dir": "C:/path/to/library-root/images/origenerator",
     "origenerator_videos_dir": "C:/path/to/library-root/videos/videos/origenerator",

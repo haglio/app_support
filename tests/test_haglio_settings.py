@@ -73,6 +73,7 @@ def test_the_example_names_what_every_app_that_listens_hears_with(setting, monke
 
 FOLDERS_THE_APPS_READ = (
     "genau_dir",
+    "kino_dir",
     "genau_audio_dir",
     "origenerator_images_dir",
     "origenerator_videos_dir",

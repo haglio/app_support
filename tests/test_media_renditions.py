@@ -1,14 +1,30 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
+import pytest
+
+from app_support import haglio_settings
 from app_support.media_renditions import original_rendition, renditions
 
-UPSCALED = ("2_outbox", "upscaled_by_orientation", "portrait", "provider")
+
+@pytest.fixture
+def kino(tmp_path: Path, monkeypatch) -> Path:
+    kino = tmp_path / "videos" / "kino"
+    settings = tmp_path / "settings.json"
+    settings.write_text(json.dumps({"kino_dir": str(kino)}), encoding="utf-8")
+    monkeypatch.setenv(haglio_settings.SETTINGS_ENV, str(settings))
+    return kino
 
 
-def _upscaled(media_root: Path, name: str) -> Path:
-    video = media_root.joinpath(*UPSCALED, name)
+@pytest.fixture
+def media_root(tmp_path: Path) -> Path:
+    return tmp_path / "videos" / "2D" / "AI"
+
+
+def _upscaled(kino: Path, name: str) -> Path:
+    video = kino / "2D" / "AI" / "portrait" / "provider" / name
     video.parent.mkdir(parents=True, exist_ok=True)
     video.write_bytes(b"")
     return video
@@ -21,63 +37,68 @@ def _original(media_root: Path, name: str) -> Path:
     return video
 
 
-def test_finds_the_pre_upscale_original(tmp_path: Path):
-    upscaled = _upscaled(tmp_path, "abc_topaz.mp4")
-    original = _original(tmp_path, "abc.mp4")
+def test_finds_the_pre_upscale_original(kino, media_root):
+    upscaled = _upscaled(kino, "abc_topaz.mp4")
+    original = _original(media_root, "abc.mp4")
 
-    assert original_rendition(str(upscaled), tmp_path) == str(original)
-
-
-def test_finds_an_original_that_was_never_upscale_suffixed(tmp_path: Path):
-    upscaled = _upscaled(tmp_path, "abc.mp4")
-    original = _original(tmp_path, "abc.mp4")
-
-    assert original_rendition(str(upscaled), tmp_path) == str(original)
+    assert original_rendition(str(upscaled), media_root) == str(original)
 
 
-def test_no_original_on_disk(tmp_path: Path):
-    upscaled = _upscaled(tmp_path, "abc_topaz.mp4")
+def test_finds_an_original_that_was_never_upscale_suffixed(kino, media_root):
+    upscaled = _upscaled(kino, "abc.mp4")
+    original = _original(media_root, "abc.mp4")
 
-    assert original_rendition(str(upscaled), tmp_path) == ""
-
-
-def test_video_outside_the_upscale_tree(tmp_path: Path):
-    stray = tmp_path / "1_sorted" / "provider" / "portrait" / "abc.mp4"
-    stray.parent.mkdir(parents=True, exist_ok=True)
-    stray.write_bytes(b"")
-
-    assert original_rendition(str(stray), tmp_path) == ""
+    assert original_rendition(str(upscaled), media_root) == str(original)
 
 
-def test_video_outside_the_media_root(tmp_path: Path):
-    assert original_rendition(r"C:\elsewhere\abc_topaz.mp4", tmp_path) == ""
+def test_no_original_on_disk(kino, media_root):
+    upscaled = _upscaled(kino, "abc_topaz.mp4")
+
+    assert original_rendition(str(upscaled), media_root) == ""
 
 
-def test_no_media_root_configured(tmp_path: Path):
-    upscaled = _upscaled(tmp_path, "abc_topaz.mp4")
+def test_video_outside_kinos_upscales(kino, media_root):
+    stray = _original(media_root, "abc.mp4")
+
+    assert original_rendition(str(stray), media_root) == ""
+
+
+def test_a_video_in_kinos_trash_has_no_original(kino, media_root):
+    trashed = kino / "trash" / "portrait" / "provider" / "abc_topaz.mp4"
+    trashed.parent.mkdir(parents=True)
+    trashed.write_bytes(b"")
+    _original(media_root, "abc.mp4")
+
+    assert original_rendition(str(trashed), media_root) == ""
+
+
+def test_video_outside_the_library(kino, media_root):
+    assert original_rendition(r"C:\elsewhere\abc_topaz.mp4", media_root) == ""
+
+
+def test_no_media_root_configured(kino):
+    upscaled = _upscaled(kino, "abc_topaz.mp4")
 
     assert original_rendition(str(upscaled), None) == ""
 
 
-def test_no_video_path(tmp_path: Path):
-    assert original_rendition("", tmp_path) == ""
+def test_no_video_path(kino, media_root):
+    assert original_rendition("", media_root) == ""
 
 
 class TestTheVersionsAClipCanBeSwitchedBetween:
-    def test_the_video_leads_its_own_family(self, tmp_path: Path):
-        upscaled = _upscaled(tmp_path, "abc_topaz.mp4")
-        original = _original(tmp_path, "abc.mp4")
+    def test_the_video_leads_its_own_family(self, kino, media_root):
+        upscaled = _upscaled(kino, "abc_topaz.mp4")
+        original = _original(media_root, "abc.mp4")
 
-        assert renditions(str(upscaled), tmp_path) == [str(upscaled), str(original)]
+        assert renditions(str(upscaled), media_root) == [str(upscaled), str(original)]
 
-    def test_a_video_whose_original_is_gone_has_no_family(self, tmp_path: Path):
-        upscaled = _upscaled(tmp_path, "abc_topaz.mp4")
+    def test_a_video_whose_original_is_gone_has_no_family(self, kino, media_root):
+        upscaled = _upscaled(kino, "abc_topaz.mp4")
 
-        assert renditions(str(upscaled), tmp_path) == []
+        assert renditions(str(upscaled), media_root) == []
 
-    def test_a_video_outside_the_upscale_tree_has_no_family(self, tmp_path: Path):
-        stray = tmp_path / "1_sorted" / "provider" / "portrait" / "abc.mp4"
-        stray.parent.mkdir(parents=True, exist_ok=True)
-        stray.write_bytes(b"")
+    def test_a_video_outside_kinos_upscales_has_no_family(self, kino, media_root):
+        stray = _original(media_root, "abc.mp4")
 
-        assert renditions(str(stray), tmp_path) == []
+        assert renditions(str(stray), media_root) == []
