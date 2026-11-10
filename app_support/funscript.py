@@ -12,19 +12,26 @@ VERSION = "1.0"
 
 POS_RUNS_FROM_0_TO = 100
 
+ACTIONS = "actions"
+AT = "at"
+METADATA = "metadata"
+DURATION = "duration"
+BOOKMARKS = "bookmarks"
+CHAPTERS = "chapters"
+
 
 def document(
     actions: list[dict], *, duration_seconds: int, creator: str = ""
 ) -> dict:
     return {
-        "actions": sorted(actions, key=lambda action: action["at"]),
+        ACTIONS: sorted(actions, key=lambda action: action[AT]),
         "inverted": False,
-        "metadata": {
-            "bookmarks": [],
-            "chapters": [],
+        METADATA: {
+            BOOKMARKS: [],
+            CHAPTERS: [],
             "creator": creator,
             "description": "",
-            "duration": duration_seconds,
+            DURATION: duration_seconds,
             "license": "",
             "notes": "",
             "performers": [],
@@ -40,7 +47,7 @@ def document(
 
 
 def actions_of(payload: dict) -> list[dict]:
-    actions = payload.get("actions")
+    actions = payload.get(ACTIONS)
     return actions if isinstance(actions, list) else []
 
 
