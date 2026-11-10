@@ -6,8 +6,12 @@ from pathlib import Path
 from app_support.funscript import (
     actions_of,
     document,
+    generated_mark_of,
+    generated_marks_tree_in,
     read,
     read_actions,
+    script_of,
+    scripts_tree_in,
     write,
 )
 
@@ -119,3 +123,35 @@ def test_a_script_lands_whole_or_not_at_all(tmp_path: Path):
     write(path, document([{"at": 0, "pos": 99}], duration_seconds=1))
 
     assert list(path.parent.iterdir()) == [path]
+
+
+def test_a_videos_script_sits_in_the_scripts_tree_where_the_video_sits_in_the_library(tmp_path: Path):
+    trees = tmp_path / "videos"
+    video = trees / "videos" / "VR" / "finished" / "scene one.mp4"
+
+    script = script_of(video, library=trees / "videos", scripts_tree=scripts_tree_in(trees))
+
+    assert script == trees / "scripts" / "scripts" / "VR" / "finished" / "scene one.funscript"
+
+
+def test_a_video_outside_the_library_has_no_script_in_its_scripts_tree(tmp_path: Path):
+    trees = tmp_path / "videos"
+
+    assert script_of(tmp_path / "elsewhere" / "clip.mp4", library=trees / "videos",
+                     scripts_tree=scripts_tree_in(trees)) is None
+
+
+def test_the_mark_saying_no_person_wrote_a_script_sits_where_the_script_sits_in_the_marks_tree(tmp_path: Path):
+    trees = tmp_path / "videos"
+    script = trees / "scripts" / "scripts" / "VR" / "scene one.funscript"
+
+    mark = generated_mark_of(script, scripts_tree=scripts_tree_in(trees), marks_tree=generated_marks_tree_in(trees))
+
+    assert mark == trees / "scripts" / "generated" / "VR" / "scene one.generated"
+
+
+def test_a_script_outside_the_scripts_tree_has_no_mark(tmp_path: Path):
+    trees = tmp_path / "videos"
+
+    assert generated_mark_of(tmp_path / "elsewhere" / "clip.funscript", scripts_tree=scripts_tree_in(trees),
+                             marks_tree=generated_marks_tree_in(trees)) is None
