@@ -18,7 +18,7 @@ from app_support.private_reach import private_imports, reaches_in
 _COMMAND = "python -m app_support.gates.baseline"
 STATED_RENAMES_PATH = "tools/quality_baseline_renames.json"
 _NAMES_AN_EXTERNALITY = re.compile(
-    r"\b(Qt|PyQt\d?|Q[A-Z][a-z]\w+|mpv|libmpv|Win32|Windows|ctypes|pywin32|pCloud|ComfyUI|pygame|OpenXR|ffmpeg|ffprobe|FFmpeg"
+    r"\b(Qt|PyQt\d?|PySide\d?|shiboken\d?|Q[A-Z][a-z]\w+|mpv|libmpv|Win32|Windows|ctypes|pywin32|pCloud|ComfyUI|pygame|OpenXR|ffmpeg|ffprobe|FFmpeg"
     r"|CPython|pytest|pip|git|GitHub|Chrome|SQLite|sqlite3|Pillow|PIL|vosk|Whisper|Ollama|ruff|vulture|VBScript|PowerShell|GGUF|safetensors|kohya|lycoris|WAN|SDXL|SD1.5|Flux|LTX|Krea|Topaz|COM|HRESULT|PE|psutil|wscript|TOML|Task Scheduler|Claude app|OSR2)\b")
 _MARKER_FOR_A_TOOL = re.compile(r"#\s*(noqa|type:|pragma:|pylint:|ruff:|fmt:|nosec|isort:|mypy:|pyright:)")
 

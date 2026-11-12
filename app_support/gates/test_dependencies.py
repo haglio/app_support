@@ -10,7 +10,6 @@ from app_support.dependencies import (
     assert_the_declared_floor_is_the_one_the_gate_runs,
 )
 from app_support.gates import Checkout
-from app_support.pyqt_pair import assert_pyqt6_and_its_webengine_are_held_to_one_minor
 
 pytestmark = pytest.mark.repo_check
 
@@ -36,10 +35,6 @@ def test_every_sibling_this_repo_needs_is_declared(pytestconfig):
 
 def test_every_sibling_is_named_at_a_tag(pytestconfig):
     assert_every_sibling_is_pinned(Checkout.of(pytestconfig).pyproject)
-
-
-def test_pyqt6_and_its_webengine_are_held_to_one_minor(pytestconfig):
-    assert_pyqt6_and_its_webengine_are_held_to_one_minor(Checkout.of(pytestconfig).pyproject)
 
 
 def test_the_declared_floor_is_the_one_the_gate_runs(pytestconfig):
