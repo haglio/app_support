@@ -148,7 +148,8 @@ class TestGenerationStem:
         made = "wan_loop_00042"
         for added in ("_", f"_{SOUND_MARK}", f"_{UPSCALE_SUFFIX}", f"_{SOUND_MARK}{UPSCALE_SUFFIX}",
                       f"_{SOUND_MARK}_apo8_iris2", f"_{SOUND_MARK}{UPSCALE_SUFFIX} (2)",
-                      f"_ (3){UPSCALE_SUFFIX}_cfr", "_enh"):
+                      f"_ (3){UPSCALE_SUFFIX}_cfr", "_enh", f"_{UPSCALE_SUFFIX}{SOUND_MARK}",
+                      f"_{SOUND_MARK} (2)"):
             assert generation_stem(made + added) == made, added
 
     def test_a_name_with_nothing_added_comes_back_whole(self):
