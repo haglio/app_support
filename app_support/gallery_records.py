@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from pathlib import PurePath
 
@@ -15,7 +16,7 @@ RECORD_COLUMNS = (
     "positive_prompt", "negative_prompt", "seed",
     "recipe_category", "combined_labels", "starred",
     "watch_completions", "watch_skips", "watch_locks",
-    "shape", "video_seconds", "genau_flipped",
+    "shape", "video_seconds", "video_resolution", "video_aspect_ratio", "genau_flipped",
 )
 
 _SETTINGS = ("model", "style", "resolution", "aspect_ratio", "quality", "creativity")
@@ -44,6 +45,26 @@ def model_label(params: dict) -> str:
         if value := params.get(key):
             return _MODEL_EXT_RE.sub("", str(value).replace("\\", "/").rsplit("/", 1)[-1])
     return ""
+
+
+_COMMON_RATIOS = ((16, 9), (9, 16), (1, 1), (4, 3), (3, 4), (3, 2), (2, 3),
+                  (21, 9), (9, 21), (5, 4), (4, 5))
+_RATIO_TOLERANCE = 0.05
+
+
+def aspect_ratio(width: int, height: int) -> str:
+    if width <= 0 or height <= 0:
+        return ""
+    target = width / height
+    for a, b in _COMMON_RATIOS:
+        if abs(a / b - target) <= _RATIO_TOLERANCE:
+            return f"{a}:{b}"
+    divisor = math.gcd(width, height)
+    return f"{width // divisor}:{height // divisor}"
+
+
+def size_labels(width: int, height: int) -> dict[str, str]:
+    return {"video_resolution": f"{width}x{height}", "video_aspect_ratio": aspect_ratio(width, height)}
 
 
 def _made_here_block(row: dict, fields: tuple[tuple[str, str], ...]) -> dict:
@@ -121,7 +142,9 @@ class GalleryReading:
         return record
 
     def _record_kept(self, row: dict) -> dict:
-        shown = (_made_here_block(row, (("prompt", "positive_prompt"),)) if _made_here(row)
+        shown = (_made_here_block(row, (("prompt", "positive_prompt"),
+                                        ("resolution", "video_resolution"),
+                                        ("aspect_ratio", "video_aspect_ratio"))) if _made_here(row)
                  else recorded_block(params_of(row), VIDEO))
         if action := row.get(_ACTION_COLUMN, row.get(_ACTION_AS_READ)):
             shown["action"] = action

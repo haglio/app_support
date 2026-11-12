@@ -3,7 +3,13 @@ from __future__ import annotations
 import json
 from pathlib import PurePosixPath
 
-from app_support.gallery_records import RECORD_COLUMNS, GalleryReading, model_label
+from app_support.gallery_records import (
+    RECORD_COLUMNS,
+    GalleryReading,
+    aspect_ratio,
+    model_label,
+    size_labels,
+)
 
 _FRAME = "frame-one.png"
 _WORDS_VIDEO = {"prompt": "a lighthouse in words", "model": "Motion W", "seed": "7"}
@@ -137,7 +143,8 @@ def test_the_columns_a_reader_must_ask_for_are_every_one_the_builder_reads():
     assert set(RECORD_COLUMNS) == {
         "prompt_id", "source", "params_json", "output_files", "evolver_upscale",
         "recipe_category", "combined_labels", "starred", "watch_completions", "watch_skips",
-        "watch_locks", "shape", "video_seconds", "genau_flipped", "positive_prompt",
+        "watch_locks", "shape", "video_seconds", "video_resolution", "video_aspect_ratio",
+        "genau_flipped", "positive_prompt",
         "negative_prompt", "seed"}
 
 
@@ -178,3 +185,36 @@ def test_a_video_made_here_with_nothing_recorded_has_no_field_written_empty():
                      f"{_KINO}/wan22_i2v_00001__topaz.mp4")
 
     assert set(record["video"]) == {"type"}
+
+
+def test_a_wide_size_reads_as_sixteen_by_nine():
+    assert aspect_ratio(832, 480) == "16:9"
+
+
+def test_a_tall_size_reads_as_nine_by_sixteen():
+    assert aspect_ratio(480, 832) == "9:16"
+
+
+def test_a_square_size_reads_as_one_by_one():
+    assert aspect_ratio(624, 624) == "1:1"
+
+
+def test_an_uncommon_ratio_is_reduced():
+    assert aspect_ratio(1000, 300) == "10:3"
+
+
+def test_a_size_with_no_extent_has_no_ratio():
+    assert aspect_ratio(0, 480) == ""
+
+
+def test_a_size_is_labeled_as_the_sidecars_spelled_it():
+    assert size_labels(832, 480) == {"video_resolution": "832x480", "video_aspect_ratio": "16:9"}
+
+
+def test_a_video_made_here_carries_the_size_its_row_keeps():
+    video = _made_here("vid-1", "wan22_i2v_00001_.mp4", video_resolution="832x480",
+                       video_aspect_ratio="16:9")
+
+    shown = _record([video], f"{_KINO}/wan22_i2v_00001__topaz.mp4")["video"]
+
+    assert (shown["resolution"], shown["aspect_ratio"]) == ("832x480", "16:9")
