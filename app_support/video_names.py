@@ -46,10 +46,14 @@ def strip_processing_suffixes(stem: str) -> str:
 _COPY_COUNT = re.compile(r" \(\d+\)$")
 
 
+def strip_uniquifier(stem: str) -> str:
+    return _COPY_COUNT.sub("", stem)
+
+
 def stem_as_made(path) -> str:
     stem = PurePath(frame_name(str(path))).stem
     while True:
-        earlier = _COPY_COUNT.sub("", stem).removesuffix(UPSCALE_SUFFIX)
+        earlier = strip_uniquifier(stem).removesuffix(UPSCALE_SUFFIX)
         if earlier == stem:
             return stem
         stem = earlier
@@ -60,6 +64,18 @@ SOUND_MARK = "-audio"
 
 def stem_of_either_copy(path) -> str:
     return stem_as_made(path).removesuffix(SOUND_MARK)
+
+
+def origin_stem(stem: str) -> str:
+    while True:
+        reduced = strip_processing_suffixes(strip_uniquifier(stem))
+        if reduced == stem:
+            return stem
+        stem = reduced
+
+
+def generation_stem(stem: str) -> str:
+    return origin_stem(stem).removesuffix(SOUND_MARK).rstrip("_")
 
 
 def _is_hash_token(token: str) -> bool:
