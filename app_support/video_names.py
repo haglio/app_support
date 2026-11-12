@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import re
+from pathlib import PurePath
+
+from app_support.comfy_file_refs import frame_name
 
 SEPARATORS = re.compile(r"[-_ .]+")
 
@@ -38,6 +41,18 @@ def strip_processing_suffixes(stem: str) -> str:
         if stripped == stem:
             return stem
         stem = stripped
+
+
+_COPY_COUNT = re.compile(r" \(\d+\)$")
+
+
+def stem_as_made(path) -> str:
+    stem = PurePath(frame_name(str(path))).stem
+    while True:
+        earlier = _COPY_COUNT.sub("", stem).removesuffix(UPSCALE_SUFFIX)
+        if earlier == stem:
+            return stem
+        stem = earlier
 
 
 def _is_hash_token(token: str) -> bool:
