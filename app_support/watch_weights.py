@@ -8,6 +8,31 @@ from dataclasses import dataclass
 WATCH_BLOCK = "watch"
 WEIGHT_KEY = "weight"
 NEUTRAL_WEIGHT = 1.0
+COUNT_FIELDS = ("completions", "skips", "locks")
+
+_LOCK_SCORE = 3.0
+_SCORE_SOFTENING = 3.0
+_MAX_DOUBLINGS = 3.0
+
+
+def weight_for(counts: dict | None) -> float:
+    if not counts:
+        return NEUTRAL_WEIGHT
+    score = (
+        counts.get("completions", 0)
+        + _LOCK_SCORE * counts.get("locks", 0)
+        - counts.get("skips", 0)
+    )
+    doublings = max(-_MAX_DOUBLINGS, min(_MAX_DOUBLINGS, score / _SCORE_SOFTENING))
+    return float(2.0 ** doublings)
+
+
+def add_counts(*sources: dict | None) -> dict[str, int]:
+    total = dict.fromkeys(COUNT_FIELDS, 0)
+    for source in sources:
+        for field in COUNT_FIELDS:
+            total[field] += int((source or {}).get(field) or 0)
+    return total
 
 
 def weight_of(record: dict) -> float:
