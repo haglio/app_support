@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 from app_support.video_names import (
+    SOUND_MARK,
     UPSCALE_SUFFIX,
     clip_title,
+    generation_stem,
     normalize_title,
+    origin_stem,
     stable_title,
     stem_as_made,
     stem_of_either_copy,
     strip_processing_suffixes,
+    strip_uniquifier,
     version_group_of,
 )
 
@@ -116,3 +120,39 @@ class TestStemOfEitherCopy:
     def test_reads_past_what_the_library_did_to_either_copy(self):
         assert stem_of_either_copy(f"wan_loop_00042_-audio (2){UPSCALE_SUFFIX}.mp4") == (
             "wan_loop_00042_")
+
+
+class TestStripUniquifier:
+    def test_drops_the_number_a_second_copy_was_given(self):
+        assert strip_uniquifier("clip (2)") == "clip"
+
+    def test_a_stem_with_no_number_comes_back_whole(self):
+        assert strip_uniquifier("clip one") == "clip one"
+
+    def test_only_a_trailing_number_in_parentheses_is_stripped(self):
+        assert strip_uniquifier("clip (director's cut)") == "clip (director's cut)"
+        assert strip_uniquifier("clip (2) more") == "clip (2) more"
+
+
+class TestOriginStem:
+    def test_a_stem_is_taken_back_to_what_arrived_through_every_layer_added_after(self):
+        assert origin_stem("scene one (2)_topaz (3)") == "scene one"
+        assert origin_stem("scene one_topaz (2)_topaz") == "scene one"
+
+    def test_a_stem_with_nothing_added_comes_back_whole(self):
+        assert origin_stem("scene one") == "scene one"
+
+
+class TestGenerationStem:
+    def test_is_the_name_the_video_was_made_with_under_every_suffix_the_library_adds(self):
+        made = "wan_loop_00042"
+        for added in ("_", f"_{SOUND_MARK}", f"_{UPSCALE_SUFFIX}", f"_{SOUND_MARK}{UPSCALE_SUFFIX}",
+                      f"_{SOUND_MARK}_apo8_iris2", f"_{SOUND_MARK}{UPSCALE_SUFFIX} (2)",
+                      f"_ (3){UPSCALE_SUFFIX}_cfr", "_enh"):
+            assert generation_stem(made + added) == made, added
+
+    def test_a_name_with_nothing_added_comes_back_whole(self):
+        assert generation_stem("scene one") == "scene one"
+
+    def test_a_sound_mark_inside_the_name_stays(self):
+        assert generation_stem("scene-audio one") == "scene-audio one"
