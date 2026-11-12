@@ -2,7 +2,7 @@
 
 Windows takes the task list's Name, Processes-tab description and icon from the file a process started from.
 The copy stays in the venv's ``Scripts`` directory, where Python finds ``pyvenv.cfg``. It is the launcher,
-not the base ``python.exe`` it redirects to: a copy of the base interpreter loses the DLL search path PyQt6 needs.
+not the base ``python.exe`` it redirects to: a copy of the base interpreter loses the DLL search path Qt needs.
 CPython's launcher runs the real interpreter as a child named ``python.exe``, held in a Win32 job object, so ending
 the named parent ends that unnamed worker with it.
 """
