@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import PurePath
 
 from app_support.comfy_file_refs import frame_name
@@ -34,6 +35,22 @@ _OUTSIDE = "outside"
 _MADE_ELSEWHERE = frozenset({_OUTSIDE, "starting_frame", "left_out"})
 _ACTION_COLUMN, _ACTION_AS_READ = "recipe_category", "action"
 WATCH_COLUMNS = tuple((field, f"watch_{field}") for field in COUNT_FIELDS)
+MODEL_KEYS = ("unet_high", "unet", "checkpoint", "unet_low")
+_MODEL_EXT_RE = re.compile(r"\.(safetensors|ckpt|pt|pth|gguf|sft|bin)$", re.IGNORECASE)
+
+
+def model_label(params: dict) -> str:
+    for key in MODEL_KEYS:
+        if value := params.get(key):
+            return _MODEL_EXT_RE.sub("", str(value).replace("\\", "/").rsplit("/", 1)[-1])
+    return ""
+
+
+def _made_here_block(row: dict, fields: tuple[tuple[str, str], ...]) -> dict:
+    seed = row.get("seed")
+    found = {**{key: row.get(column) for key, column in fields},
+             "model": model_label(params_of(row)), "seed": str(seed) if seed is not None else None}
+    return {key: value for key, value in found.items() if value}
 
 
 def recorded_block(params: dict, made: str) -> dict:
@@ -104,7 +121,8 @@ class GalleryReading:
         return record
 
     def _record_kept(self, row: dict) -> dict:
-        shown = recorded_block(params_of(row), VIDEO)
+        shown = (_made_here_block(row, (("prompt", "positive_prompt"),)) if _made_here(row)
+                 else recorded_block(params_of(row), VIDEO))
         if action := row.get(_ACTION_COLUMN, row.get(_ACTION_AS_READ)):
             shown["action"] = action
         if labels := json.loads(row.get("combined_labels") or "[]"):
@@ -116,11 +134,8 @@ class GalleryReading:
         if start_image.get("source") == _OUTSIDE:
             record[SOURCE_IMAGE] = recorded_block(params_of(start_image), IMAGE)
         elif _made_here(row):
-            seed = start_image.get("seed")
-            record[SOURCE_IMAGE] = {key: value for key, value in (
-                ("positive_prompt", start_image.get("positive_prompt")),
-                ("negative_prompt", start_image.get("negative_prompt")),
-                ("seed", str(seed) if seed is not None else None)) if value}
+            record[SOURCE_IMAGE] = _made_here_block(start_image, (
+                ("positive_prompt", "positive_prompt"), ("negative_prompt", "negative_prompt")))
         return record
 
     def _words_video_of_frame(self, video: dict, start_image: dict | None) -> dict | None:

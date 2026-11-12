@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import PurePosixPath
 
-from app_support.gallery_records import RECORD_COLUMNS, GalleryReading
+from app_support.gallery_records import RECORD_COLUMNS, GalleryReading, model_label
 
 _FRAME = "frame-one.png"
 _WORDS_VIDEO = {"prompt": "a lighthouse in words", "model": "Motion W", "seed": "7"}
@@ -139,3 +139,42 @@ def test_the_columns_a_reader_must_ask_for_are_every_one_the_builder_reads():
         "recipe_category", "combined_labels", "starred", "watch_completions", "watch_skips",
         "watch_locks", "shape", "video_seconds", "genau_flipped", "positive_prompt",
         "negative_prompt", "seed"}
+
+
+def test_a_model_label_prefers_unet_high_and_strips_the_extension():
+    assert model_label({"unet_high": "wan_high.gguf", "unet_low": "wan_low.gguf"}) == "wan_high"
+
+
+def test_a_model_label_reads_a_flux_unet():
+    assert model_label({"unet": "flux1-dev.safetensors"}) == "flux1-dev"
+
+
+def test_a_model_label_reads_a_checkpoint_in_a_folder():
+    assert model_label({"checkpoint": "sub\\reapony_v80.safetensors"}) == "reapony_v80"
+
+
+def test_a_model_label_is_empty_with_no_model_key():
+    assert model_label({"steps": 8}) == ""
+
+
+def test_a_video_made_here_and_the_image_it_was_made_from_carry_their_models():
+    image = _made_here("img-1", "wan22_t2i_00005_.png", params={"checkpoint": "reapony_v80.safetensors"},
+                       positive_prompt="portrait of a woman", negative_prompt="blurry", seed=7)
+    video = _made_here("vid-1", "wan22_i2v_00009_.mp4", positive_prompt="she turns around", seed=42,
+                       params={"unet_high": "wan_high.gguf",
+                               "input_image": "wan22_t2i_00005_.png [output]"})
+
+    record = _record([image, video], f"{_KINO}/wan22_i2v_00009__topaz.mp4")
+
+    assert {key: record["video"][key] for key in ("prompt", "model", "seed")} == {
+        "prompt": "she turns around", "model": "wan_high", "seed": "42"}
+    assert record["source_image"] == {"positive_prompt": "portrait of a woman",
+                                      "negative_prompt": "blurry", "model": "reapony_v80",
+                                      "seed": "7"}
+
+
+def test_a_video_made_here_with_nothing_recorded_has_no_field_written_empty():
+    record = _record([_made_here("vid-1", "wan22_i2v_00001_.mp4")],
+                     f"{_KINO}/wan22_i2v_00001__topaz.mp4")
+
+    assert set(record["video"]) == {"type"}
