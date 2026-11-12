@@ -5,6 +5,7 @@ from app_support.video_names import (
     clip_title,
     normalize_title,
     stable_title,
+    stem_as_made,
     strip_processing_suffixes,
     version_group_of,
 )
@@ -87,3 +88,20 @@ def test_a_videos_version_family_is_the_group_evolver_recorded_and_fun_time_read
     assert version_group_of({"version": {"group": "y", "processed": True}}) == "y"
     assert version_group_of({"clip": {"compilation": "Vol6"}}) == ""
     assert version_group_of({"version": "y"}) == ""
+
+
+class TestStemAsMade:
+    def test_is_the_file_name_without_its_folder_or_extension(self):
+        assert stem_as_made("C:/library/videos/wan_loop_00042_.mp4") == "wan_loop_00042_"
+
+    def test_reads_the_name_whatever_its_case(self):
+        assert stem_as_made("WAN_LOOP_00042_.MP4") == "wan_loop_00042_"
+
+    def test_drops_the_count_a_second_copy_was_given(self):
+        assert stem_as_made("wan_loop_00042_ (2).mp4") == "wan_loop_00042_"
+
+    def test_drops_the_upscale_mark_and_counts_around_it(self):
+        assert stem_as_made(f"wan_loop_00042_ (2){UPSCALE_SUFFIX} (3).mp4") == "wan_loop_00042_"
+
+    def test_reads_a_frame_by_the_name_comfyui_gave_it(self):
+        assert stem_as_made("wan_loop_00042_.png [output]") == "wan_loop_00042_"
