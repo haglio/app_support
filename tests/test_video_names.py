@@ -6,6 +6,7 @@ from app_support.video_names import (
     normalize_title,
     stable_title,
     stem_as_made,
+    stem_of_either_copy,
     strip_processing_suffixes,
     version_group_of,
 )
@@ -105,3 +106,13 @@ class TestStemAsMade:
 
     def test_reads_a_frame_by_the_name_comfyui_gave_it(self):
         assert stem_as_made("wan_loop_00042_.png [output]") == "wan_loop_00042_"
+
+
+class TestStemOfEitherCopy:
+    def test_a_video_with_sound_and_its_soundless_copy_share_one_stem(self):
+        assert stem_of_either_copy("wan_loop_00042_-audio.mp4") == stem_of_either_copy(
+            "wan_loop_00042_.mp4") == "wan_loop_00042_"
+
+    def test_reads_past_what_the_library_did_to_either_copy(self):
+        assert stem_of_either_copy(f"wan_loop_00042_-audio (2){UPSCALE_SUFFIX}.mp4") == (
+            "wan_loop_00042_")
