@@ -75,7 +75,11 @@ def origin_stem(stem: str) -> str:
 
 
 def generation_stem(stem: str) -> str:
-    return origin_stem(stem).removesuffix(SOUND_MARK).rstrip("_")
+    while True:
+        made = origin_stem(stem).removesuffix(SOUND_MARK).rstrip("_")
+        if made == stem:
+            return stem
+        stem = made
 
 
 def _is_hash_token(token: str) -> bool:
