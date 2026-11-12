@@ -4,12 +4,38 @@ import random
 
 from app_support.watch_weights import (
     Staying,
+    add_counts,
     dealt_by_weight,
     newest_of_each_group,
     passes_inclusion,
+    weight_for,
     weight_of,
     weighted_shuffle,
 )
+
+
+def test_a_video_nothing_has_watched_weighs_one():
+    assert weight_for(None) == 1.0
+    assert weight_for({}) == 1.0
+
+
+def test_three_completions_double_the_weight_and_three_skips_halve_it():
+    assert weight_for({"completions": 3}) == 2.0
+    assert weight_for({"skips": 3}) == 0.5
+
+
+def test_one_lock_outweighs_one_completion():
+    assert weight_for({"locks": 1}) > weight_for({"completions": 1})
+
+
+def test_the_weight_is_clamped_to_an_eighth_and_eightfold():
+    assert weight_for({"completions": 100, "locks": 50}) == 8.0
+    assert weight_for({"skips": 100}) == 0.125
+
+
+def test_counts_add_up_field_by_field_across_sources_reading_absent_as_zero():
+    assert add_counts({"completions": 2, "locks": 1}, None, {"completions": 1, "skips": 4}) == {
+        "completions": 3, "skips": 4, "locks": 1}
 
 
 def test_weighted_shuffle_front_loads_heavy_items():
