@@ -55,6 +55,13 @@ def stem_as_made(path) -> str:
         stem = earlier
 
 
+SOUND_MARK = "-audio"
+
+
+def stem_of_either_copy(path) -> str:
+    return stem_as_made(path).removesuffix(SOUND_MARK)
+
+
 def _is_hash_token(token: str) -> bool:
     return bool(_HASH_TOKEN.fullmatch(token)) and any(c.isalpha() for c in token) and any(
         c.isdigit() for c in token)
