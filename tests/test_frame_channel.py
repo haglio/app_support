@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app_support.frame_channel import FrameReader, FrameWriter
+from app_support.frame_channel import LOOK_AGAIN_AFTER_S, FrameLooks, FrameReader, FrameWriter
 
 
 def _pixels(width: int, height: int, value: int) -> bytes:
@@ -97,3 +97,28 @@ def test_a_new_writer_starts_the_channel_empty(tmp_path):
     finally:
         reader.close()
         second.close()
+
+
+def test_a_window_nobody_asked_about_is_looked_at_again_only_after_a_while():
+    looks = FrameLooks()
+
+    assert [looks.due(now) for now in (0.0, LOOK_AGAIN_AFTER_S / 2,
+                                       LOOK_AGAIN_AFTER_S)] == [True, False, True]
+
+
+def test_a_window_asked_about_is_looked_at_at_once_and_only_once():
+    looks = FrameLooks()
+    looks.due(10.0)
+
+    looks.ask()
+
+    assert [looks.due(10.01), looks.due(10.02)] == [True, False]
+
+
+def test_a_look_that_finds_the_same_pixels_sends_nothing_until_the_window_is_new():
+    looks = FrameLooks()
+
+    assert [looks.worth_sending(b"one"), looks.worth_sending(b"one"),
+            looks.worth_sending(b"two")] == [True, False, True]
+    looks.forget_what_was_sent()
+    assert looks.worth_sending(b"two") is True

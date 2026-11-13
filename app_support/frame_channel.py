@@ -9,6 +9,34 @@ from pathlib import Path
 _HEADER = struct.Struct("<QIII")
 _SEQUENCE = struct.Struct("<Q")
 _BYTES_PER_PIXEL = 4
+LOOK_AGAIN_AFTER_S = 0.1
+
+
+class FrameLooks:
+    def __init__(self) -> None:
+        self._asked = False
+        self._looked_at: float | None = None
+        self._sent: bytes | None = None
+
+    def ask(self) -> None:
+        self._asked = True
+
+    def due(self, now: float) -> bool:
+        if (not self._asked and self._looked_at is not None
+                and now - self._looked_at < LOOK_AGAIN_AFTER_S):
+            return False
+        self._asked = False
+        self._looked_at = now
+        return True
+
+    def worth_sending(self, pixels: bytes) -> bool:
+        if pixels == self._sent:
+            return False
+        self._sent = pixels
+        return True
+
+    def forget_what_was_sent(self) -> None:
+        self._sent = None
 
 
 class FrameWriter:
