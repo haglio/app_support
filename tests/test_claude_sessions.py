@@ -120,3 +120,9 @@ def test_a_command_that_cannot_start_is_a_failure():
 
 def test_a_command_s_output_comes_back(tmp_path):
     assert claude_sessions.run_command([sys.executable, "-c", "print('hi')"], cwd=tmp_path).strip() == "hi"
+
+
+def test_a_new_session_link_opens_claude_desktop_in_the_folder_with_the_brief_typed_in():
+    link = claude_sessions.new_session_link("C:/made up/place", "Fix it & say so")
+
+    assert link == "claude://code/new?folder=C%3A%2Fmade%20up%2Fplace&q=Fix%20it%20%26%20say%20so"
