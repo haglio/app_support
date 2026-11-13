@@ -8,9 +8,11 @@ import subprocess
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import quote
 
 from app_support.subprocess_utils import hidden_subprocess_kwargs
 
+NEW_SESSION_IN_CLAUDE_DESKTOP = "claude://code/new"
 _BACKGROUNDED = re.compile(r"backgrounded\W+([0-9a-f]{8})\b")
 
 
@@ -74,3 +76,7 @@ def open_in_claude_desktop(claude: str, short_id: str, session: str, cwd: Path |
                            run: Callable[..., object] = subprocess.run) -> None:
     run([claude, "stop", short_id], cwd=cwd, capture_output=True, **hidden_subprocess_kwargs())
     run([claude, "--desktop", "--resume", session], cwd=cwd, **hidden_subprocess_kwargs())
+
+
+def new_session_link(folder: Path | str, brief: str) -> str:
+    return f"{NEW_SESSION_IN_CLAUDE_DESKTOP}?folder={quote(str(folder), safe='')}&q={quote(brief, safe='')}"
