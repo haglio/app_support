@@ -6,7 +6,7 @@ import re
 from pathlib import PurePath
 
 from app_support.comfy_file_refs import frame_name
-from app_support.gallery_rows import VideoRows, file_entries, is_video_name
+from app_support.gallery_rows import OUTSIDE, VideoRows, file_entries, is_video_name, made_here
 from app_support.video_action import STORED_ACTIONS_KEY
 from app_support.video_kind import classify
 from app_support.watch_weights import COUNT_FIELDS, WATCH_BLOCK, WEIGHT_KEY, weight_for
@@ -32,8 +32,6 @@ FRAME_OF_VIDEO = "frame_of_video"
 GENAU_SECTION, FLIPPED = "genau", "flipped"
 ORIENTATIONS = ("portrait", "landscape")
 
-_OUTSIDE = "outside"
-_MADE_ELSEWHERE = frozenset({_OUTSIDE, "starting_frame", "left_out"})
 _ACTION_COLUMN, _ACTION_AS_READ = "recipe_category", "action"
 WATCH_COLUMNS = tuple((field, f"watch_{field}") for field in COUNT_FIELDS)
 MODEL_KEYS = ("unet_high", "unet", "checkpoint", "unet_low")
@@ -94,10 +92,6 @@ def orientation_of(row: dict, video: PurePath | None) -> str | None:
     return next((folder for folder in reversed(folders) if folder in ORIENTATIONS), None)
 
 
-def _made_here(row: dict) -> bool:
-    return (row.get("source") or "generated") not in _MADE_ELSEWHERE
-
-
 def _frame_names(row: dict) -> set[str]:
     return {frame_name(entry["filename"]) for entry in file_entries(row) if entry.get("filename")}
 
@@ -144,7 +138,7 @@ class GalleryReading:
     def _record_kept(self, row: dict) -> dict:
         shown = (_made_here_block(row, (("prompt", "positive_prompt"),
                                         ("resolution", "video_resolution"),
-                                        ("aspect_ratio", "video_aspect_ratio"))) if _made_here(row)
+                                        ("aspect_ratio", "video_aspect_ratio"))) if made_here(row)
                  else recorded_block(params_of(row), VIDEO))
         if action := row.get(_ACTION_COLUMN, row.get(_ACTION_AS_READ)):
             shown["action"] = action
@@ -154,15 +148,15 @@ class GalleryReading:
         start_image = self.start_image_of(row)
         if start_image is None:
             return record
-        if start_image.get("source") == _OUTSIDE:
+        if start_image.get("source") == OUTSIDE:
             record[SOURCE_IMAGE] = recorded_block(params_of(start_image), IMAGE)
-        elif _made_here(row):
+        elif made_here(row):
             record[SOURCE_IMAGE] = _made_here_block(start_image, (
                 ("positive_prompt", "positive_prompt"), ("negative_prompt", "negative_prompt")))
         return record
 
     def _words_video_of_frame(self, video: dict, start_image: dict | None) -> dict | None:
-        if start_image is None or not _made_here(video):
+        if start_image is None or not made_here(video):
             return None
         for frame in _frame_names(start_image):
             for other in self._videos_from_frame.get(frame, ()):
