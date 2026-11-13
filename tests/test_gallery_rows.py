@@ -113,3 +113,18 @@ def test_the_first_row_that_made_a_name_is_the_one_found(tmp_path):
                                    _made_here("gen-2", "alpha_00007_.mp4")])
 
     assert rows(tmp_path / "alpha_00007_.mp4") == "gen-1"
+
+
+
+@pytest.mark.parametrize(("source", "here"), [
+    (None, True), ("", True), (gallery_rows.GENERATED, True), ("experiment", True),
+    (gallery_rows.OUTSIDE, False), (gallery_rows.STARTING_FRAME, False),
+    (gallery_rows.LEFT_OUT, False),
+])
+def test_a_row_with_no_source_was_made_here_and_one_brought_in_was_not(source, here):
+    assert gallery_rows.made_here({"prompt_id": "made-up", "source": source}) is here
+
+
+def test_the_sources_are_the_words_the_database_stores():
+    assert (gallery_rows.GENERATED, gallery_rows.OUTSIDE, gallery_rows.STARTING_FRAME,
+            gallery_rows.LEFT_OUT) == ("generated", "outside", "starting_frame", "left_out")

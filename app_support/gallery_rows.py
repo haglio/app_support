@@ -13,6 +13,18 @@ from app_support.video_names import generation_stem
 
 log = logging.getLogger(__name__)
 
+GENERATED = "generated"
+OUTSIDE, STARTING_FRAME, LEFT_OUT = "outside", "starting_frame", "left_out"
+MADE_ELSEWHERE = frozenset({OUTSIDE, STARTING_FRAME, LEFT_OUT})
+
+
+def source_of(row: dict) -> str:
+    return row.get("source") or GENERATED
+
+
+def made_here(row: dict) -> bool:
+    return source_of(row) not in MADE_ELSEWHERE
+
 
 def database(db_path) -> Path:
     db_path = Path(db_path)
