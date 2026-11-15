@@ -10,8 +10,12 @@ def when_words(when: datetime | date | str, now: datetime | None = None) -> str:
     today = (now or datetime.now().astimezone()).date()
     if isinstance(moment, datetime):
         local = moment.astimezone(now.tzinfo if now else None)
-        return f"{_day_word(local.date(), today)} {local:%Y-%m-%d %H:%M:%S}"
-    return f"{_day_word(moment, today)} {moment:%Y-%m-%d}"
+        return f"{_day_word(local.date(), today)}, {local:%H:%M} on {_date_words(local.date())}"
+    return f"{_day_word(moment, today)}, {_date_words(moment)}"
+
+
+def _date_words(day: date) -> str:
+    return f"{day.day} {day:%b}, {day.year}"
 
 
 def _moment_of(stamp: str) -> datetime | date | None:
