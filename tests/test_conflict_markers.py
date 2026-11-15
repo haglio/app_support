@@ -45,24 +45,42 @@ class TestTheGate:
             conflict_markers.assert_no_commit_holds_a_leftover(branch.path)
 
 
-class TestTheCommandLine:
-    def test_a_commit_about_to_be_made_with_a_leftover_is_refused_naming_it(self, branch_from, capsys, monkeypatch):
+class TestTheCommitBeingMade:
+    def test_a_staged_leftover_is_named_as_the_commit_being_made(self, branch_from):
+        branch = branch_from({"pane.py": "x = 0\n"})
+        branch.track({"pane.py": A_CONFLICT, "notes.md": "A heading\n" + BETWEEN})
+
+        found = conflict_markers.in_staged(branch.path)
+
+        assert found == [Leftover(conflict_markers.STAGED, "pane.py", OURS.strip()),
+                         Leftover(conflict_markers.STAGED, "pane.py", THEIRS.strip())]
+        assert f"the commit being made: pane.py: {OURS.strip()}" in conflict_markers.told_of(branch.path, found)
+
+    def test_the_pre_commit_hook_is_refused_naming_the_leftover(self, branch_from, capsys, monkeypatch):
         branch = branch_from({"pane.py": "x = 0\n"})
         branch.track({"pane.py": A_CONFLICT})
         monkeypatch.chdir(branch.path)
 
-        assert conflict_markers.main(["--staged"]) == 1
-        assert f"pane.py: {THEIRS.strip()}" in capsys.readouterr().err
+        assert conflict_markers.refuse_a_staged_leftover(["--staged"]) == 1
+        assert f"the commit being made: pane.py: {THEIRS.strip()}" in capsys.readouterr().err
 
-    def test_a_commit_about_to_be_made_without_one_goes_ahead(self, branch_from, monkeypatch):
+    def test_the_commit_message_hook_leaves_the_staged_files_to_the_pre_commit_one(self, branch_from, monkeypatch):
         branch = branch_from({"pane.py": "x = 0\n"})
-        branch.track({"pane.py": "x = 2\n", "tests/fixture.txt": "A heading\n" + BETWEEN})
+        branch.track({"pane.py": A_CONFLICT})
         monkeypatch.chdir(branch.path)
 
-        assert conflict_markers.main(["--staged"]) == 0
+        assert conflict_markers.refuse_a_staged_leftover(["--message", "COMMIT_EDITMSG"]) == 0
 
-    def test_with_no_option_it_judges_the_commits_since_the_main_it_is_given(self, branch_from, capsys,
-                                                                                monkeypatch):
+    def test_a_commit_holding_none_goes_ahead(self, branch_from, monkeypatch):
+        branch = branch_from({"pane.py": "x = 0\n"})
+        branch.track({"pane.py": "x = 2\n"})
+        monkeypatch.chdir(branch.path)
+
+        assert conflict_markers.refuse_a_staged_leftover(["--staged"]) == 0
+
+
+class TestTheCommandLine:
+    def test_it_judges_the_commits_since_the_main_it_is_given(self, branch_from, capsys, monkeypatch):
         branch = branch_from({"pane.py": "x = 0\n"})
         branch.commit({"pane.py": A_CONFLICT}, "a pick finished by hand")
         branch.commit({"pane.py": "x = 2\n"})

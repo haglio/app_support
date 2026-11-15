@@ -327,6 +327,16 @@ class TestTheHooksMakeGitRefuseTheCommit:
         git("add", ".", cwd=repo)
         assert self._commit(repo).returncode == 0
 
+    @pytest.mark.parametrize("terms", [f"{TERM}\n", None], ids=["armed", "with-no-blocklist"])
+    def test_the_hook_refuses_a_commit_that_stages_a_merge_conflicts_markers(self, tmp_path: Path, terms):
+        repo = self._repo(tmp_path, terms)
+        (repo / "pane.py").write_text("<" * 7 + " HEAD\nx = 1\n" + "=" * 7 + "\nx = 2\n" + ">" * 7 + " abc\n",
+                                      encoding="utf-8")
+        git("add", "pane.py", cwd=repo)
+        done = self._commit(repo)
+        assert done.returncode != 0
+        assert "pane.py: " + "<" * 7 + " HEAD" in done.stderr
+
     def test_no_blocklist_means_no_enforcement_said_aloud_as_the_only_sign_it_is_missing(self, tmp_path: Path):
         repo = self._repo(tmp_path, None)
         (repo / "notes.md").write_text(f"this has {self.TERM} in it\n", encoding="utf-8")
