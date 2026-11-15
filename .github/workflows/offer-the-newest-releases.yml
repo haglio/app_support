@@ -1,0 +1,19 @@
+# Once an hour, every repo of the family that pins a library behind its newest release is
+# offered one pull request taking the newest of each library at once. Until 2026-11-15 the
+# offer followed every library landing, so a busy evening re-pushed each app's pull request
+# several times an hour, and each push ran the app's checks again. A landing marked urgent is
+# still offered at once, by tag-the-landing.yml. A scheduled workflow runs from the default
+# branch, and app_support is where newest_pins lives, so the schedule is kept here.
+name: offer the newest releases
+
+on:
+  schedule:
+    - cron: "23 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  offer:
+    uses: haglio/.github/.github/workflows/offer-the-newest-releases.yml@main
+    secrets: inherit
