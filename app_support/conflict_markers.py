@@ -44,6 +44,13 @@ def in_staged(repo: Path) -> list[Leftover]:
                                                    commit=STAGED)))
 
 
+def refuse_a_staged_leftover(hook_argv: Sequence[str]) -> int:
+    found = in_staged(Path.cwd()) if "--staged" in hook_argv else []
+    if found:
+        print(told_of(Path.cwd(), found), file=sys.stderr)
+    return 1 if found else 0
+
+
 def told_of(repo: Path, found: Sequence[Leftover]) -> str:
     return ("lines a merge conflict's markers begin, which git writes into a file it could not merge;"
             " finish that merge in the commit that made it:\n"
@@ -102,25 +109,14 @@ def _resolves(repo: Path, revision: str) -> bool:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m app_support.conflict_markers")
-    parser.add_argument("--staged", action="store_true", help="Judge the commit being made (pre-commit).")
     parser.add_argument("--since", default="origin/main", help="Judge every commit after this one.")
     args = parser.parse_args(sys.argv[1:] if argv is None else list(argv))
-    refusal = _what_refuses(Path.cwd(), staged=args.staged, since=args.since)
-    if refusal:
-        print(refusal, file=sys.stderr)
+    try:
+        assert_no_commit_holds_a_leftover(Path.cwd(), since=args.since)
+    except AssertionError as refused:
+        print(refused, file=sys.stderr)
         return 1
     return 0
-
-
-def _what_refuses(repo: Path, *, staged: bool, since: str) -> str | None:
-    if staged:
-        found = in_staged(repo)
-        return told_of(repo, found) if found else None
-    try:
-        assert_no_commit_holds_a_leftover(repo, since=since)
-    except AssertionError as refused:
-        return str(refused)
-    return None
 
 
 if __name__ == "__main__":
