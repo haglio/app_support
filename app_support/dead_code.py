@@ -10,13 +10,15 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from app_support import lint, unread
+from app_support.work_budget import OUT_OF_ITS_OWN_TIME
 
 # vulture exits 0 for nothing to report and 3 for a report; 1 (unreadable input, or the interpreter
 # when vulture is not installed) and 2 (unparsable arguments) mean it gave no answer.
 _NOTHING_TO_REPORT = 0
 _REPORT_IS_NOT_EMPTY = 3
 
-SCAN_DEADLINE_S = 180
+SCAN_WORK_BUDGET_S = 180
+SCAN_DEADLINE_S = 1800
 
 
 class ScanDidNotRun(RuntimeError): ...
@@ -59,11 +61,16 @@ def _refuse_a_target_inside_a_caller(
                 )
 
 
+def _listed(targets: tuple[Path | str, ...]) -> str:
+    return ", ".join(str(target) for target in targets)
+
+
 def scan(
     *targets: Path | str,
     whitelist: Path | str | None = None,
     min_confidence: int = 60,
     callers: Iterable[Path | str] = (),
+    work_budget_s: float = SCAN_WORK_BUDGET_S,
     deadline_s: float = SCAN_DEADLINE_S,
 ) -> str:
     from app_support.subprocess_utils import run_process_tree  # noqa: PLC0415
@@ -79,20 +86,25 @@ def scan(
     with tempfile.TemporaryDirectory() as scratch:
         config = Path(scratch) / "pyproject.toml"
         config.write_text(_vulture_config_reading(*targets, *callers), encoding="utf-8")
-        command = [sys.executable, "-m", "vulture", "--config", str(config),
+        command = [sys.executable, "-m", "app_support.work_budget", str(work_budget_s),
+                   "vulture", "--config", str(config),
                    "--min-confidence", str(min_confidence)]
         try:
             result = run_process_tree(command, timeout=deadline_s, text=True)
         except subprocess.TimeoutExpired:
             raise ScanDidNotRun(
                 f"vulture was still reading after {deadline_s} s: "
-                f"{', '.join(str(target) for target in targets)}") from None
+                f"{_listed(targets)}") from None
+    if result.returncode == OUT_OF_ITS_OWN_TIME:
+        raise ScanDidNotRun(
+            f"vulture spent {work_budget_s} s of its own working time and was still reading: "
+            f"{_listed(targets)}")
     if result.returncode == _REPORT_IS_NOT_EMPTY:
         return _without_what_is_inside(callers, result.stdout)
     if result.returncode != _NOTHING_TO_REPORT:
         raise ScanDidNotRun(
             f"vulture exited {result.returncode} instead of scanning "
-            f"{', '.join(str(target) for target in targets)}:\n{result.stdout}{result.stderr}"
+            f"{_listed(targets)}:\n{result.stdout}{result.stderr}"
         )
     return ""
 

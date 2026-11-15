@@ -219,6 +219,13 @@ def test_a_scan_still_reading_at_its_deadline_is_refused_with_how_long_it_had(tm
         scan(package, deadline_s=0.001)
 
 
+def test_a_scan_that_has_spent_its_own_working_time_is_refused_with_how_much_it_had(tmp_path):
+    package = _tree(tmp_path, widgets="def polish_the_brass():\n    pass\n")
+
+    with pytest.raises(ScanDidNotRun, match=r"spent 0 s of its own working time"):
+        scan(package, work_budget_s=0)
+
+
 def test_the_gate_checks_that_scan_run_on_a_clock_longer_than_the_scans_deadline_so_a_slow_scan_fails_rather_than_kills_its_worker():
     from app_support.gates import test_dead_code as gate  # noqa: PLC0415
 
