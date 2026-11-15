@@ -119,7 +119,7 @@ def test_the_first_row_that_made_a_name_is_the_one_found(tmp_path):
 @pytest.mark.parametrize(("source", "here"), [
     (None, True), ("", True), (gallery_rows.GENERATED, True), ("experiment", True),
     (gallery_rows.OUTSIDE, False), (gallery_rows.STARTING_FRAME, False),
-    (gallery_rows.LEFT_OUT, False),
+    (gallery_rows.LEFT_OUT, False), (gallery_rows.NON_AI, False),
 ])
 def test_a_row_with_no_source_was_made_here_and_one_brought_in_was_not(source, here):
     assert gallery_rows.made_here({"prompt_id": "made-up", "source": source}) is here
@@ -127,4 +127,5 @@ def test_a_row_with_no_source_was_made_here_and_one_brought_in_was_not(source, h
 
 def test_the_sources_are_the_words_the_database_stores():
     assert (gallery_rows.GENERATED, gallery_rows.OUTSIDE, gallery_rows.STARTING_FRAME,
-            gallery_rows.LEFT_OUT) == ("generated", "outside", "starting_frame", "left_out")
+            gallery_rows.LEFT_OUT, gallery_rows.NON_AI) == (
+        "generated", "outside", "starting_frame", "left_out", "non_ai")
