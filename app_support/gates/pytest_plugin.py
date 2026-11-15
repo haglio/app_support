@@ -8,8 +8,9 @@ from app_support.shipped_tests import ship
 pytest_plugins = ["app_support.repo_checks"]
 
 _HERE = Path(__file__).resolve().parent
-_EVERY_REPOSITORYS = ("test_clocks.py", "test_coupling.py", "test_dead_code.py", "test_dependencies.py", "test_lint.py",
-                      "test_launchers.py", "test_quality_baseline.py", "test_test_files.py")
+_EVERY_REPOSITORYS = ("test_clocks.py", "test_conflict_markers.py", "test_coupling.py", "test_dead_code.py",
+                      "test_dependencies.py", "test_lint.py", "test_launchers.py", "test_quality_baseline.py",
+                      "test_test_files.py")
 
 
 def pytest_configure(config) -> None:
