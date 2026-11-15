@@ -15,7 +15,8 @@ log = logging.getLogger(__name__)
 
 GENERATED = "generated"
 OUTSIDE, STARTING_FRAME, LEFT_OUT = "outside", "starting_frame", "left_out"
-MADE_ELSEWHERE = frozenset({OUTSIDE, STARTING_FRAME, LEFT_OUT})
+NON_AI = "non_ai"
+MADE_ELSEWHERE = frozenset({OUTSIDE, STARTING_FRAME, LEFT_OUT, NON_AI})
 
 
 def source_of(row: dict) -> str:
