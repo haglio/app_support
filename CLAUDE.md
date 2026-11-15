@@ -47,9 +47,11 @@ Always `--config-settings editable_mode=compat`; the README says why, and
 ## Changing this repo changes every app
 
 A change reaches a consumer when that consumer takes the release it makes:
-each landing tags a version and opens, in every repo pinning this one behind
-it, a pull request taking the newest release (`app_support.newest_pins`),
-which ships once that repo's checks pass. The gate runs broker's, Fun Time's
+a landing that changes code an app installs tags a version
+(`app_support.releases`), and once an hour every repo pinning this one behind
+it is offered a pull request taking the newest release of each library
+(`app_support.newest_pins`), which ships once that repo's checks pass; an
+`Urgent: <what broke>` trailer on a landed commit has it offered at once. The gate runs broker's, Fun Time's
 and Origenerator's suites against the change first, and refuses one that takes
 out a module or a name another repo's main uses, or an open pull request's own
 changes use (`app_support.taken_out`): keep it until that work has moved off
