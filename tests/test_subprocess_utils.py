@@ -12,7 +12,14 @@ from unittest.mock import patch
 
 import pytest
 from eventually import eventually
-from process_trees import ALauncherAndItsChild, within
+from process_trees import (
+    LIFESPAN_S,
+    PROMPTLY_S,
+    TO_START_S,
+    ALauncherAndItsChild,
+    timed_once,
+    within,
+)
 
 from app_support import processes, win32
 from app_support.subprocess_utils import (
@@ -27,7 +34,6 @@ _windows_half = pytest.mark.skipif(
            "constant fails and a moved import does not",
 )
 _LIMIT_S = 1.0
-_PROMPTLY_S = 5.0
 
 
 def _on_platform(name: str):
@@ -73,8 +79,9 @@ def test_a_flag_the_caller_adds_rides_with_the_hiding_one():
 def test_a_child_out_of_time_ends_with_everything_it_started_rather_than_waiting_on_them():
     launcher = ALauncherAndItsChild()
 
-    ended = within(_LIMIT_S + _PROMPTLY_S, lambda: run_process_tree(
-        launcher.command, timeout=_LIMIT_S, env={**os.environ, **launcher.env}, **hidden_subprocess_kwargs()))
+    ended = within(TO_START_S + _LIMIT_S + PROMPTLY_S, lambda: run_process_tree(
+        launcher.command, timeout=_LIMIT_S, popen=timed_once(launcher.has_started_its_child),
+        env={**os.environ, **launcher.env}, **hidden_subprocess_kwargs()))
 
     assert isinstance(ended, subprocess.TimeoutExpired)
     assert not launcher.left_running()
@@ -96,20 +103,19 @@ copy = ctypes.c_void_p()
 if kernel32.DuplicateHandle(kernel32.GetCurrentProcess(), kernel32.GetStdHandle(STD_OUTPUT_HANDLE), holder,
                             ctypes.byref(copy), 0, False, DUPLICATE_SAME_ACCESS):
     pathlib.Path(sys.argv[2]).touch()
-time.sleep(30)
+time.sleep(int(sys.argv[3]))
 """
-_TIME_TO_START_PYTHON_S = 3.0
 
 
 @_windows_half
 def test_output_still_held_open_outside_the_child_does_not_hold_up_its_end(tmp_path):
     handed_over = tmp_path / "handed over"
-    holder = subprocess.Popen([sys._base_executable, "-c", "import time; time.sleep(30)"],
+    holder = subprocess.Popen([sys._base_executable, "-c", f"import time; time.sleep({LIFESPAN_S})"],
                               **hidden_subprocess_kwargs())
     try:
-        ended = within(_TIME_TO_START_PYTHON_S + _PROMPTLY_S, lambda: run_process_tree(
-            [sys._base_executable, "-c", _HANDS_ITS_OUTPUT_TO, str(holder.pid), str(handed_over)],
-            timeout=_TIME_TO_START_PYTHON_S, **hidden_subprocess_kwargs()))
+        ended = within(TO_START_S + _LIMIT_S + PROMPTLY_S, lambda: run_process_tree(
+            [sys._base_executable, "-c", _HANDS_ITS_OUTPUT_TO, str(holder.pid), str(handed_over), str(LIFESPAN_S)],
+            timeout=_LIMIT_S, popen=timed_once(handed_over.exists), **hidden_subprocess_kwargs()))
     finally:
         holder.kill()
         holder.wait()
@@ -122,34 +128,37 @@ _TIES_ONE_THAT_STARTS_ANOTHER = """
 import gc, subprocess, sys, time
 from app_support.subprocess_utils import tie_to_this_process
 STARTS_ONE_OF_ITS_OWN = ("import subprocess, sys, time; sys.stdin.readline(); "
-                         "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)', sys.argv[1]], "
-                         "creationflags=subprocess.CREATE_NO_WINDOW); time.sleep(60)")
-child = subprocess.Popen([sys.executable, "-c", STARTS_ONE_OF_ITS_OWN, sys.argv[1]], stdin=subprocess.PIPE,
+                         "subprocess.Popen([sys.executable, '-c', 'import pathlib, sys, time; "
+                         "pathlib.Path(sys.argv[2]).touch(); time.sleep(int(sys.argv[3]))', *sys.argv[1:]], "
+                         "creationflags=subprocess.CREATE_NO_WINDOW); time.sleep(int(sys.argv[3]))")
+child = subprocess.Popen([sys.executable, "-c", STARTS_ONE_OF_ITS_OWN, *sys.argv[1:]], stdin=subprocess.PIPE,
                          creationflags=subprocess.CREATE_NO_WINDOW)
 tie_to_this_process(child)
 gc.collect()
 child.stdin.write(b"start yours\\n")
 child.stdin.flush()
-time.sleep(60)
+time.sleep(int(sys.argv[3]))
 """
 
 
 @_windows_half
-def test_a_child_tied_to_this_process_ends_with_what_it_started_the_moment_this_process_does():
+def test_a_child_tied_to_this_process_ends_with_what_it_started_the_moment_this_process_does(tmp_path):
     marker = "app-support-test-" + uuid.uuid4().hex
-    tier = subprocess.Popen([sys._base_executable, "-c", _TIES_ONE_THAT_STARTS_ANOTHER, marker],
-                            creationflags=subprocess.CREATE_NO_WINDOW)
+    started = tmp_path / "the one it started has started"
+    tier = subprocess.Popen([sys._base_executable, "-c", _TIES_ONE_THAT_STARTS_ANOTHER, marker, str(started),
+                             str(LIFESPAN_S)], creationflags=subprocess.CREATE_NO_WINDOW)
 
     def tied() -> list[processes.Process]:
         return [process for process in processes.running() if marker in process.cmdline and process.pid != tier.pid]
 
     try:
-        assert eventually(lambda: len(tied()) == 2), "the tied child and the one it started never both ran"
+        assert eventually(started.exists, within_s=TO_START_S), "the tied child never started one of its own"
+        assert len(tied()) == 2
     finally:
         tier.kill()
         tier.wait()
 
-    assert eventually(lambda: not tied(), within_s=_PROMPTLY_S)
+    assert eventually(lambda: not tied(), within_s=PROMPTLY_S)
 
 
 def test_a_child_windows_will_not_tie_is_said_to_be_free_to_outlive_this_process(monkeypatch, caplog):
@@ -182,8 +191,8 @@ def test_a_child_windows_will_not_put_in_a_job_is_still_ended_at_its_limit(monke
 
     monkeypatch.setattr(win32, "JobObject", refused)
 
-    ended = within(_LIMIT_S + _PROMPTLY_S, lambda: run_process_tree(
-        [sys._base_executable, "-c", "import time; time.sleep(30)", marker], timeout=_LIMIT_S,
+    ended = within(_LIMIT_S + PROMPTLY_S, lambda: run_process_tree(
+        [sys._base_executable, "-c", f"import time; time.sleep({LIFESPAN_S})", marker], timeout=_LIMIT_S,
         **hidden_subprocess_kwargs()))
 
     assert isinstance(ended, subprocess.TimeoutExpired)
