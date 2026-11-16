@@ -39,7 +39,7 @@ def test_a_worker_of_a_run_side_by_side_gives_way_to_what_he_is_using(tmp_path):
 def test_a_run_that_stops_at_its_first_failure_deals_its_workers_few_tests_at_a_time():
     config = _controller(numprocesses=8, maxfail=1, maxschedchunk=None)
 
-    worker_processes.pytest_configure(config)
+    worker_processes.deal_tests_as_chosen(config.option)
 
     assert config.option.maxschedchunk == worker_processes.TESTS_DEALT_AT_A_TIME_WHEN_STOPPING_AT_A_FAILURE
 
@@ -47,7 +47,7 @@ def test_a_run_that_stops_at_its_first_failure_deals_its_workers_few_tests_at_a_
 def test_a_run_that_goes_on_past_failures_is_dealt_as_the_workers_plugin_chooses():
     config = _controller(numprocesses=8, maxfail=0, maxschedchunk=None)
 
-    worker_processes.pytest_configure(config)
+    worker_processes.deal_tests_as_chosen(config.option)
 
     assert config.option.maxschedchunk is None
 
@@ -55,7 +55,7 @@ def test_a_run_that_goes_on_past_failures_is_dealt_as_the_workers_plugin_chooses
 def test_a_deal_the_run_asked_for_stands():
     config = _controller(numprocesses=8, maxfail=1, maxschedchunk=50)
 
-    worker_processes.pytest_configure(config)
+    worker_processes.deal_tests_as_chosen(config.option)
 
     assert config.option.maxschedchunk == 50
 
@@ -173,3 +173,76 @@ def test_a_run_in_one_process_has_nothing_dealt():
     worker_processes.pytest_configure(config)
 
     assert not hasattr(config.option, "maxschedchunk")
+
+
+_ENDS_MID_TEST = """\
+import os
+
+
+def test_its_worker_ends():
+    os._exit(3)
+"""
+
+
+def test_a_worker_that_ends_mid_test_says_with_what_exit_code(tmp_path):
+    done = run_pytest_in(_repo(tmp_path, _ENDS_MID_TEST), "-n", "1", "-x")
+
+    assert "crashed while running 'test_it.py::test_its_worker_ends': it ended with exit code 3;" in done.stdout, \
+        done.stdout + done.stderr
+
+
+_FREE_AND_LIMIT = (2 * 2**30, 64 * 2**30)
+
+
+def test_a_worker_ended_by_a_fail_fast_is_said_to_have_been_and_what_makes_one():
+    said = worker_processes.how_it_ended(0xC0000409, None, _FREE_AND_LIMIT)
+
+    assert said.startswith("it ended with exit code 0xC0000409, a fail-fast: the C runtime's abort")
+
+
+def test_what_a_worker_had_committed_and_what_the_computer_had_left_are_said_beside_its_ending():
+    said = worker_processes.how_it_ended(1, 3 * 2**29, _FREE_AND_LIMIT)
+
+    assert said.endswith("; it had committed at most 1.50 GB; the least the computer had free of its "
+                         "64.0 GB commit limit in the last two minutes was 2.0 GB")
+
+
+def test_a_worker_still_running_long_after_it_went_down_is_said_to_be():
+    said = worker_processes.how_it_ended(None, None, _FREE_AND_LIMIT)
+
+    assert said.startswith("it had still not ended 30 s later;")
+
+
+def test_the_watch_keeps_the_least_commit_the_computer_had_free():
+    readings = iter([(5, 9), (2, 9), (7, 9)])
+    watch = worker_processes.CommitWatch(read=lambda: next(readings, (7, 9)), tick=0.001)
+
+    watch.start()
+    while watch.least_free_lately() != (2, 9):
+        time.sleep(0.001)
+    watch.stop()
+
+    assert not watch.is_alive()
+
+
+def test_the_computer_s_commit_is_read_in_bytes():
+    free, limit = worker_processes.commit_free_and_limit()
+
+    assert 0 < free <= limit
+
+
+_READS_ITS_BLAS_THREADS = """\
+import os
+
+
+def test_numpy_s_blas_runs_one_thread_in_this_worker():
+    assert os.environ.get("OPENBLAS_NUM_THREADS") == "1"
+"""
+
+
+def test_a_worker_commits_no_blas_buffers_for_threads_it_never_runs(tmp_path, monkeypatch):
+    monkeypatch.delenv("OPENBLAS_NUM_THREADS", raising=False)
+
+    done = run_pytest_in(_repo(tmp_path, _READS_ITS_BLAS_THREADS), "-n", "1", "-x")
+
+    assert done.returncode == 0, done.stdout + done.stderr
