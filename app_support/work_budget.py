@@ -12,7 +12,7 @@ _LOOKS_AGAIN_AFTER_S = 0.5
 
 
 def _end_once_its_own_time_runs_out(budget_s: float) -> None:
-    while time.process_time() <= budget_s:
+    while time.process_time() < budget_s:
         time.sleep(_LOOKS_AGAIN_AFTER_S)
     os._exit(OUT_OF_ITS_OWN_TIME)
 
