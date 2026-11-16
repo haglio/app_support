@@ -114,3 +114,17 @@ def version_group_of(payload: dict) -> str:
     if not isinstance(version, dict):
         return ""
     return str(version.get("group") or "")
+
+
+
+TITLE_FIELD = "title"
+
+
+def title_while_playing(payload: dict, video) -> str:
+    evolvers_name_for_the_movie_and_its_cast = str(payload.get(TITLE_FIELD, "") or "").strip()
+    return (
+        evolvers_name_for_the_movie_and_its_cast
+        or clip_title(payload)
+        or version_group_of(payload)
+        or PurePath(video).stem
+    )
