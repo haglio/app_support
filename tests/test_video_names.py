@@ -12,6 +12,7 @@ from app_support.video_names import (
     stem_of_either_copy,
     strip_processing_suffixes,
     strip_uniquifier,
+    title_while_playing,
     version_group_of,
 )
 
@@ -157,3 +158,24 @@ class TestGenerationStem:
 
     def test_a_sound_mark_inside_the_name_stays(self):
         assert generation_stem("scene-audio one") == "scene-audio one"
+
+
+
+class TestWhatAVideoIsCalledWhileItPlays:
+    def test_the_recorded_name_is_what_the_video_is_called(self):
+        assert title_while_playing(
+            {"title": "Jane Doe - Alpha Study: Part Two",
+             "version": {"group": "Jane Doe - Alpha Study Part Two"}},
+            "C:/lib/Jane Doe - Alpha Study Part Two_apo8.mp4",
+        ) == "Jane Doe - Alpha Study: Part Two"
+
+    def test_a_clip_evolver_has_not_named_is_called_by_its_performer_and_source(self):
+        assert title_while_playing(
+            {"clip": {"performer": "Jane Doe", "source": "Alpha Study 3"}},
+            "C:/lib/whatever.mp4",
+        ) == "Jane Doe - Alpha Study 3"
+
+    def test_a_video_with_neither_is_called_by_its_family_then_by_its_filename(self):
+        assert title_while_playing({"version": {"group": "Sample Set"}},
+                                   "C:/lib/Sample Set (3)_apo8.mp4") == "Sample Set"
+        assert title_while_playing({}, "C:/lib/Sample Set (3).mp4") == "Sample Set (3)"
