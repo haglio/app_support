@@ -109,6 +109,15 @@ def clip_title(payload: dict) -> str:
     return " - ".join(part for part in parts if part)
 
 
+FULL_VIDEO_ID_FIELD = "full_video_id"
+
+
+def full_video_id_of(payload: dict) -> str | None:
+    clip = payload.get("clip")
+    given = clip.get(FULL_VIDEO_ID_FIELD) if isinstance(clip, dict) else None
+    return given if isinstance(given, str) and given else None
+
+
 def version_group_of(payload: dict) -> str:
     version = payload.get("version")
     if not isinstance(version, dict):

@@ -4,6 +4,7 @@ from app_support.video_names import (
     SOUND_MARK,
     UPSCALE_SUFFIX,
     clip_title,
+    full_video_id_of,
     generation_stem,
     normalize_title,
     origin_stem,
@@ -179,3 +180,11 @@ class TestWhatAVideoIsCalledWhileItPlays:
         assert title_while_playing({"version": {"group": "Sample Set"}},
                                    "C:/lib/Sample Set (3)_apo8.mp4") == "Sample Set"
         assert title_while_playing({}, "C:/lib/Sample Set (3).mp4") == "Sample Set (3)"
+
+
+def test_a_clips_record_names_the_full_video_it_was_cut_from_by_that_videos_id():
+    assert full_video_id_of({"clip": {"full_video_id": "the-full-videos-id"}}) == "the-full-videos-id"
+
+
+def test_a_record_that_names_no_full_video_answers_none():
+    assert [full_video_id_of(record) for record in ({}, {"clip": {}}, {"clip": "x"})] == [None] * 3
