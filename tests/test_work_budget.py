@@ -4,6 +4,9 @@ import os
 import subprocess
 import sys
 
+import pytest
+
+from app_support import work_budget
 from app_support.work_budget import OUT_OF_ITS_OWN_TIME
 
 
@@ -32,3 +35,20 @@ def test_the_program_is_handed_its_own_arguments(tmp_path):
     ran = _run_on_a_budget(tmp_path, 30, "import sys\nprint(sys.argv[1:])\n")
 
     assert ran.stdout.strip() == "['an-argument']", ran.stderr
+
+
+def test_a_budget_of_nothing_is_spent_before_the_clock_has_counted_any_work(monkeypatch):
+    class Ended(Exception):
+        pass
+
+    def end(how):
+        raise Ended(how)
+
+    monkeypatch.setattr(work_budget.time, "process_time", lambda: 0.0)
+    monkeypatch.setattr(work_budget.time, "sleep", lambda seconds: end("waited for more work to be counted"))
+    monkeypatch.setattr(work_budget.os, "_exit", end)
+
+    with pytest.raises(Ended) as ended:
+        work_budget._end_once_its_own_time_runs_out(0)
+
+    assert ended.value.args == (OUT_OF_ITS_OWN_TIME,)
