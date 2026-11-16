@@ -25,8 +25,8 @@ def hidden_subprocess_kwargs(*, creationflags: int = 0) -> dict[str, Any]:
 
 
 def run_process_tree(arguments: Sequence[str], *, timeout: float | None,
-                     **popen_kwargs) -> subprocess.CompletedProcess:
-    child = subprocess.Popen(arguments, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **popen_kwargs)
+                     popen: type[subprocess.Popen] = subprocess.Popen, **popen_kwargs) -> subprocess.CompletedProcess:
+    child = popen(arguments, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **popen_kwargs)
     with ending_together(child) as end_all:
         try:
             stdout, stderr = child.communicate(timeout=timeout)

@@ -10,7 +10,8 @@ import time
 from pathlib import Path
 
 import pytest
-from process_trees import ALauncherAndItsChild, within
+from eventually import eventually
+from process_trees import PROMPTLY_S, TO_START_S, ALauncherAndItsChild, within
 from production_machine import Machine, a_process, before_launch, bring_up, git, keep_up, pins, spec
 
 from app_support import launcher, processes, production_update, windows_settings
@@ -1172,7 +1173,7 @@ class TestAFailedStep:
     def test_one_out_of_time_fails_at_its_limit_and_leaves_nothing_it_started_running(self):
         launcher = ALauncherAndItsChild()
 
-        failed = within(6, lambda: production_update.run(launcher.command, timeout=1, env=launcher.env))
+        failed = within(1 + PROMPTLY_S, lambda: production_update.run(launcher.command, timeout=1, env=launcher.env))
 
         assert isinstance(failed, production_update.StepFailed)
         assert str(failed).endswith("did not finish in 1 s")
@@ -1317,6 +1318,13 @@ class TestAnAppThatIsNeverClosed:
             f"An update of {checkout} is waiting for this app to close; starting it again to take the update"]
 
 
+_CHANCE_TO_START_TOO_EARLY_S = 1.0
+
+
+def _is_running_with(argument: str) -> bool:
+    return any(argument in process.cmdline for process in processes.running())
+
+
 class TestStartingAnAppAgainThroughItsLauncher:
     @windows_only
     def test_the_launcher_runs_once_the_copy_it_waited_for_has_ended(self, tmp_path):
@@ -1325,18 +1333,17 @@ class TestStartingAnAppAgainThroughItsLauncher:
         launcher.write_text(
             'CreateObject("Scripting.FileSystemObject").CreateTextFile("' + str(ran) + '", True).Close\n',
             encoding="ascii")
-        ending = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(2)"])
-
-        production_update.start_again_after(ending.pid, launcher)
-        time.sleep(1)
-        started_too_early = ran.exists()
-        ending.wait()
-        deadline = time.monotonic() + 30
-        while not ran.exists() and time.monotonic() < deadline:
-            time.sleep(0.1)
+        ending = subprocess.Popen([sys.executable, "-c", "import sys; sys.stdin.readline()"], stdin=subprocess.PIPE)
+        try:
+            production_update.start_again_after(ending.pid, launcher)
+            assert eventually(lambda: _is_running_with(str(launcher)), within_s=TO_START_S)
+            time.sleep(_CHANCE_TO_START_TOO_EARLY_S)
+            started_too_early = ran.exists()
+        finally:
+            ending.communicate(b"end\n")
 
         assert not started_too_early
-        assert ran.exists()
+        assert eventually(ran.exists, within_s=TO_START_S)
 
     def test_the_wait_runs_on_the_plain_interpreter_never_out_of_the_apps_venv(self, tmp_path):
         started = []
