@@ -131,6 +131,24 @@ def test_wait_until_checks_the_predicate_once_more_when_the_deadline_arrives():
     assert clock.time == 1.0
 
 
+def test_handed_no_timeout_it_waits_as_long_as_the_condition_takes():
+    clock = _FakeClock()
+
+    wait_until(lambda: clock.time >= 10_000.0, interval=1.0, now=clock.now, sleep=clock.sleep)
+
+    assert clock.time == 10_000.0
+
+
+def test_handed_a_pump_it_turns_it_before_each_nap():
+    clock = _FakeClock()
+    turned: list[float] = []
+
+    wait_until(lambda: clock.time >= 1.0, interval=0.5, now=clock.now, sleep=clock.sleep,
+               pump=lambda: turned.append(clock.time))
+
+    assert turned == [0.0, 0.5]
+
+
 def test_wait_until_waits_on_a_real_thread_with_no_clock_injected():
     finished = threading.Event()
 

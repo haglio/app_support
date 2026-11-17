@@ -20,17 +20,19 @@ def start_daemon_thread(
 def wait_until(
     predicate: Callable[[], object],
     *,
-    timeout: float,
+    timeout: float | None = None,
     interval: float = 0.01,
     now: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
+    pump: Callable[[], object] = lambda: None,
 ) -> None:
-    deadline = now() + timeout
+    deadline = None if timeout is None else now() + timeout
     while True:
         if predicate():
             return
-        remaining = deadline - now()
+        remaining = interval if deadline is None else deadline - now()
         if remaining <= 0:
             name = getattr(predicate, "__qualname__", None) or repr(predicate)
             raise TimeoutError(f"{name} did not become true within {timeout}s")
+        pump()
         sleep(min(interval, remaining))

@@ -119,6 +119,14 @@ class TestWhatACountReads:
 
         assert baseline.count_named("private_imports").measure(checkout) == {"pkg/a.py": 1}
 
+    def test_waits_on_the_wall_clock_are_read_over_every_file_of_the_tests_alone(self, tmp_path: Path):
+        sleeps = "import time\ntime.sleep(1)\n"
+        checkout = _checkout(tmp_path, {"pkg/a.py": sleeps, "tests/test_a.py": sleeps, "tests/conftest.py": sleeps,
+                                        "tests/helpers.py": sleeps, "tests/integration/test_b.py": sleeps})
+
+        assert baseline.count_named("wall_clock_waits").measure(checkout) == {
+            "tests/test_a.py": 1, "tests/conftest.py": 1, "tests/helpers.py": 1, "tests/integration/test_b.py": 1}
+
 
 class TestTheCompare:
     def test_a_rise_above_its_entry_is_over(self):
@@ -164,6 +172,16 @@ class TestHoldingACount:
 
         with pytest.raises(AssertionError, match=r"pkg/a.py:2: b._c"):
             baseline.assert_count_holds(checkout, baseline.count_named("private_reaches"))
+
+    def test_a_wait_over_its_entry_shows_its_line_and_what_to_do_instead(self, tmp_path: Path):
+        checkout = _checkout(tmp_path, {"tests/test_a.py": "def test(done):\n    done.wait(5)\n"},
+                             {"wall_clock_waits": {}})
+
+        with pytest.raises(AssertionError) as told:
+            baseline.assert_count_holds(checkout, baseline.count_named("wall_clock_waits"))
+
+        assert "tests/test_a.py:2: done.wait(5)" in str(told.value)
+        assert "app_support.threading_utils.wait_until(condition)" in str(told.value)
 
     def test_nothing_above_main_holds_with_no_history_to_read(self, tmp_path: Path):
         baseline.assert_nothing_stands_above_main(_checkout(tmp_path, {}, {"prose_lines": {"pkg/a.py": 9}}))
@@ -340,7 +358,7 @@ class TestTheCommand:
         assert code == 0
         assert self._written(checkout) == {
             "prose_lines": {"pkg/a.py": 1}, "trailing_comments": {}, "private_reaches": {"pkg/a.py": 1},
-            "private_imports": {}, "mutables_imported": {}, "library_patches": {}}
+            "private_imports": {}, "mutables_imported": {}, "library_patches": {}, "wall_clock_waits": {}}
 
     def test_it_lowers_what_fell(self, tmp_path: Path):
         checkout = _checkout(tmp_path, {"pkg/a.py": "# why\n"}, {"prose_lines": {"pkg/a.py": 3}})
