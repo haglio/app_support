@@ -22,7 +22,6 @@ pytest_terminal_summary  # app_support/coverage_gate.py
 pytest_sessionstart  # app_support/stopped_runs.py
 pytest_handlecrashitem  # app_support/worker_processes.py, pytest-xdist calls it on the controller when a worker dies mid-test
 pytest_configure_node  # app_support/worker_processes.py, pytest-xdist calls it on the controller as it starts each worker
-pytest_unconfigure  # app_support/worker_processes.py
 pytest_testnodeready  # app_support/worker_processes.py, pytest-xdist calls it on the controller once each worker is up
 pytest_runtestloop  # app_support/coverage_gate.py
 pytest_make_collect_report  # app_support/shipped_tests.py

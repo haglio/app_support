@@ -11,7 +11,7 @@ _THE_CHECKS_PYTEST_COLLECTS = frozenset({
     "gates/test_coupling.py", "gates/test_coverage.py", "gates/test_dead_code.py", "gates/test_dependencies.py",
     "gates/test_launchers.py", "gates/test_lint.py",
     "gates/test_quality_baseline.py", "gates/test_test_files.py", "sanitize/test_tracked_tree.py",
-    "repo_checks.py", "shipped_tests.py", "worker_processes.py",
+    "processor_places.py", "repo_checks.py", "shipped_tests.py", "worker_processes.py",
 })
 _READS_COVERAGES_OWN_PATTERN = "coverage_gate.py"
 
