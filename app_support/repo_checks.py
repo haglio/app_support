@@ -12,6 +12,7 @@ def pytest_configure(config) -> None:
     # pytest-cov starts measuring, and so would be every module it imports.
     config.pluginmanager.import_plugin("app_support.stopped_runs")
     config.pluginmanager.import_plugin("app_support.worker_processes")
+    config.pluginmanager.import_plugin("app_support.processor_places")
 
 
 @pytest.hookimpl(wrapper=True, tryfirst=True)
