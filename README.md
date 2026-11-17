@@ -8,7 +8,9 @@ Windows, and each one had grown its own byte-identical copy of the same things:
 - **`logging_utils`** — a rotating file logger, `sys`/`threading` exception hooks
   that survive an unhandled crash, and a faulthandler for the native ones.
 - **`threading_utils`** — `start_daemon_thread`, and `wait_until` for
-  synchronising on the event itself rather than on a fixed nap.
+  synchronizing on the event itself rather than on a fixed nap. A test hands it no
+  `timeout`: its own hang ceiling, which a worker counts in the time the computer could
+  give it, is the budget, and `pump=` keeps a Qt event loop turning between looks.
 - **`cli`** — `preparse_config_path`, the throwaway parser that reads `--config`
   before the real parser exists.
 - **`subprocess_utils`** — `hidden_subprocess_kwargs`, so shelling out to ffprobe
@@ -252,7 +254,9 @@ the command below writes it.
 comments (a comment or docstring that names a program outside the family is neither),
 private reaches (a read of another object's private name, through any handle), private
 imports (charged to the module that defines the name, through any re-export), mutable
-containers another module imports, and in tests the patches of a library's insides. A
+containers another module imports, and in tests the patches of a library's insides and
+the waits on the wall clock (`app_support.wall_clock_waits`: a sleep, a read of the
+time of day, a number of seconds handed as a wait, any of pytest-qt's waits). A
 number over its entry fails, and a file the section does not name enters at zero, so a
 total can no longer hide one file growing while another shrinks. A number under its
 entry fails too, until `python -m app_support.gates.baseline` lowers it; run from the

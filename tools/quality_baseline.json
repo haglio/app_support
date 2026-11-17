@@ -10,5 +10,32 @@
     "app_support/subprocess_utils.py": 2
   },
   "prose_lines": {},
-  "trailing_comments": {}
+  "trailing_comments": {},
+  "wall_clock_waits": {
+    "tests/eventually.py": 3,
+    "tests/git_bash_programs.py": 6,
+    "tests/process_trees.py": 1,
+    "tests/test_dead_code_scan.py": 1,
+    "tests/test_desktop_of_its_own.py": 1,
+    "tests/test_flake_gate.py": 5,
+    "tests/test_git_steps.py": 1,
+    "tests/test_import_sweep.py": 2,
+    "tests/test_integration_runs.py": 1,
+    "tests/test_json_store.py": 8,
+    "tests/test_launcher.py": 17,
+    "tests/test_loading_screen.py": 3,
+    "tests/test_local_time.py": 1,
+    "tests/test_origenerator_handoff.py": 1,
+    "tests/test_osr2_slot.py": 27,
+    "tests/test_processes.py": 5,
+    "tests/test_production_update.py": 21,
+    "tests/test_provenance.py": 1,
+    "tests/test_stopped_runs.py": 1,
+    "tests/test_subprocess_utils.py": 5,
+    "tests/test_testing.py": 1,
+    "tests/test_threading_utils.py": 7,
+    "tests/test_win32.py": 4,
+    "tests/test_work_budget.py": 1,
+    "tests/test_worker_processes.py": 6
+  }
 }

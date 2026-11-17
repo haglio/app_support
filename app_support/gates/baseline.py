@@ -14,6 +14,7 @@ from typing import NamedTuple
 from app_support.coupling import measured_sections
 from app_support.gates import BASELINE_PATH, Checkout, over
 from app_support.private_reach import private_imports, reaches_in
+from app_support.wall_clock_waits import waits_in
 
 _COMMAND = "python -m app_support.gates.baseline"
 STATED_RENAMES_PATH = "tools/quality_baseline_renames.json"
@@ -147,6 +148,20 @@ def _imports(checkout: Checkout) -> dict[str, int]:
     return {key: len(found) for key, found in _import_listing(checkout).items()}
 
 
+def _wait_listing(checkout: Checkout) -> dict[str, list[str]]:
+    listing = {}
+    for path in _python_under(checkout.own_tests):
+        key = _key(path, checkout)
+        waits = waits_in(_text(path))
+        if waits:
+            listing[key] = [f"{key}:{wait.line}: {wait.written}" for wait in waits]
+    return listing
+
+
+def _waits(checkout: Checkout) -> dict[str, int]:
+    return {key: len(found) for key, found in _wait_listing(checkout).items()}
+
+
 def _counted(section: str) -> Callable[[Checkout], dict[str, int]]:
     return lambda checkout: measured_sections(checkout)[section]
 
@@ -166,6 +181,12 @@ COUNTS = (
     Count("private_imports", _imports, "make the name public, or stop reading it from outside", _import_listing),
     Count("mutables_imported", _counted("mutables_imported"), "pass it, or freeze it, rather than sharing it from a module"),
     Count("library_patches", _counted("library_patches"), "use what the library's testing module offers, or add it there"),
+    Count("wall_clock_waits", _waits,
+          "a test that waits a number of seconds of the wall clock fails on a computer running other suites; wait "
+          "for the thing itself with app_support.threading_utils.wait_until(condition), handing no timeout (pass "
+          "pump= to keep a Qt event loop turning), or wait()/join() with no number, since the test's own hang "
+          "ceiling, counted in the time the computer could give it, ends a wait that never ends; and hand the code "
+          "under test its clock or sleep as a parameter rather than the wall's", _wait_listing),
 )
 
 
