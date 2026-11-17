@@ -108,14 +108,39 @@ def test_a_module_that_ends_the_interpreter_is_named_and_the_modules_after_it_ar
     assert "exit code 3" in swept.failures["toy_app.crash"]
 
 
+def a_module_that_hangs(hanging: Path, first: str = "") -> str:
+    return (f"import os, pathlib, time\n{first}"
+            f"pathlib.Path(r'{hanging}.part').write_text(str(os.getpid()))\n"
+            f"os.replace(r'{hanging}.part', r'{hanging}')\n"
+            "time.sleep(3600)\n")
+
+
+class AClockThatRunsOnlyWhileAModuleHangs:
+    def __init__(self, hanging: Path):
+        self.hanging, self.now = hanging, 0.0
+
+    def __call__(self) -> float:
+        if self._a_module_hangs():
+            self.now += 1000.0
+        return self.now
+
+    def _a_module_hangs(self) -> bool:
+        try:
+            return processes.is_running(int(self.hanging.read_text()))
+        except FileNotFoundError:
+            return False
+
+
 def test_a_module_that_never_finishes_importing_is_named_and_the_modules_after_it_are_still_imported(tmp_path):
+    hanging = tmp_path / "hanging.pid"
     checkout = a_checkout(tmp_path / "toy_app_checkout", {
         "toy_app/__init__.py": "",
-        "toy_app/stuck.py": "import time\ntime.sleep(60)\n",
+        "toy_app/stuck.py": a_module_that_hangs(hanging),
         "toy_app/zulu.py": "",
     })
 
-    swept = import_sweep.sweep(checkout, python=sys.executable, each_within_s=5)
+    swept = import_sweep.sweep(checkout, python=sys._base_executable, each_within_s=5,
+                               clock=AClockThatRunsOnlyWhileAModuleHangs(hanging))
 
     assert swept.imported == ["toy_app", "toy_app.zulu"]
     assert "did not finish importing within 5 s" in swept.failures["toy_app.stuck"]
@@ -123,14 +148,16 @@ def test_a_module_that_never_finishes_importing_is_named_and_the_modules_after_i
 
 def test_a_module_that_never_finishes_importing_is_ended_with_what_it_started(tmp_path):
     marker = "app-support-test-" + uuid.uuid4().hex
+    hanging = tmp_path / "hanging.pid"
     checkout = a_checkout(tmp_path / "toy_app_checkout", {
         "toy_app/__init__.py": "",
-        "toy_app/stuck.py": (f"import subprocess, sys, time\n"
-                             f"subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)', '{marker}'])\n"
-                             f"time.sleep(60)\n"),
+        "toy_app/stuck.py": a_module_that_hangs(hanging, first=(
+            f"import subprocess, sys\n"
+            f"subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)', '{marker}'])\n")),
     })
 
-    import_sweep.sweep(checkout, python=sys._base_executable, each_within_s=5)
+    import_sweep.sweep(checkout, python=sys._base_executable, each_within_s=5,
+                       clock=AClockThatRunsOnlyWhileAModuleHangs(hanging))
 
     assert not [process for process in processes.running() if marker in process.cmdline]
 

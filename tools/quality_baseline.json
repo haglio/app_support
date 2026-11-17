@@ -19,7 +19,6 @@
     "tests/test_desktop_of_its_own.py": 1,
     "tests/test_flake_gate.py": 5,
     "tests/test_git_steps.py": 1,
-    "tests/test_import_sweep.py": 2,
     "tests/test_integration_runs.py": 1,
     "tests/test_json_store.py": 8,
     "tests/test_launcher.py": 17,

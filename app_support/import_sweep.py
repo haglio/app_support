@@ -8,7 +8,7 @@ import sys
 import tempfile
 import time
 import tomllib
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -46,11 +46,11 @@ class Sweep:
 
 
 def sweep(checkout: Path, *, python: str, each_within_s: float = EACH_WITHIN_S,
-          env: Mapping[str, str] | None = None) -> Sweep:
+          env: Mapping[str, str] | None = None, clock: Callable[[], float] = time.monotonic) -> Sweep:
     checkout = Path(checkout)
     left = _modules_of(checkout)
     outcomes: dict[str, str | None] = {}
-    interpreter = _Interpreter(python, checkout, each_within_s, env)
+    interpreter = _Interpreter(python, checkout, each_within_s, env, clock)
     with tempfile.TemporaryDirectory() as scratch:
         record = Path(scratch) / "imports.jsonl"
         while left:
@@ -69,6 +69,7 @@ class _Interpreter:
     checkout: Path
     each_within_s: float
     env: Mapping[str, str] | None
+    clock: Callable[[], float]
 
     def imports(self, modules: list[str], record: Path) -> str:
         said = record.with_name("stderr.txt")
@@ -79,11 +80,11 @@ class _Interpreter:
             with ending_together(child) as end_all:
                 child.stdin.write(json.dumps(modules))
                 child.stdin.close()
-                done, since = _lines_in(record), time.monotonic()
+                done, since = _lines_in(record), self.clock()
                 while child.poll() is None:
                     if (now_done := _lines_in(record)) != done:
-                        done, since = now_done, time.monotonic()
-                    elif time.monotonic() - since > self.each_within_s:
+                        done, since = now_done, self.clock()
+                    elif self.clock() - since > self.each_within_s:
                         end_all()
                         child.wait()
                         return f"it did not finish importing within {self.each_within_s:g} s"
