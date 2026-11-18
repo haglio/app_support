@@ -1,9 +1,11 @@
 from pathlib import Path
 
 from app_support.flick_folder import (
+    ai_flicks_in,
     audio_in,
     flat_flicks_in,
     flicks_folder_in,
+    non_ai_flicks_in,
     trash_folder_beside,
     trash_folder_in,
     vr_flicks_in,
@@ -28,10 +30,16 @@ def test_the_flicks_folder_forks_into_the_2d_flicks_and_the_vr_flicks():
     assert (flat_flicks_in(flicks), vr_flicks_in(flicks)) == (flicks / "2D", flicks / "VR")
 
 
+def test_the_2d_flicks_fork_into_the_ai_flicks_and_the_ones_genaumacher_cuts():
+    flicks = Path("C:/videos/genau/flicks")
+
+    assert (ai_flicks_in(flicks), non_ai_flicks_in(flicks)) == (flicks / "2D" / "AI", flicks / "2D" / "non_AI")
+
+
 def _genau_holding_flicks_in(root: Path, name: str) -> Path:
     flicks = root / "genau" / name
     trash = trash_folder_beside(flicks)
-    for folder in (root / "genau" / "audio", flat_flicks_in(flicks) / "AI", vr_flicks_in(flicks),
+    for folder in (root / "genau" / "audio", ai_flicks_in(flicks), vr_flicks_in(flicks),
                    flat_flicks_in(trash), vr_flicks_in(trash)):
         folder.mkdir(parents=True)
     return root / "genau"

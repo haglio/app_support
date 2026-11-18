@@ -7,6 +7,14 @@ def flat_flicks_in(flicks_folder: Path) -> Path:
     return flicks_folder / "2D"
 
 
+def ai_flicks_in(flicks_folder: Path) -> Path:
+    return flat_flicks_in(flicks_folder) / "AI"
+
+
+def non_ai_flicks_in(flicks_folder: Path) -> Path:
+    return flat_flicks_in(flicks_folder) / "non_AI"
+
+
 def vr_flicks_in(flicks_folder: Path) -> Path:
     return flicks_folder / "VR"
 
