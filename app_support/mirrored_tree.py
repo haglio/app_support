@@ -102,8 +102,10 @@ def record_path(video: Path, records_folder: Path, *, more_roots: Sequence[Path]
                          mirror_root=records_folder, suffix=".json")
 
 
-def filed_record(video: Path, records_folder: Path | None) -> dict:
-    record = record_path(video, records_folder) if records_folder is not None else None
+def filed_record(video: Path, records_folder: Path | None, *,
+                 more_roots: Sequence[Path] = ()) -> dict:
+    record = (record_path(video, records_folder, more_roots=more_roots)
+              if records_folder is not None else None)
     if record is None:
         return {}
     try:

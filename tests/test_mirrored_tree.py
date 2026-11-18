@@ -136,6 +136,17 @@ def test_a_video_kept_in_a_library_elsewhere_has_its_record_measured_from_that_l
                        more_roots=(elsewhere,)) == records / "VR" / "scene two.json"
 
 
+def test_a_video_kept_in_a_library_elsewhere_has_the_record_filed_for_it_read(tmp_path: Path):
+    records = tmp_path / "videos" / "metadata"
+    elsewhere = tmp_path / "another drive" / "videos"
+    record = records / "VR" / "scene two.json"
+    record.parent.mkdir(parents=True)
+    record.write_text(json.dumps({"favorite": True}), encoding="utf-8")
+
+    assert (filed_record(elsewhere / "VR" / "scene two.mp4", records, more_roots=(elsewhere,)),
+            filed_record(elsewhere / "VR" / "scene two.mp4", records)) == ({"favorite": True}, {})
+
+
 def _records_library(tmp_path):
     return tmp_path / "videos" / "videos", tmp_path / "videos" / "metadata"
 
