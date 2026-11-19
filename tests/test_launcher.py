@@ -195,6 +195,15 @@ class TestTheFilesOnDisk:
         assert launcher.differences(checkout) == []
         launcher.assert_launchers_match_their_specs(checkout)
 
+    def test_a_launcher_rendered_before_its_error_box_had_copy_still_passes_until_its_app_renders_again(
+            self, tmp_path: Path):
+        checkout = _checkout(tmp_path, MINIMAL)
+        (spec,) = launchers(checkout)
+        (checkout / spec.file).write_text(launcher.render(spec, error_box_has_copy=False), encoding="ascii")
+
+        assert "ShownWithCopy" not in (checkout / spec.file).read_text(encoding="ascii")
+        assert launcher.differences(checkout) == []
+
     def test_a_hand_edited_launcher_is_named(self, tmp_path: Path):
         checkout = _checkout(tmp_path, MINIMAL)
         launcher.write(checkout)

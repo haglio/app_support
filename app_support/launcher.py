@@ -212,7 +212,7 @@ def _variables(launcher: Launcher) -> dict[str, str]:
 
 
 
-def render(launcher: Launcher) -> str:
+def render(launcher: Launcher, *, error_box_has_copy: bool = True) -> str:
     sections = [
         _header(launcher),
         ["Option Explicit", "", _declarations(launcher), ""],
@@ -222,7 +222,7 @@ def render(launcher: Launcher) -> str:
         _launch(launcher),
         _command(launcher),
         _QUOTE.splitlines(),
-        _tell(launcher).splitlines(),
+        _tell(launcher, error_box_has_copy=error_box_has_copy).splitlines(),
     ]
     if launcher.waits_for_updates:
         sections.append(_gates(launcher).splitlines())
@@ -713,8 +713,18 @@ End Function
 """
 
 
-def _tell(launcher: Launcher) -> str:
+def _tell(launcher: Launcher, *, error_box_has_copy: bool) -> str:
     take_down = "  TakeDownLoadingScreen\n" if launcher.loading_screen else ""
+    if not error_box_has_copy:
+        return f"""\
+Sub Tell(message, icon)
+{take_down}  If LCase(fso.GetFileName(WScript.FullName)) = "cscript.exe" Then
+    WScript.Echo "dialog: " & message
+  Else
+    MsgBox message, icon, app
+  End If
+End Sub
+{_REFUSE}"""
     return f"""\
 Sub Tell(message, icon)
 {take_down}  If LCase(fso.GetFileName(WScript.FullName)) = "cscript.exe" Then
@@ -735,7 +745,9 @@ Function ShownWithCopy(message, icon)
   If Err.Number <> 0 Then ShownWithCopy = False
   On Error GoTo 0
 End Function
+{_REFUSE}"""
 
+_REFUSE = """
 Sub Refuse(message, icon)
   Tell message, icon
   WScript.Quit 1
@@ -835,7 +847,8 @@ def differences(checkout: Path) -> list[str]:
         path = checkout / file
         if not path.is_file():
             problems.append(f"{file}: declared in pyproject.toml and never rendered")
-        elif path.read_text(encoding="utf-8", errors="replace") != render(launcher):
+        elif path.read_text(encoding="utf-8", errors="replace") not in (
+                render(launcher), render(launcher, error_box_has_copy=False)):
             problems.append(f"{file}: differs from its spec in pyproject.toml")
     problems += [f"{path.name}: a launcher with no spec in pyproject.toml, a fork from the rendered ones"
                  for path in sorted(checkout.glob("*.vbs")) if path.name not in specs]
