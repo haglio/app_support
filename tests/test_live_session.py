@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import subprocess
+import sys
 import uuid
 
 import pytest
 
-from app_support import live_session
+from app_support import live_session, testing, win32
 from app_support.live_session import LIVE_SESSION, holding_a_live_session, is_live
 
 HIS_DESKTOP = "WinSta0\\Default"
@@ -92,3 +94,27 @@ def test_on_windows_the_mark_reads_live_while_held_and_free_after(monkeypatch):
         while_held = is_live()
 
     assert (while_held, is_live()) == (True, False)
+
+
+def test_it_imports_where_ctypes_has_no_windows_half_as_the_apps_import_checks_ask():
+    without_the_windows_half = ("import ctypes, ctypes.wintypes\n"
+                                "for name in ('windll', 'oledll', 'WinDLL', 'OleDLL'):\n"
+                                "    if hasattr(ctypes, name):\n"
+                                "        delattr(ctypes, name)\n"
+                                "import app_support.live_session\n")
+
+    run = subprocess.run([sys.executable, "-c", without_the_windows_half], capture_output=True, text=True,
+                         check=False)
+
+    assert run.returncode == 0, run.stderr[-2000:]
+
+
+def test_a_test_can_have_no_session_live_whoever_holds_the_mark():
+    held = win32.share_mutex(LIVE_SESSION)
+    try:
+        with testing.no_session_live():
+            asked_inside = is_live()
+    finally:
+        win32.release_mutex(held)
+
+    assert asked_inside is False

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -110,3 +111,7 @@ def update_waiting_for(checkout: Path) -> Iterator[None]:
             patch("app_support.production_update.waits_for_programs_to_close",
                   side_effect=lambda asked: asked == checkout):
         yield
+
+
+def no_session_live():
+    return patch("app_support.live_session.LIVE_SESSION", f"Local\\app-support-test-{uuid.uuid4().hex}")
