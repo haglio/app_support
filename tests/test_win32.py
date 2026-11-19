@@ -35,6 +35,7 @@ from app_support.win32 import (
     is_mutex_held,
     mutex_name,
     process_started,
+    put_this_process_at,
     read_shortcut,
     release_mutex,
     seconds_since_input,
@@ -59,6 +60,9 @@ ERROR_ALREADY_EXISTS = 183
 SYNCHRONIZE = 0x00100000
 
 
+THIS_PROCESS_PSEUDO_HANDLE = -1
+
+
 class _FakeFunction:
     def __init__(self, result: object = 0, *, name: str = "", log: list | None = None) -> None:
         self.result = result
@@ -79,6 +83,34 @@ class _FakeDll:
     def __init__(self, **functions: _FakeFunction) -> None:
         for name, function in functions.items():
             setattr(self, name, function)
+
+
+class TestPutThisProcessAt:
+    def _kernel32(self, *, found: int = subprocess.NORMAL_PRIORITY_CLASS, allowed: int = 1) -> _FakeDll:
+        return _FakeDll(GetPriorityClass=_FakeFunction(found), SetPriorityClass=_FakeFunction(allowed))
+
+    def test_it_says_the_class_the_process_was_at_so_it_can_be_put_back(self):
+        kernel32 = self._kernel32(found=subprocess.BELOW_NORMAL_PRIORITY_CLASS)
+
+        found = put_this_process_at(subprocess.ABOVE_NORMAL_PRIORITY_CLASS, kernel32=lambda: kernel32)
+
+        assert found == subprocess.BELOW_NORMAL_PRIORITY_CLASS
+        assert kernel32.SetPriorityClass.calls == [(THIS_PROCESS_PSEUDO_HANDLE,
+                                                    subprocess.ABOVE_NORMAL_PRIORITY_CLASS)]
+
+    def test_a_class_windows_refuses_is_said_as_nothing(self):
+        kernel32 = self._kernel32(allowed=0)
+
+        assert put_this_process_at(subprocess.ABOVE_NORMAL_PRIORITY_CLASS, kernel32=lambda: kernel32) is None
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="a process's priority: only Windows can say")
+    def test_on_windows_the_class_is_set_and_put_back(self):
+        found = put_this_process_at(subprocess.BELOW_NORMAL_PRIORITY_CLASS)
+        try:
+            now_at = put_this_process_at(subprocess.BELOW_NORMAL_PRIORITY_CLASS)
+        finally:
+            put_this_process_at(found)
+        assert now_at == subprocess.BELOW_NORMAL_PRIORITY_CLASS
 
 
 class TestSetAppUserModelId:
