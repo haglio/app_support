@@ -5,10 +5,12 @@ import ctypes
 import hashlib
 import os
 import uuid
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from ctypes import wintypes
 from dataclasses import dataclass
 from pathlib import Path
+
+from app_support import copyable_alert
 
 if os.name == "nt":
     import winreg
@@ -674,8 +676,11 @@ _MB_SETFOREGROUND = 0x00010000
 _MB_TOPMOST = 0x00040000
 
 
-def show_error_popup(title: str, message: str, *, user32=_user32) -> None:  # the one name a suite patches: ctypes.windll exists only on Windows
+def show_error_popup(title: str, message: str, *, user32=_user32,
+                     copyable: Callable[[str, str], bool] = copyable_alert.show) -> None:  # the one name a suite patches: ctypes.windll exists only on Windows
     """Put *message* on the screen under *title*, in front of everything. A hidden Windows process has no claim on the foreground, so a plain message dialog opens underneath; ``MB_SETFOREGROUND`` and ``MB_TOPMOST`` prevent that. Raises nothing, being the last thing a dying process does."""
+    if copyable(title, message):
+        return
     show = _declare(user32(), "MessageBoxW", ctypes.c_int,
                     wintypes.HWND, wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.UINT)
     show(None, message, title,
