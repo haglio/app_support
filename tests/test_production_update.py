@@ -926,6 +926,21 @@ class TestKeepingTheWorkspaceUp:
         assert status["pass_finished"] == 5000.0
         assert status["checkouts"]["app"]["said"] == outcomes["app"].said
 
+    def test_a_pass_over_checkouts_that_are_up_to_date_asks_git_three_things_of_each(self, machine):
+        checkouts = [machine.checkout(name) for name in ("one", "two", "three")]
+        asked = []
+
+        def counted(arguments, **settings):
+            if arguments[:1] == ["git"]:
+                asked.append(Path(settings["cwd"]).name)
+            return machine.run(arguments, **settings)
+
+        outcomes = keep_up(machine.workspace, machine.base / "state", run=counted, in_use=lambda venvs: [])
+
+        assert all(outcome.said.startswith("up to date") for outcome in outcomes.values())
+        assert {checkout.name: asked.count(checkout.name) for checkout in checkouts} == {
+            "one": 3, "two": 3, "three": 3}
+
     def test_a_pass_asks_github_once_and_fetches_only_what_moved_leaving_github_to_the_agents(self, machine):
         moved = machine.checkout("moved")
         machine.checkout("still")

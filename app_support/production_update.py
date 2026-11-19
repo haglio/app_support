@@ -21,12 +21,14 @@ from app_support.dependencies import SiblingPin, release_of, sibling_pins_in
 from app_support.file_channel import publish_whole
 from app_support.git_steps import (
     GIT_TIMEOUT_S,
+    Refs,
     Run,
     StepFailed,
     default_branch,
     git,
     git_or_none,
     is_ancestor,
+    refs_of,
     run,
     uncommitted_changes,
 )
@@ -323,19 +325,22 @@ class _Plan:
 class _Heading(NamedTuple):
     branch: str
     target: str
+    pyprojects: Mapping[str, str] = {}
 
 
-def _branch_and_target(checkout: Path, *, run: Run) -> _Heading:
-    branch = default_branch(checkout, run=run)
+def _branch_and_target(checkout: Path, *, run: Run, refs: Refs | None = None) -> _Heading:
+    refs = refs_of(checkout, run=run) if refs is None else refs
+    branch = refs.default_branch
     if branch is None:
         raise _LeftAlone("follows no branch; left where it is")
+    tracking = refs.tip(f"refs/remotes/origin/{branch}")
     shipped = git_or_none(checkout, "show", f"refs/remotes/origin/{branch}:pyproject.toml", run=run) or ""
     try:
         commit_file = (_declared_in(shipped) or Declaration()).commit_file
     except (ProductionSpecError, tomllib.TOMLDecodeError) as wrong:
         raise _LeftAlone(f"failed: the pyproject on origin/{branch}: {wrong}", failed=True) from None
     if commit_file is None:
-        target = git_or_none(checkout, "rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{branch}", run=run)
+        target = tracking
         missing = f"has no origin/{branch} to follow"
     else:
         try:
@@ -344,15 +349,16 @@ def _branch_and_target(checkout: Path, *, run: Run) -> _Heading:
             named = ""
         if not named:
             raise _LeftAlone(f"nothing has passed yet: {commit_file} names no commit")
-        target = git_or_none(checkout, "rev-parse", "--verify", "--quiet", f"{named}^{{commit}}", run=run)
+        target = named if named in (refs.head, tracking) else git_or_none(
+            checkout, "rev-parse", "--verify", "--quiet", f"{named}^{{commit}}", run=run)
         missing = f"{commit_file} names {named[:8]}, which this checkout does not have"
     if target is None:
         raise _LeftAlone(missing)
-    return _Heading(branch, _the_hotfix_or(checkout, target, run=run))
+    return _Heading(branch, _the_hotfix_or(checkout, target, refs.tip(HOTFIX_REF), run=run),
+                    {tracking: shipped} if tracking else {})
 
 
-def _the_hotfix_or(checkout: Path, target: str, *, run: Run) -> str:
-    hotfix = git_or_none(checkout, "rev-parse", "--verify", "--quiet", f"{HOTFIX_REF}^{{commit}}", run=run)
+def _the_hotfix_or(checkout: Path, target: str, hotfix: str | None, *, run: Run) -> str:
     if hotfix is None:
         return target
     head = git(checkout, "rev-parse", "HEAD", run=run)
@@ -364,11 +370,15 @@ def _the_hotfix_or(checkout: Path, target: str, *, run: Run) -> str:
     return target
 
 
-def _plan(checkout: Path, heading: _Heading, *, workspace: Path, surroundings: Surroundings) -> _Plan:
-    branch, target = heading
+def _plan(checkout: Path, heading: _Heading, *, workspace: Path, surroundings: Surroundings,
+          refs: Refs | None = None) -> _Plan:
+    branch, target, pyprojects = heading
     run, now = surroundings.run, surroundings.now
-    head = git(checkout, "rev-parse", "HEAD", run=run)
-    on = git_or_none(checkout, "symbolic-ref", "--quiet", "--short", "HEAD", run=run)
+    if refs is not None and refs.head is not None:
+        head, on = refs.head, refs.on
+    else:
+        head = git(checkout, "rev-parse", "HEAD", run=run)
+        on = git_or_none(checkout, "symbolic-ref", "--quiet", "--short", "HEAD", run=run)
     if on != branch:
         return _Plan(head, target, False, [], f"is on {on or 'no branch'}, not {branch}; left where it is")
     moves = head != target and bool(is_ancestor(checkout, head, target, run=run))
@@ -383,7 +393,8 @@ def _plan(checkout: Path, heading: _Heading, *, workspace: Path, surroundings: S
         elif not is_ancestor(checkout, target, head, run=run):
             return _Plan(head, target, False, [],
                          f"has commits {_describe(checkout, branch, target, run=run)} does not; left where it is")
-    pyproject = _pyproject_at(checkout, target if moves else head, run=run)
+    planned = target if moves else head
+    pyproject = pyprojects[planned] if planned in pyprojects else _pyproject_at(checkout, planned, run=run)
     if moves and (held := _held_for_its_overlay(checkout, branch, target, pyproject, run=run)):
         return _Plan(head, target, False, [], held)
     libraries = _libraries_off(checkout, pyproject)
@@ -625,18 +636,20 @@ _THIS_COMPUTER = Surroundings()
 
 
 def bring_up(checkout: Path, *, workspace: Path, surroundings: Surroundings = _THIS_COMPUTER,
-             wait_s: float = SCHEDULED_WAIT_S, previous: Outcome | None = None) -> Outcome:
+             wait_s: float = SCHEDULED_WAIT_S, previous: Outcome | None = None, refs: Refs | None = None) -> Outcome:
     run, now = surroundings.run, surroundings.now
     checkout, target = Path(checkout), None
     try:
-        heading = _branch_and_target(checkout, run=run)
+        refs = refs_of(checkout, run=run) if refs is None else refs
+        heading = _branch_and_target(checkout, run=run, refs=refs)
         target = heading.target
         if (previous is not None and previous.failed and previous.target == target
                 and now() - previous.at < RETRY_FAILED_AFTER_S
                 and not _libraries_off(checkout, _pyproject_at(checkout, "HEAD", run=run))
                 and not _taken_back(checkout, git(checkout, "rev-parse", "HEAD", run=run), run=run)):
             return previous
-        said = _bring_up_to(checkout, heading, workspace=workspace, surroundings=surroundings, wait_s=wait_s)
+        said = _bring_up_to(checkout, heading, workspace=workspace, surroundings=surroundings, wait_s=wait_s,
+                            refs=refs)
         return Outcome(said, now(), False, target)
     except _LeftAlone as left:
         return Outcome(_not_waiting(checkout, str(left)), now(), left.failed, target)
@@ -656,8 +669,8 @@ def heading_for(checkout: Path, *, run: Run = run) -> str:
 
 
 def _bring_up_to(checkout: Path, heading: _Heading, *, workspace: Path, surroundings: Surroundings,
-                 wait_s: float) -> str:
-    plan = _plan(checkout, heading, workspace=workspace, surroundings=surroundings)
+                 wait_s: float, refs: Refs) -> str:
+    plan = _plan(checkout, heading, workspace=workspace, surroundings=surroundings, refs=refs)
     if plan.settled:
         return _settle(checkout, plan)
     with the_turn(checkout, wait_s=wait_s):
@@ -739,11 +752,9 @@ def _since_last_fetch(checkout: Path, *, now: Callable[[], float]) -> float:
         return math.inf
 
 
-def _worth_fetching(checkout: Path, branch: str, head: tuple[str, str] | None, *, run: Run,
-                    now: Callable[[], float]) -> bool:
-    if head is not None and head[0] == branch:
-        tracking = git_or_none(checkout, "rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{branch}", run=run)
-        return tracking != head[1]
+def _worth_fetching(checkout: Path, refs: Refs, head: tuple[str, str] | None, *, now: Callable[[], float]) -> bool:
+    if head is not None and head[0] == refs.default_branch:
+        return refs.tip(f"refs/remotes/origin/{refs.default_branch}") != head[1]
     return _since_last_fetch(checkout, now=now) >= FETCH_UNASKED_AFTER_S
 
 
@@ -788,14 +799,18 @@ def keep_up(workspace: Path, state: Path, *, fetch: bool = True, surroundings: S
             keep_the_claude_app_off(checkout)
         except OSError as stuck:
             _log.warning("%s: could not keep the Claude app off: %s", checkout.name, stuck)
-        branch = default_branch(checkout, run=run)
-        if fetch and branch and _worth_fetching(checkout, branch, heads.get(checkout), run=run, now=now):
+        try:
+            refs = refs_of(checkout, run=run)
+        except StepFailed:
+            refs = None
+        if fetch and refs and refs.default_branch and _worth_fetching(checkout, refs, heads.get(checkout), now=now):
+            branch, refs = refs.default_branch, None
             try:
                 git(checkout, "fetch", "--quiet", "origin", branch, run=run)
             except StepFailed as unreachable:
                 _say_the_fetch_failed(checkout, unreachable, now=now)
         outcomes[checkout.name] = bring_up(checkout, workspace=workspace, surroundings=surroundings, wait_s=wait_s,
-                                           previous=previous.get(checkout.name))
+                                           previous=previous.get(checkout.name), refs=refs)
     _record(state, outcomes, previous, finished=now(), github=github)
     return outcomes
 
