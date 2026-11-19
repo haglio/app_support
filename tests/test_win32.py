@@ -40,6 +40,7 @@ from app_support.win32 import (
     seconds_since_input,
     set_app_user_model_id,
     set_shortcut_app_user_model_id,
+    share_mutex,
     show_error_popup,
     stamp_pinned_shortcuts,
     taskbar_pins,
@@ -698,6 +699,16 @@ class TestANamedMutexOnWindows:
         finally:
             release_mutex(handle)
         assert not is_mutex_held(name)
+
+    def test_a_shared_name_reads_as_held_until_its_last_holder_lets_go(self):
+        name = f"Local\\app-support-test-{uuid.uuid4().hex}"
+        first, second = share_mutex(name), share_mutex(name)
+
+        release_mutex(first)
+        held_by_the_second_alone = is_mutex_held(name)
+        release_mutex(second)
+
+        assert (held_by_the_second_alone, is_mutex_held(name)) == (True, False)
 
     def test_probing_a_free_name_does_not_claim_it(self):
         name = f"Local\\app-support-test-{uuid.uuid4().hex}"
