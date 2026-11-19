@@ -140,7 +140,7 @@ def _api():
     return kernel32, ntdll, shell32
 
 
-_kernel32, _ntdll, _shell32 = _api() if os.name == "nt" else (None, None, None)
+_kernel32, _ntdll, _shell32 = _api() if hasattr(ctypes, "WinDLL") else (None, None, None)
 
 
 def running() -> list[Process]:
