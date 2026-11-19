@@ -486,6 +486,17 @@ def is_mutex_held(name: str, *, kernel32=_kernel32) -> bool:
     return True
 
 
+_THIS_PROCESS = -1
+
+
+def put_this_process_at(priority_class: int, *, kernel32=_kernel32) -> int | None:
+    dll = kernel32()
+    get = _declare(dll, "GetPriorityClass", wintypes.DWORD, ctypes.c_void_p)
+    put = _declare(dll, "SetPriorityClass", wintypes.BOOL, ctypes.c_void_p, wintypes.DWORD)
+    found = get(_THIS_PROCESS)
+    return found if put(_THIS_PROCESS, priority_class) else None
+
+
 _PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 _STILL_ACTIVE = 259
 

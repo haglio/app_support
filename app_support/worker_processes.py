@@ -15,16 +15,14 @@ from pathlib import Path
 
 import pytest
 
+from app_support import win32
+
 TESTS_DEALT_AT_A_TIME_WHEN_STOPPING_AT_A_FAILURE = 2
 BLAS_THREADS_A_WORKER_RUNS = "1"
 
-_THIS_PROCESS = wintypes.HANDLE(-1)
-
 
 def _give_way_to_what_he_is_using() -> None:
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel32.SetPriorityClass.argtypes = [wintypes.HANDLE, wintypes.DWORD]
-    kernel32.SetPriorityClass(_THIS_PROCESS, subprocess.BELOW_NORMAL_PRIORITY_CLASS)
+    win32.put_this_process_at(subprocess.BELOW_NORMAL_PRIORITY_CLASS)
 
 
 class _IdleShare:
