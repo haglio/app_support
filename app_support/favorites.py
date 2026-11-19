@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app_support.json_store import locked_update, read_json_or_empty
-from app_support.mirrored_tree import mirrored_source
+from app_support.mirrored_tree import ListedFolders, mirrored_source
 
 FAVORITE_KEY = "favorite"
 PAGE_KEY = "web_url"
@@ -50,11 +50,12 @@ def favorites_under(
     record_root: Path, *, video_roots: Sequence[Path], video_suffixes: Iterable[str]
 ) -> list[Favorite]:
     found = []
+    listed = ListedFolders()
     for record_path in sorted(Path(record_root).rglob("*.json")):
         record = read_json_or_empty(record_path)
         if is_favorite(record):
             video = mirrored_source(record_path, roots=video_roots, mirror_root=record_root,
-                                    suffixes=video_suffixes)
+                                    suffixes=video_suffixes, is_file=listed)
             if video is not None:
                 found.append(Favorite(video=video, page=page_of(record)))
     return found
