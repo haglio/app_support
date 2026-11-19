@@ -409,6 +409,33 @@ def dress_window(hwnd: int, app_id: str, app: TaskbarApp | None = None, *,
         _release(prop_store.value)
 
 
+_CLSID_TaskbarList = _make_guid("56FDF344-FD6D-11D0-958A-006097C9A090")
+_IID_ITaskbarList3 = _make_guid("EA1AFB91-9E28-4B86-90E9-9E9F8A5EEFAF")
+_VTBL_ITL_HR_INIT = 3
+_VTBL_ITL3_SET_OVERLAY_ICON = 18
+
+
+def take_the_overlay_icon_off(hwnd: int, *, ole32=_ole32) -> None:
+    with _apartment(ole32) as com:
+        taskbar = ctypes.c_void_p()
+        hr = com.CoCreateInstance(
+            ctypes.byref(_CLSID_TaskbarList), None, _CLSCTX_ALL,
+            ctypes.byref(_IID_ITaskbarList3), ctypes.byref(taskbar))
+        if hr < 0:
+            raise _hresult_refusal_for_the_caller_to_weigh("CoCreateInstance(TaskbarList)", hr)
+        try:
+            hr = _vtbl_call(taskbar.value, _VTBL_ITL_HR_INIT, ctypes.HRESULT)(taskbar.value)
+            if hr < 0:
+                raise _hresult_refusal_for_the_caller_to_weigh("ITaskbarList::HrInit", hr)
+            hr = _vtbl_call(taskbar.value, _VTBL_ITL3_SET_OVERLAY_ICON, ctypes.HRESULT,
+                            wintypes.HWND, wintypes.HICON, wintypes.LPCWSTR)(
+                taskbar.value, hwnd, None, None)
+            if hr < 0:
+                raise _hresult_refusal_for_the_caller_to_weigh("ITaskbarList3::SetOverlayIcon", hr)
+        finally:
+            _release(taskbar.value)
+
+
 _TASKBAR_APPS = r"Software\Haglio\TaskbarApps"
 
 
