@@ -4,6 +4,7 @@ import os
 import subprocess
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
+from typing import NamedTuple
 
 from app_support.subprocess_utils import hidden_subprocess_kwargs, run_process_tree
 
@@ -63,14 +64,42 @@ def uncommitted_changes(checkout: Path, *, run: Run) -> str:
                env={"GIT_OPTIONAL_LOCKS": "0"}).strip()
 
 
-def default_branch(checkout: Path, *, run: Run) -> str | None:
-    head = git_or_none(checkout, "symbolic-ref", "--short", "refs/remotes/origin/HEAD", run=run)
-    if head and head.startswith("origin/"):
-        return head[len("origin/"):]
-    return next((name for name in ("main", "master")
-                 if git_or_none(checkout, "rev-parse", "--verify", "--quiet", f"refs/heads/{name}", run=run)),
-                None)
+class Refs(NamedTuple):
+    tips: Mapping[str, str]
+    followed: str | None
+    head: str | None
+    on: str | None
 
+    def tip(self, ref: str) -> str | None:
+        return self.tips.get(ref)
+
+    @property
+    def default_branch(self) -> str | None:
+        if self.followed and self.followed.startswith(_ORIGIN):
+            return self.followed[len(_ORIGIN):]
+        return next((name for name in ("main", "master") if f"refs/heads/{name}" in self.tips), None)
+
+
+_ORIGIN = "refs/remotes/origin/"
+_EACH_REF = "%(refname)%09%(objectname)%09%(symref)%09%(HEAD)"
+
+
+def refs_of(checkout: Path, *, run: Run) -> Refs:
+    listed = git(checkout, "for-each-ref", f"--format={_EACH_REF}", "refs/heads", "refs/remotes/origin",
+                 "refs/haglio", run=run)
+    tips, followed, head, on = {}, None, None, None
+    for line in listed.splitlines():
+        name, commit, points_at, current = [*line.split("\t"), "", ""][:4]
+        tips[name] = commit
+        if name == f"{_ORIGIN}HEAD":
+            followed = points_at
+        if current == "*":
+            head, on = commit, name.removeprefix("refs/heads/")
+    return Refs(tips, followed, head, on)
+
+
+def default_branch(checkout: Path, *, run: Run) -> str | None:
+    return refs_of(checkout, run=run).default_branch
 
 
 def is_ancestor(checkout: Path, older: str, newer: str, *, run: Run) -> bool:
