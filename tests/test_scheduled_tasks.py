@@ -77,12 +77,10 @@ class TestTheRendering:
 
         assert _leaf(xml, "Settings/ExecutionTimeLimit") == "PT0S"
 
-    def test_what_it_starts_runs_at_the_priority_a_click_would_give_it(self):
-        """Task Scheduler's own default is below normal, which a program started
-        from a task passes on to everything it starts in turn."""
+    def test_what_it_starts_runs_below_normal_so_it_gives_way_to_what_he_is_using(self):
         xml = scheduled_tasks.render(EXAMPLE, user="EXAMPLE\\someone")
 
-        assert _leaf(xml, "Settings/Priority") == "5"
+        assert _leaf(xml, "Settings/Priority") == "7"
 
     def test_the_task_says_what_it_is(self):
         xml = scheduled_tasks.render(EXAMPLE, user="EXAMPLE\\someone")
@@ -121,10 +119,15 @@ class TestWhatDiffers:
                               ' instead of "C:\\example\\launch_example.vbs"')
 
     def test_a_value_the_registered_task_lacks_is_named(self):
-        registered = _as_registered(self.WANTED, Settings__Priority=None)
+        registered = _as_registered(self.WANTED, Settings__StartWhenAvailable=None)
 
         assert scheduled_tasks.what_differs(self.WANTED, registered) == [
-            "Settings/Priority: nothing instead of 5"]
+            "Settings/StartWhenAvailable: nothing instead of true"]
+
+    def test_a_priority_task_scheduler_leaves_out_as_its_default_is_the_one_wanted(self):
+        registered = _as_registered(self.WANTED, Settings__Priority=None)
+
+        assert scheduled_tasks.what_differs(self.WANTED, registered) == []
 
     def test_case_alone_is_no_difference(self):
         registered = _as_registered(
