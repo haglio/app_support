@@ -44,6 +44,7 @@ from app_support.win32 import (
     share_mutex,
     show_error_popup,
     stamp_pinned_shortcuts,
+    take_the_overlay_icon_off,
     taskbar_pins,
     try_acquire_mutex,
     window_exists,
@@ -488,6 +489,26 @@ class TestDressWindow:
 
         with pytest.raises(OSError, match="SHGetPropertyStoreForWindow failed: HRESULT 0x80070057"):
             dress_window(0x1234, "Example.App", _EXAMPLE_APP, shell32=lambda: shell32)
+
+
+class TestAnOverlayIconTakenOff:
+    def test_a_taskbar_list_windows_will_not_make_is_named_in_the_refusal(self):
+        ole32 = _FakeOle32(init=0, create=E_INVALIDARG)
+
+        with pytest.raises(OSError, match=r"CoCreateInstance\(TaskbarList\) failed: HRESULT 0x80070057"):
+            take_the_overlay_icon_off(0x1234, ole32=lambda: ole32)
+
+        assert len(ole32.CoUninitialize.calls) == 1
+
+
+@pytest.mark.skipif(not hasattr(ctypes, "windll"), reason="the taskbar: only Windows can say")
+class TestAnOverlayIconTakenOffOnWindows:
+    def test_the_taskbar_accepts_it_for_a_window_that_wears_no_overlay_icon(self):
+        hwnd, destroy = _a_window_never_shown()
+        try:
+            take_the_overlay_icon_off(hwnd)
+        finally:
+            destroy()
 
 
 class _FakeRegistry:
