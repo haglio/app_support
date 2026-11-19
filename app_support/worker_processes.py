@@ -225,9 +225,10 @@ def pytest_unconfigure(config) -> None:
 
 
 def pytest_configure(config) -> None:
+    runs_tests_itself = hasattr(config, "workerinput") or not getattr(config.option, "numprocesses", None)
+    if runs_tests_itself and sys.platform == "win32":
+        _give_way_to_what_he_is_using()
     if hasattr(config, "workerinput"):
-        if sys.platform == "win32":
-            _give_way_to_what_he_is_using()
         if _PID_FOLDER_INPUT in config.workerinput:
             _pid_file(Path(config.workerinput[_PID_FOLDER_INPUT]), config.workerinput["workerid"]).write_text(
                 str(os.getpid()), encoding="utf-8")

@@ -36,6 +36,12 @@ def test_a_worker_of_a_run_side_by_side_gives_way_to_what_he_is_using(tmp_path):
     assert done.returncode == 0, done.stdout + done.stderr
 
 
+def test_a_run_in_one_process_gives_way_to_what_he_is_using_too(tmp_path):
+    done = run_pytest_in(_repo(tmp_path, _SAYS_IT_RUNS_BELOW_NORMAL))
+
+    assert done.returncode == 0, done.stdout + done.stderr
+
+
 def test_a_run_that_stops_at_its_first_failure_deals_its_workers_few_tests_at_a_time():
     config = _controller(numprocesses=8, maxfail=1, maxschedchunk=None)
 
