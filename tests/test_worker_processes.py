@@ -173,6 +173,12 @@ def test_a_hang_in_a_worker_is_still_ended_at_its_ceiling(tmp_path):
     assert "time.sleep(120)" in done.stdout
 
 
+def test_a_run_in_one_process_starts_where_ctypes_has_no_windows_half_as_the_apps_import_checks_ask(monkeypatch):
+    monkeypatch.delattr(worker_processes.ctypes, "WinDLL")
+
+    worker_processes.pytest_configure(_controller(maxfail=1))
+
+
 def test_a_run_in_one_process_has_nothing_dealt():
     config = _controller(maxfail=1)
 

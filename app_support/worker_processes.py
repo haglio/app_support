@@ -226,7 +226,7 @@ def pytest_unconfigure(config) -> None:
 
 def pytest_configure(config) -> None:
     runs_tests_itself = hasattr(config, "workerinput") or not getattr(config.option, "numprocesses", None)
-    if runs_tests_itself and sys.platform == "win32":
+    if runs_tests_itself and hasattr(ctypes, "WinDLL"):
         _give_way_to_what_he_is_using()
     if hasattr(config, "workerinput"):
         if _PID_FOLDER_INPUT in config.workerinput:
