@@ -37,14 +37,34 @@ def mirrored_source(
     roots: Sequence[Path],
     mirror_root: Path,
     suffixes: Iterable[str],
+    is_file: Callable[[Path], bool] = Path.is_file,
 ) -> Path | None:
     relative, suffixes = Path(counterpart).relative_to(mirror_root), tuple(suffixes)
     for root in roots:
         for suffix in suffixes:
             source = (Path(root) / relative).with_suffix(suffix)
-            if source.is_file():
+            if is_file(source):
                 return source
     return None
+
+
+class ListedFolders:
+    def __init__(self) -> None:
+        self._names: dict[Path, frozenset[str]] = {}
+
+    def __call__(self, path: Path) -> bool:
+        folder = Path(path).parent
+        if folder not in self._names:
+            self._names[folder] = _file_names_in(folder)
+        return os.path.normcase(Path(path).name) in self._names[folder]
+
+
+def _file_names_in(folder: Path) -> frozenset[str]:
+    try:
+        with os.scandir(folder) as entries:
+            return frozenset(os.path.normcase(entry.name) for entry in entries if entry.is_file())
+    except OSError:
+        return frozenset()
 
 
 def _as_spelled(path: Path) -> Path:
