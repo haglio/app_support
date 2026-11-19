@@ -195,14 +195,19 @@ class TestTheFilesOnDisk:
         assert launcher.differences(checkout) == []
         launcher.assert_launchers_match_their_specs(checkout)
 
-    def test_a_launcher_rendered_before_its_error_box_had_copy_still_passes_until_its_app_renders_again(
-            self, tmp_path: Path):
+    def test_a_launcher_whose_error_box_has_no_copy_is_named(self, tmp_path: Path):
         checkout = _checkout(tmp_path, MINIMAL)
-        (spec,) = launchers(checkout)
-        (checkout / spec.file).write_text(launcher.render(spec, error_box_has_copy=False), encoding="ascii")
+        launcher.write(checkout)
+        rendered = checkout / "launch_example.vbs"
+        said = rendered.read_text(encoding="ascii")
+        copy_starts = said.index("  ElseIf Not ShownWithCopy(message, icon) Then\n")
+        copy_ends = said.index("End Function\n", copy_starts) + len("End Function\n")
+        windows_own_box = "  Else\n    MsgBox message, icon, app\n  End If\nEnd Sub\n"
+        rendered.write_text(said[:copy_starts] + windows_own_box + said[copy_ends:], encoding="ascii")
+        assert "ShownWithCopy" not in rendered.read_text(encoding="ascii")
 
-        assert "ShownWithCopy" not in (checkout / spec.file).read_text(encoding="ascii")
-        assert launcher.differences(checkout) == []
+        (problem,) = launcher.differences(checkout)
+        assert "launch_example.vbs" in problem
 
     def test_a_hand_edited_launcher_is_named(self, tmp_path: Path):
         checkout = _checkout(tmp_path, MINIMAL)
