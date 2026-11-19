@@ -43,3 +43,7 @@ def test_a_machine_without_powershell_is_told_the_window_did_not_come_up():
         raise FileNotFoundError
 
     assert copyable_alert.show("Example App", "Nothing to do.", run=missing) is False
+
+
+def test_what_is_copied_is_the_title_a_blank_line_and_the_message():
+    assert copyable_alert.said("Example App", "Nothing to do.") == "Example App\n\nNothing to do."

@@ -7,8 +7,15 @@ from collections.abc import Callable, Mapping
 
 TITLE, MESSAGE, ICON = "HAGLIO_ALERT_TITLE", "HAGLIO_ALERT_MESSAGE", "HAGLIO_ALERT_ICON"
 ERROR, WARNING, INFORMATION = 16, 48, 64
-COPY = "Copy"
+COPY = "Copy error message"
+COPIED = "Copied"
 COPY_TIP = "Copies this window's title and message, ready to paste"
+COPIED_SHOWN_MS = 2000
+
+
+def said(title: str, message: str) -> str:
+    return f"{title}\n\n{message}"
+
 
 SCRIPT = f"""\
 $ErrorActionPreference = 'Stop'
@@ -53,11 +60,21 @@ $ok = New-Object System.Windows.Forms.Button
 $ok.Text = 'OK'
 $ok.DialogResult = 'OK'
 $copy = New-Object System.Windows.Forms.Button
+$copy.AutoSize = $true
 $copy.Text = '{COPY}'
+$copy.MinimumSize = $copy.GetPreferredSize([System.Drawing.Size]::Empty)
 (New-Object System.Windows.Forms.ToolTip).SetToolTip($copy, "{COPY_TIP}")
+$back = New-Object System.Windows.Forms.Timer
+$back.Interval = {COPIED_SHOWN_MS}
+$back.Add_Tick({{
+  $back.Stop()
+  $copy.Text = '{COPY}'
+}})
 $copy.Add_Click({{
   [System.Windows.Forms.Clipboard]::SetText($title + "`r`n`r`n" + $message)
-  $form.Close()
+  $copy.Text = '{COPIED}'
+  $back.Stop()
+  $back.Start()
 }})
 $buttons.Controls.Add($ok)
 $buttons.Controls.Add($copy)
