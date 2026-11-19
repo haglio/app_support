@@ -37,11 +37,25 @@ def settings_file() -> Path:
     return Path(named) if named else outside_the_library_whose_place_it_names
 
 
+_read_at: dict[Path, tuple[tuple[int, int], dict[str, Any]]] = {}
+
+
+def _as_read(path: Path) -> dict[str, Any]:
+    if os.environ.get(SETTINGS_ENV) == THE_EXAMPLE:
+        return EXAMPLE
+    try:
+        stamp = path.stat()
+    except OSError:
+        return EXAMPLE
+    dated = (stamp.st_mtime_ns, stamp.st_size)
+    kept = _read_at.get(path)
+    if kept is None or kept[0] != dated:
+        kept = _read_at[path] = (dated, json.loads(path.read_text(encoding="utf-8")))
+    return kept[1]
+
+
 def load() -> dict[str, Any]:
-    path = settings_file()
-    if os.environ.get(SETTINGS_ENV) == THE_EXAMPLE or not path.is_file():
-        return copy.deepcopy(EXAMPLE)
-    return json.loads(path.read_text(encoding="utf-8"))
+    return copy.deepcopy(_as_read(settings_file()))
 
 
 class MissingSetting(LookupError):
@@ -52,13 +66,13 @@ class MissingSetting(LookupError):
 
 
 def value(*keys: str) -> Any:
-    here: Any = load()
+    here: Any = _as_read(settings_file())
     for depth, key in enumerate(keys, start=1):
         if not isinstance(here, dict) or key not in here:
             raise MissingSetting(keys[:depth], settings_file())
         here = here[key]
-    return here
+    return copy.deepcopy(here)
 
 
 def project_roots() -> tuple[Path, ...]:
-    return siblings.project_roots(load().get("project_roots"), fallback=Path(value("library_root")) / "projects")
+    return siblings.project_roots(_as_read(settings_file()).get("project_roots"), fallback=Path(value("library_root")) / "projects")
