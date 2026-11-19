@@ -127,3 +127,19 @@ def test_each_kind_of_run_is_told_from_what_its_record_says():
     assert _kind(test_file, checkout=integration_runs.VERIFYING_MAIN) == integration_runs.AGAIN
     assert _kind(test_file, integration_runs.WITHOUT_COVERAGE_FLAG,
                  checkout=integration_runs.VERIFYING_MAIN) == integration_runs.MEASURING
+
+
+def test_runs_that_joined_too_long_before_a_moment_to_be_in_view_since_it_are_never_read(tmp_path: Path, monkeypatch):
+    now = a_run().joined
+    for days_ago in range(5):
+        integration_runs.write_run(tmp_path, a_run(pid=100 + days_ago, joined=now - timedelta(days=days_ago)))
+    (tmp_path / "named some other way.json").write_text("{}", encoding="utf-8")
+    read = []
+    real_read = integration_runs.read_whole
+    monkeypatch.setattr(integration_runs, "read_whole", lambda path: read.append(path.name) or real_read(path))
+    since = now - timedelta(hours=1)
+
+    runs = integration_runs.read_runs(tmp_path, since=since)
+
+    assert [run.pid for run in runs] == [101, 100]
+    assert len(read) == 3

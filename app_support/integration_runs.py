@@ -73,8 +73,12 @@ def kind_of(record: RunRecord) -> str:
     return NAMED
 
 
+_NAMED_FOR_ITS_JOINING = "%Y%m%d-%H%M%S"
+LONGEST_A_RUN_WAITS_AND_RUNS = timedelta(days=1)
+
+
 def write_run(folder: Path, run: RunRecord) -> Path:
-    path = folder / f"{run.joined:%Y%m%d-%H%M%S}-{run.pid}.json"
+    path = folder / f"{run.joined:{_NAMED_FOR_ITS_JOINING}}-{run.pid}.json"
     write_whole(path, run.to_json())
     return path
 
@@ -98,9 +102,21 @@ def read_run(path: Path) -> RunRecord:
     return RunRecord.from_json(read_whole(path))
 
 
-def read_runs(folder: Path) -> list[RunRecord]:
+def _joined_too_early(path: Path, since: datetime | None) -> bool:
+    if since is None:
+        return False
+    try:
+        joined = datetime.strptime(path.stem[:15], _NAMED_FOR_ITS_JOINING).astimezone()
+    except ValueError:
+        return False
+    return joined < since - LONGEST_A_RUN_WAITS_AND_RUNS
+
+
+def read_runs(folder: Path, *, since: datetime | None = None) -> list[RunRecord]:
     runs = []
     for path in sorted(folder.glob("*.json")):
+        if _joined_too_early(path, since):
+            continue
         try:
             runs.append(read_run(path))
         except (OSError, ValueError, TypeError):
