@@ -462,6 +462,12 @@ def try_acquire_mutex(name: str, *, kernel32=_kernel32, last_error=_last_error) 
     return handle
 
 
+def share_mutex(name: str, *, kernel32=_kernel32) -> int | None:
+    create = _declare(kernel32(), "CreateMutexW", ctypes.c_void_p,
+                      ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR)
+    return create(None, False, name) or None
+
+
 def release_mutex(handle: int, *, kernel32=_kernel32) -> None:
     _close_handle(kernel32())(handle)
 
