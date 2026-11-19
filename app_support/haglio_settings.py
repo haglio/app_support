@@ -76,3 +76,27 @@ def value(*keys: str) -> Any:
 
 def project_roots() -> tuple[Path, ...]:
     return siblings.project_roots(_as_read(settings_file()).get("project_roots"), fallback=Path(value("library_root")) / "projects")
+
+
+def example_inside(folder: Path) -> dict[str, Any]:
+    library = folder / "library"
+    example_root = EXAMPLE["library_root"]
+    return {name: str(library) + setting[len(example_root):]
+            if isinstance(setting, str) and setting.startswith(example_root) else copy.deepcopy(setting)
+            for name, setting in EXAMPLE.items()}
+
+
+def reaching_outside(settings: dict[str, Any], folder: Path) -> list[str]:
+    return [name for name, setting in settings.items()
+            if any(_outside(path, folder) for path in (setting if isinstance(setting, list) else [setting]))]
+
+
+def _outside(setting: Any, folder: Path) -> bool:
+    return isinstance(setting, str) and Path(setting).is_absolute() and not Path(setting).is_relative_to(folder)
+
+
+def run_on(settings: dict[str, Any], folder: Path, environ) -> None:
+    written = folder / "haglio_settings.json"
+    folder.mkdir(parents=True, exist_ok=True)
+    written.write_text(json.dumps(settings), encoding="utf-8")
+    environ[SETTINGS_ENV] = str(written)
