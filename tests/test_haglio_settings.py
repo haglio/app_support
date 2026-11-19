@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -105,3 +106,21 @@ def test_settings_naming_no_checkout_folders_mean_the_librarys_projects_folder_t
                        str(_settings(tmp_path / "settings.json", {"library_root": "L:/library"})))
 
     assert haglio_settings.project_roots() == (Path("L:/library/projects"),)
+
+
+def test_many_readers_read_the_file_once_until_its_date_changes(tmp_path, monkeypatch):
+    settings = _settings(tmp_path / "settings.json", {"library_root": "D:/one"})
+    monkeypatch.setenv(haglio_settings.SETTINGS_ENV, str(settings))
+    dated = settings.stat().st_mtime_ns
+    parsed = []
+    real_loads = haglio_settings.json.loads
+    monkeypatch.setattr(haglio_settings.json, "loads", lambda text: parsed.append(text) or real_loads(text))
+
+    first = [haglio_settings.value("library_root") for _ in range(5)]
+    _settings(settings, {"library_root": "D:/two"})
+    os.utime(settings, ns=(dated, dated + 1_000_000_000))
+    after_the_change = [haglio_settings.value("library_root") for _ in range(5)]
+
+    assert first == ["D:/one"] * 5
+    assert after_the_change == ["D:/two"] * 5
+    assert len(parsed) == 2
