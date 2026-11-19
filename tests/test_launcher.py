@@ -655,6 +655,20 @@ class TestALaunch:
         assert f"dialog: Example's virtual environment is missing:\n{interpreter}" in run.output
         assert not (checkout / "state").exists()
 
+    @pytest.mark.timeout(120)
+    def test_a_refusal_comes_up_in_a_window_with_copy_when_he_clicked_the_launcher(
+            self, tmp_path: Path, desktop_of_its_own):
+        checkout = _checkout(tmp_path, MINIMAL)
+        host = Path(os.environ.get("SYSTEMROOT", r"C:\Windows")) / "System32" / "wscript.exe"
+
+        pid = desktop_of_its_own.start([str(host), str(_rendered(checkout))])
+        shown = desktop_of_its_own.window_titled("Example")
+        desktop_of_its_own.press("Example", "OK")
+
+        assert any("virtual environment is missing" in said for said in shown)
+        assert "Copy" in shown
+        assert desktop_of_its_own.ended_within(pid, 30)
+
     def test_a_worktree_launcher_says_it_is_the_primarys_venv_that_is_missing(self, tmp_path: Path):
         _, worktree = _worktree(tmp_path, WORKTREE)
 

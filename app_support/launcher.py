@@ -4,13 +4,14 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from pathlib import Path, PureWindowsPath
 
-from app_support import loading_screen, production_update
+from app_support import copyable_alert, loading_screen, production_update
 from app_support.subprocess_utils import run_process_tree
 
 DRY_RUN = "HAGLIO_LAUNCHER_DRY_RUN"
@@ -718,10 +719,22 @@ def _tell(launcher: Launcher) -> str:
 Sub Tell(message, icon)
 {take_down}  If LCase(fso.GetFileName(WScript.FullName)) = "cscript.exe" Then
     WScript.Echo "dialog: " & message
-  Else
+  ElseIf Not ShownWithCopy(message, icon) Then
     MsgBox message, icon, app
   End If
 End Sub
+
+Function ShownWithCopy(message, icon)
+  Dim told
+  Set told = shell.Environment("Process")
+  told("{copyable_alert.TITLE}") = app
+  told("{copyable_alert.MESSAGE}") = message
+  told("{copyable_alert.ICON}") = icon
+  On Error Resume Next
+  ShownWithCopy = shell.Run({_text(subprocess.list2cmdline(copyable_alert.COMMAND))}, 0, True) = 0
+  If Err.Number <> 0 Then ShownWithCopy = False
+  On Error GoTo 0
+End Function
 
 Sub Refuse(message, icon)
   Tell message, icon

@@ -1030,12 +1030,26 @@ class TestAJobObjectOnWindows:
             assert job.busy_seconds() >= 0.25
 
 
+def _did_not_come_up(_title: str, _message: str) -> bool:
+    return False
+
+
 class TestShowErrorPopup:
+    def test_the_window_with_a_copy_button_comes_up_in_place_of_the_plain_one(self):
+        user32 = _FakeDll(MessageBoxW=_FakeFunction(1))
+        shown = []
+
+        show_error_popup("Example App", "The scene file could not be read.", user32=lambda: user32,
+                         copyable=lambda title, message: shown.append((title, message)) or True)
+
+        assert shown == [("Example App", "The scene file could not be read.")]
+        assert user32.MessageBoxW.calls == []
+
     def test_the_dialog_comes_up_in_front_of_whatever_is_there(self):
         user32 = _FakeDll(MessageBoxW=_FakeFunction(1))
 
         show_error_popup("Example App", "The scene file could not be read.",
-                         user32=lambda: user32)
+                         user32=lambda: user32, copyable=_did_not_come_up)
 
         (_, _, _, flags), = user32.MessageBoxW.calls
         assert flags == MB_OK | MB_ICONERROR | MB_SETFOREGROUND | MB_TOPMOST
@@ -1045,7 +1059,7 @@ class TestShowErrorPopup:
         user32 = _FakeDll(MessageBoxW=_FakeFunction(1))
 
         show_error_popup("Example App", "The scene file could not be read.",
-                         user32=lambda: user32)
+                         user32=lambda: user32, copyable=_did_not_come_up)
 
         (hwnd, body, caption, _), = user32.MessageBoxW.calls
         assert hwnd is None
@@ -1056,7 +1070,7 @@ class TestShowErrorPopup:
         user32 = _FakeDll(MessageBoxW=_FakeFunction(0))
 
         assert show_error_popup("Example App", "The scene file could not be read.",
-                                user32=lambda: user32) is None
+                                user32=lambda: user32, copyable=_did_not_come_up) is None
 
 
 class _Answers(_FakeFunction):
