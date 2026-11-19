@@ -21,7 +21,7 @@ import pytest
 from eventually import eventually
 from production_machine import IDENTIFIED, git
 
-from app_support import launcher, loading_screen, production_update
+from app_support import copyable_alert, launcher, loading_screen, production_update
 from app_support.launcher import (
     LauncherSpecError,
     ScriptHostRun,
@@ -675,7 +675,7 @@ class TestALaunch:
         desktop_of_its_own.press("Example", "OK")
 
         assert any("virtual environment is missing" in said for said in shown)
-        assert "Copy" in shown
+        assert copyable_alert.COPY in shown
         assert desktop_of_its_own.ended_within(pid, 30)
 
     def test_a_worktree_launcher_says_it_is_the_primarys_venv_that_is_missing(self, tmp_path: Path):
