@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 
 import pytest
 
@@ -78,6 +79,23 @@ def test_the_favorites_under_a_tree_of_records_are_the_videos_they_mark_with_the
 
     assert favorites_under(records, video_roots=(library,), video_suffixes=(".mp4",)) == [
         Favorite(video=loved, page="https://example.com/gallery/101")]
+
+
+def test_finding_many_favorites_videos_lists_their_folder_once(tmp_path, monkeypatch):
+    library, records = tmp_path / "videos" / "videos", tmp_path / "videos" / "metadata"
+    loved = [_video(library, f"2D/scene {number}.mp4") for number in range(5)]
+    for video in loved:
+        mark(records / "2D" / f"{video.stem}.json", True)
+    looks = []
+    for module, name in ((os, "scandir"), (os, "stat"), (os.path, "isfile"), (os.path, "exists")):
+        real = getattr(module, name)
+        monkeypatch.setattr(module, name, lambda path, *args, _real=real, _name=name, **kwargs: (
+            looks.append(_name) if str(library) in os.fspath(path) else None,
+            _real(path, *args, **kwargs))[1])
+
+    found = favorites_under(records, video_roots=(library,), video_suffixes=(".mkv", ".mp4"))
+
+    assert ([favorite.video for favorite in found], looks) == (loved, ["scandir"])
 
 
 def test_a_favorite_whose_video_is_gone_is_no_favorite_of_the_library(tmp_path):
