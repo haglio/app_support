@@ -124,3 +124,28 @@ def test_many_readers_read_the_file_once_until_its_date_changes(tmp_path, monkey
     assert first == ["D:/one"] * 5
     assert after_the_change == ["D:/two"] * 5
     assert len(parsed) == 2
+
+
+def test_a_test_runs_example_keeps_every_folder_inside_the_runs_own_folder(tmp_path):
+    inside = haglio_settings.example_inside(tmp_path)
+
+    assert haglio_settings.reaching_outside(inside, tmp_path) == []
+    assert Path(inside["library_root"]).is_relative_to(tmp_path)
+    assert inside["microphone"] == haglio_settings.EXAMPLE["microphone"]
+
+
+def test_a_setting_naming_a_folder_elsewhere_is_named_as_reaching_outside(tmp_path):
+    settings = haglio_settings.example_inside(tmp_path) | {
+        "kino_dir": "C:/somewhere/else", "project_roots": [str(tmp_path / "checkouts"), "D:/workspace"]}
+
+    assert haglio_settings.reaching_outside(settings, tmp_path) == ["project_roots", "kino_dir"]
+
+
+def test_a_test_run_is_pointed_at_its_settings_by_a_file_in_its_own_folder(tmp_path):
+    environ: dict[str, str] = {}
+
+    haglio_settings.run_on(haglio_settings.example_inside(tmp_path), tmp_path, environ)
+
+    written = Path(environ[haglio_settings.SETTINGS_ENV])
+    assert written.parent == tmp_path
+    assert json.loads(written.read_text(encoding="utf-8")) == haglio_settings.example_inside(tmp_path)
