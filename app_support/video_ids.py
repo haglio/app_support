@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import functools
 import uuid
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from pathlib import Path
 
 from app_support import haglio_settings, mirrored_tree
@@ -49,22 +50,28 @@ def carried_forward(current: dict, replacement: dict) -> dict:
     return replacement if given is None else {**replacement, ID_KEY: given}
 
 
+def _videos_carrying_ids(
+    trees: Iterable[tuple[Path, Sequence[Path]]] | None, video_suffixes: Iterable[str],
+    is_file: Callable[[Path], bool] = Path.is_file,
+) -> Iterator[tuple[str, Callable[[], Path | None]]]:
+    trees = _library_trees() if trees is None else trees
+    video_suffixes = tuple(video_suffixes)
+    for record_root, video_roots in trees:
+        for record_path in sorted(Path(record_root).rglob("*.json")):
+            given = recorded_id(read_json_or_empty(record_path))
+            if given is not None:
+                yield given, functools.partial(mirrored_tree.mirrored_source, record_path, roots=video_roots,
+                                               mirror_root=record_root, suffixes=video_suffixes, is_file=is_file)
+
+
 def videos_by_id(
     trees: Iterable[tuple[Path, Sequence[Path]]] | None = None, *,
     video_suffixes: Iterable[str] = VIDEO_SUFFIXES,
 ) -> dict[str, Path]:
-    trees = _library_trees() if trees is None else trees
-    video_suffixes = tuple(video_suffixes)
     found: dict[str, Path] = {}
-    for record_root, video_roots in trees:
-        for record_path in sorted(Path(record_root).rglob("*.json")):
-            given = recorded_id(read_json_or_empty(record_path))
-            if given is None or given in found:
-                continue
-            video = mirrored_tree.mirrored_source(record_path, roots=video_roots, mirror_root=record_root,
-                                    suffixes=video_suffixes)
-            if video is not None:
-                found[given] = video
+    for given, video_of in _videos_carrying_ids(trees, video_suffixes, mirrored_tree.ListedFolders()):
+        if given not in found and (video := video_of()) is not None:
+            found[given] = video
     return found
 
 
@@ -78,7 +85,8 @@ def reference_to(video: Path | str) -> dict[str, str]:
 def video_named_by(reference: dict) -> str | None:
     given = reference.get(REFERENCE_ID_KEY)
     if isinstance(given, str) and given:
-        found = videos_by_id().get(given)
+        found = next((video for carried, video_of in _videos_carrying_ids(None, VIDEO_SUFFIXES)
+                      if carried == given and (video := video_of()) is not None), None)
         return str(found) if found is not None else None
     path = reference.get(REFERENCE_PATH_KEY)
     return path if isinstance(path, str) and path else None

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
-from app_support import haglio_settings
+from app_support import haglio_settings, video_ids
 from app_support.video_ids import (
     carried_forward,
     id_of,
@@ -134,3 +135,38 @@ def test_without_trees_named_the_ids_are_looked_up_in_the_library_the_haglio_set
     assert record == tmp_path / "library" / "videos" / "metadata" / "2D" / "scene one.json"
     assert videos_by_id() == {given: scene}
     assert record_of(tmp_path / "elsewhere" / "scene one.mp4") is None
+
+
+def test_one_id_is_found_by_reading_records_only_until_the_one_that_carries_it(tmp_path, monkeypatch):
+    records, library = tmp_path / "metadata", tmp_path / "videos"
+    ids = []
+    for number in range(5):
+        video = library / "2D" / f"scene {number}.mp4"
+        video.parent.mkdir(parents=True, exist_ok=True)
+        video.write_bytes(b"")
+        ids.append(id_of(records / "2D" / f"scene {number}.json"))
+    read = []
+    monkeypatch.setattr(video_ids, "read_json_or_empty", lambda path: read.append(path) or _record(path))
+    monkeypatch.setattr(video_ids, "_library_trees", lambda: ((records, (library,)),))
+
+    found = video_named_by({"video_id": ids[1]})
+
+    assert found == str(library / "2D" / "scene 1.mp4")
+    assert read == [records / "2D" / "scene 0.json", records / "2D" / "scene 1.json"]
+
+
+def test_the_whole_map_lists_each_video_folder_once_rather_than_asking_after_each_video(tmp_path, monkeypatch):
+    records, library = tmp_path / "metadata", tmp_path / "videos"
+    for number in range(5):
+        video = library / "2D" / f"scene {number}.mkv"
+        video.parent.mkdir(parents=True, exist_ok=True)
+        video.write_bytes(b"")
+        id_of(records / "2D" / f"scene {number}.json")
+    asked = []
+    real_is_file = Path.is_file
+    monkeypatch.setattr(Path, "is_file", lambda path: asked.append(path) or real_is_file(path))
+
+    found = videos_by_id(((records, (tmp_path / "elsewhere", library)),))
+
+    assert len(found) == 5
+    assert asked == []
