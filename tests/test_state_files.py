@@ -123,6 +123,7 @@ def test_a_name_never_changes_because_a_writer_started_before_the_change_keeps_t
         "OSR2_SERIAL_TX": "osr2_serial_tx.txt",
         "OSR2_NOT_FOUND": "osr2_not_found.txt",
         "OSR2_NOT_ANSWERING": "osr2_not_answering.txt",
+        "OSR2_TURN_OFF_REMINDER": "osr2_turn_off_reminder.txt",
         "GENAU_CMD": "genau_cmd.txt",
         "GENAU_PAUSED": "genau_paused.txt",
         "GENAU_DRIVE": "genau_drive.txt",
