@@ -26,8 +26,9 @@ _SETTINGS = (
     ("DisallowStartIfOnBatteries", "false"),
     ("StopIfGoingOnBatteries", "false"),
     ("ExecutionTimeLimit", "PT0S"),
-    ("Priority", "5"),
+    ("Priority", "7"),
 )
+_LEFT_OUT_OF_A_REGISTERED_TASK_AS_DEFAULTS = {"Settings/Priority": "7"}
 
 
 @dataclass(frozen=True)
@@ -67,7 +68,7 @@ def _child(parent: ET.Element, tag: str, *, text: str | None = None, **attribute
 
 
 def what_differs(wanted: str, registered: str) -> list[str]:
-    holds = _values(registered)
+    holds = {**_LEFT_OUT_OF_A_REGISTERED_TASK_AS_DEFAULTS, **_values(registered)}
     differences = []
     for path, value in _values(wanted).items():
         found = holds.get(path)
