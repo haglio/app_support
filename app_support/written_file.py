@@ -65,6 +65,7 @@ class WrittenFile:
 @dataclass(frozen=True)
 class Look[T]:
     fresh: bool
+    holds_something: bool
     value: T | None
     keep: Callable[[T], T]
 
@@ -84,7 +85,7 @@ class ReadWhenChanged[T]:
             self._file.was_read_as(found)
             self._value = value
             return value
-        return Look(fresh, self._value, keep)
+        return Look(fresh, self._file.holds_something, self._value, keep)
 
     def latest(self) -> T | None:
         looked = self.look()
@@ -98,7 +99,7 @@ class ReadWhenChanged[T]:
 
 
 class ReadEachWhenChanged[K, T]:
-    def __init__(self, read: Callable[[K], T], *, most: int,
+    def __init__(self, read: Callable[[K], T] | None = None, *, most: int,
                  path_of: Callable[[K], Path] = Path,
                  now_ns: Callable[[], int] = time.time_ns, stat: Dating = os.stat) -> None:
         self._read = read

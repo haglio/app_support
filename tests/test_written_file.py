@@ -230,3 +230,27 @@ def test_the_files_asked_for_least_lately_are_let_go_beyond_the_most_kept(tmp_pa
         each.latest(path)
 
     assert (reads, len(each)) == ([one, two, three, two], 2)
+
+
+def test_a_look_says_whether_the_file_holds_anything_to_read(tmp_path):
+    there, empty, gone = tmp_path / "there.txt", tmp_path / "empty.txt", tmp_path / "gone.txt"
+    publish_whole(there, "one")
+    empty.write_bytes(b"")
+
+    looked = [ReadWhenChanged(path, _counting_reader([]), now_ns=LongAfterAnyStamp()).look()
+              for path in (there, empty, gone)]
+
+    assert [look.holds_something for look in looked] == [True, False, False]
+
+
+def test_files_read_off_the_calling_thread_are_held_through_looks_alone(tmp_path):
+    path = tmp_path / "picture.txt"
+    publish_whole(path, "one")
+    each: ReadEachWhenChanged[Path, str] = ReadEachWhenChanged(most=8, now_ns=LongAfterAnyStamp())
+
+    each.look(path).keep("one, made on another thread")
+    unchanged = each.look(path)
+    publish_whole(path, "two")
+
+    assert ((unchanged.fresh, unchanged.value), each.look(path).fresh) == (
+        (True, "one, made on another thread"), False)
