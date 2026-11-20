@@ -189,6 +189,22 @@ class TestTheSessionsClaim:
     def test_no_claim_holds_nothing(self, tmp_path: Path):
         assert not handoff.a_session_claims_the_osr2(tmp_path)
 
+    def test_the_claim_read_alone_names_the_process_that_wrote_it(self, tmp_path: Path):
+        handoff.claim_the_osr2(tmp_path)
+
+        assert handoff.the_osr2_claim_in(tmp_path / handoff.SESSION) == handoff.this_process()
+
+    def test_no_claim_read_alone_names_nobody(self, tmp_path: Path):
+        assert handoff.the_osr2_claim_in(tmp_path / handoff.SESSION) is None
+
+    def test_a_claim_that_could_not_be_opened_is_left_to_its_reader_to_keep_the_last_one_it_read(
+            self, tmp_path: Path):
+        (tmp_path / handoff.SESSION).mkdir()
+
+        with pytest.raises((PermissionError, IsADirectoryError)):
+            handoff.the_osr2_claim_in(tmp_path / handoff.SESSION)
+        assert not handoff.a_session_claims_the_osr2(tmp_path)
+
 
 class TestWhereTheyMeet:
     @pytest.fixture

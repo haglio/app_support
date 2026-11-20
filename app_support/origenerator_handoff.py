@@ -124,8 +124,19 @@ def claim_the_osr2(*places: Path) -> None:
 
 
 def a_session_claims_the_osr2(place: Path) -> bool:
-    claim = _read(place / SESSION, _A_CLAIM)
-    return claim is not None and _process_of(claim).is_running()
+    try:
+        claim = the_osr2_claim_in(place / SESSION)
+    except OSError:
+        return False
+    return claim is not None and claim.is_running()
+
+
+def the_osr2_claim_in(claim_file: Path) -> Process | None:
+    try:
+        claim = _A_CLAIM.fullmatch(claim_file.read_text(encoding="utf-8").strip())
+    except FileNotFoundError:
+        return None
+    return None if claim is None else _process_of(claim)
 
 
 def _read(path: Path, line: re.Pattern) -> re.Match | None:
