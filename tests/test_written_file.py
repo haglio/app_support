@@ -124,6 +124,21 @@ def test_a_read_that_failed_keeps_the_last_value_and_is_tried_again_on_the_next_
     assert (kept.latest(), kept.latest(), kept.latest(), len(reads)) == (None, "one", "one", 2)
 
 
+def test_a_reader_handed_a_way_to_date_the_file_dates_it_that_way_alone(tmp_path):
+    path = tmp_path / "state.txt"
+    publish_whole(path, "one")
+    dated: list[Path] = []
+
+    def from_the_folders_listing(asked: Path) -> os.stat_result:
+        dated.append(asked)
+        return os.stat(asked)
+
+    kept = ReadWhenChanged(path, _counting_reader([]), now_ns=LongAfterTheFileWasStamped(path),
+                           stat=from_the_folders_listing)
+
+    assert ([kept.latest(), kept.latest()], dated) == (["one", "one"], [path, path])
+
+
 def test_a_file_written_twice_in_place_inside_one_tick_of_the_file_clock_is_followed(tmp_path):
     path = tmp_path / "state.txt"
     path.write_text("0", encoding="utf-8")

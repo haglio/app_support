@@ -6,6 +6,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 _Written = tuple[int, int, int]
+Dating = Callable[[Path], os.stat_result]
 _NEVER_READ = (-1, -1, -1)
 
 # Windows stamps a file from a clock that can stand still for 15.6 ms, so two writes in place, of
@@ -22,9 +23,11 @@ class WrittenFile:
     # The family's channel files are replaced, so each write is a new file with an identity of
     # its own, which tells two writes apart though Windows stamped both with one time.
 
-    def __init__(self, path: Path, *, now_ns: Callable[[], int] = time.time_ns) -> None:
+    def __init__(self, path: Path, *, now_ns: Callable[[], int] = time.time_ns,
+                 stat: Dating = os.stat) -> None:
         self._path = Path(path)
         self._now_ns = now_ns
+        self._stat = stat
         self._read_as: _Written | None = _NEVER_READ
         self._found: _Written | None = None
 
@@ -34,7 +37,7 @@ class WrittenFile:
 
     def may_have_been_written(self) -> bool:
         try:
-            found = os.stat(self._path)
+            found = self._stat(self._path)
         except OSError:
             self._found = None
         else:
@@ -53,8 +56,8 @@ class WrittenFile:
 
 class ReadWhenChanged[T]:
     def __init__(self, path: Path, read: Callable[[Path], T], *,
-                 now_ns: Callable[[], int] = time.time_ns) -> None:
-        self._file = WrittenFile(path, now_ns=now_ns)
+                 now_ns: Callable[[], int] = time.time_ns, stat: Dating = os.stat) -> None:
+        self._file = WrittenFile(path, now_ns=now_ns, stat=stat)
         self._read = read
         self._value: T | None = None
 
