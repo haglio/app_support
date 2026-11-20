@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from app_support import win32
+from app_support.written_file import ReadWhenChanged
 
 if TYPE_CHECKING:
     from app_support.production_update import UpdateProgress
@@ -72,6 +73,10 @@ class MeetingPlace:
     folder: Path
     lines: tuple[str, ...]
     snapshots_folder: Path | None = None
+    _app_window: ReadWhenChanged[AppWindow | None] = dataclasses.field(init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "_app_window", ReadWhenChanged(self.folder / APP_WINDOW, _app_window_in))
 
     def leave_snapshots(self, *, opening: bytes, full: bytes, updating: Sequence[bytes], bar: Box,
                         covers_every_monitor: bool) -> None:
@@ -107,11 +112,7 @@ class MeetingPlace:
             _replace_whole(self.folder / APP_WINDOW, json.dumps(dataclasses.asdict(window)).encode("utf-8"))
 
     def where_the_app_comes_up(self) -> AppWindow | None:
-        try:
-            document = json.loads((self.folder / APP_WINDOW).read_text(encoding="utf-8"))
-            return AppWindow(_numbers(document["size"], 2), _numbers(document["kept_on"], 4))
-        except (OSError, ValueError, KeyError, TypeError):
-            return None
+        return self._app_window.latest()
 
     def stand(self, shown: Shown) -> None:
         self.folder.mkdir(parents=True, exist_ok=True)
@@ -149,6 +150,14 @@ def meeting_place(environment: Mapping[str, str]) -> MeetingPlace | None:
 
 def handed_over(environment: MutableMapping[str, str]) -> dict[str, str]:
     return {name: environment.pop(name) for name in (FOLDER, SNAPSHOTS_FOLDER, LINES) if name in environment}
+
+
+def _app_window_in(path: Path) -> AppWindow | None:
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+        return AppWindow(_numbers(document["size"], 2), _numbers(document["kept_on"], 4))
+    except (FileNotFoundError, ValueError, KeyError, TypeError):
+        return None
 
 
 def _numbers(written: Sequence[int] | None, count: int) -> tuple[int, ...] | None:
