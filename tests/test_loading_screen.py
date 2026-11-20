@@ -123,6 +123,22 @@ class TestWhereTheAppSaysItsWindowComesUp:
 
         assert (place.folder / loading_screen.APP_WINDOW).stat().st_mtime_ns == 10**18
 
+    def test_saying_it_again_unchanged_does_not_read_back_what_it_wrote(self, tmp_path):
+        said = loading_screen.AppWindow(kept_on=(2560, 3, 1440, 3440))
+        place = a_place(tmp_path)
+        place.say_where_the_app_comes_up(said)
+        window_file = place.folder / loading_screen.APP_WINDOW
+        os.utime(window_file, ns=(10**18, 10**18))
+        place.say_where_the_app_comes_up(said)
+        written = window_file.read_text(encoding="utf-8")
+        with window_file.open("r+", encoding="utf-8") as in_place:
+            in_place.write("x" * len(written))
+        os.utime(window_file, ns=(10**18, 10**18))
+
+        place.say_where_the_app_comes_up(said)
+
+        assert window_file.read_text(encoding="utf-8") == "x" * len(written)
+
     @pytest.mark.parametrize("written", [
         "{", '{"kept_on": null}', '{"size": 7, "kept_on": null}', '{"size": [1954], "kept_on": null}',
         '{"size": null, "kept_on": [2560, 3, 1440]}'])
