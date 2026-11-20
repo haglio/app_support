@@ -4,7 +4,12 @@ import os
 from pathlib import Path
 
 from app_support.file_channel import publish_whole
-from app_support.written_file import STAMPED_TOO_LATELY_TO_TELL_NS, ReadWhenChanged, WrittenFile
+from app_support.written_file import (
+    STAMPED_TOO_LATELY_TO_TELL_NS,
+    ReadEachWhenChanged,
+    ReadWhenChanged,
+    WrittenFile,
+)
 
 
 class LongAfterTheFileWasStamped:
@@ -151,3 +156,77 @@ def test_a_file_written_twice_in_place_inside_one_tick_of_the_file_clock_is_foll
     heard.append(kept.latest())
 
     assert heard == ["0", "1"]
+
+
+class LongAfterAnyStamp:
+    def __call__(self) -> int:
+        return 2**62
+
+
+def test_a_look_taken_before_the_file_was_written_again_keeps_it_unread(tmp_path):
+    path = tmp_path / "state.txt"
+    publish_whole(path, "one")
+    kept = ReadWhenChanged(path, _counting_reader([]), now_ns=LongAfterAnyStamp())
+
+    looked = kept.look()
+    publish_whole(path, "two")
+    looked.keep("one, read off the window's thread")
+
+    assert (looked.fresh, kept.look().fresh, kept.latest()) == (False, False, "two")
+
+
+def test_a_look_at_a_file_unchanged_since_its_read_hands_back_what_was_read(tmp_path):
+    path = tmp_path / "state.txt"
+    publish_whole(path, "one")
+    kept = ReadWhenChanged(path, _counting_reader([]), now_ns=LongAfterAnyStamp())
+    kept.look().keep("read later")
+
+    looked = kept.look()
+
+    assert (looked.fresh, looked.value) == (True, "read later")
+
+
+def test_each_of_many_files_is_read_again_only_after_it_is_written(tmp_path):
+    one, two = tmp_path / "one.txt", tmp_path / "two.txt"
+    publish_whole(one, "first")
+    publish_whole(two, "second")
+    reads: list[Path] = []
+    each = ReadEachWhenChanged(_counting_reader(reads), most=8, now_ns=LongAfterAnyStamp())
+
+    before = [each.latest(path) for path in (one, two, one, two)]
+    publish_whole(one, "first again")
+    after = [each.latest(path) for path in (one, two)]
+
+    assert (before, after, reads) == (["first", "second", "first", "second"],
+                                      ["first again", "second"], [one, two, one])
+
+
+def test_one_file_read_several_ways_is_kept_once_for_each_way(tmp_path):
+    path = tmp_path / "picture.txt"
+    publish_whole(path, "abc")
+    reads: list[tuple[Path, int]] = []
+
+    def first_letters(key: tuple[Path, int]) -> str:
+        reads.append(key)
+        return key[0].read_text(encoding="utf-8")[:key[1]]
+
+    each = ReadEachWhenChanged(first_letters, most=8, path_of=lambda key: key[0],
+                               now_ns=LongAfterAnyStamp())
+
+    asked = [each.latest((path, size)) for size in (1, 2, 1, 2)]
+
+    assert (asked, reads) == (["a", "ab", "a", "ab"], [(path, 1), (path, 2)])
+
+
+def test_the_files_asked_for_least_lately_are_let_go_beyond_the_most_kept(tmp_path):
+    paths = [tmp_path / f"{name}.txt" for name in ("one", "two", "three")]
+    for path in paths:
+        publish_whole(path, path.stem)
+    reads: list[Path] = []
+    each = ReadEachWhenChanged(_counting_reader(reads), most=2, now_ns=LongAfterAnyStamp())
+    one, two, three = paths
+
+    for path in (one, two, one, three, one, two):
+        each.latest(path)
+
+    assert (reads, len(each)) == ([one, two, three, two], 2)
