@@ -3,8 +3,12 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
+import threading
 import time
+from collections import deque
 from collections.abc import Callable
+from dataclasses import dataclass
+from enum import Enum, auto
 from pathlib import Path
 
 from .file_held_alone import opened_alone
@@ -76,6 +80,97 @@ def read_whole(path: Path) -> str:
     return retried_while_held(lambda: path.read_text(encoding="utf-8"))
 
 
+class _Try(Enum):
+    WRITTEN = auto()
+    HELD = auto()
+    LOST = auto()
+
+
+@dataclass
+class _WaitingVerb:
+    path: Path
+    line: str
+    attempts_left: int
+    delay_s: float
+
+    def tried_once(self) -> _Try:
+        self.attempts_left -= 1
+        try:
+            _append_to(self.path, self.line)
+        except PermissionError:
+            if self.attempts_left > 0:
+                return _Try.HELD
+            _log_the_loss(self.path, self.line)
+            return _Try.LOST
+        except OSError:
+            _log_the_loss(self.path, self.line)
+            return _Try.LOST
+        return _Try.WRITTEN
+
+
+def _a_writer_that_outlives_the_caller(write_in_order: Callable[[], None]) -> None:
+    threading.Thread(target=write_in_order, name="verbs in order", daemon=False).start()
+
+
+class VerbSender:
+    def __init__(
+        self,
+        *,
+        sleep: Callable[[float], None] = time.sleep,
+        start_writer: Callable[[Callable[[], None]], None] = _a_writer_that_outlives_the_caller,
+    ) -> None:
+        self._sleep = sleep
+        self._start_writer = start_writer
+        self._lock = threading.Lock()
+        self._waiting: deque[_WaitingVerb] = deque()
+        self._writing = False
+
+    def append(
+        self,
+        path: Path,
+        line: str,
+        *,
+        attempts: int = _ATTEMPTS_BEFORE_A_VERB_IS_LOST,
+        delay_s: float = _DELAY_WHILE_HELD_S,
+    ) -> bool:
+        with self._lock:
+            verb = _WaitingVerb(path, line, attempts, delay_s)
+            if not self._waiting:
+                tried = self._tried_on_the_callers_thread(verb)
+                if tried is not _Try.HELD:
+                    return tried is _Try.WRITTEN
+            self._waiting.append(verb)
+            if not self._writing:
+                self._writing = True
+                self._start_writer(self._write_in_order)
+        return True
+
+    def _tried_on_the_callers_thread(self, verb: _WaitingVerb) -> _Try:
+        for attempt in range(_ATTEMPTS_WHILE_HELD):
+            if attempt:
+                self._sleep(verb.delay_s)
+            tried = verb.tried_once()
+            if tried is not _Try.HELD:
+                return tried
+        return _Try.HELD
+
+    def _write_in_order(self) -> None:
+        while True:
+            with self._lock:
+                if not self._waiting:
+                    self._writing = False
+                    return
+                verb = self._waiting[0]
+            if verb.tried_once() is _Try.HELD:
+                self._sleep(verb.delay_s)
+            else:
+                with self._lock:
+                    self._waiting.popleft()
+
+
+_THE_SENDER = VerbSender()
+
+
 def append_command(
     path: Path,
     line: str,
@@ -83,13 +178,16 @@ def append_command(
     attempts: int = _ATTEMPTS_BEFORE_A_VERB_IS_LOST,
     delay_s: float = _DELAY_WHILE_HELD_S,
 ) -> bool:
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        retried_while_held(lambda: _append_line(path, line), attempts=attempts, delay_s=delay_s)
-    except OSError:
-        _log.exception("Lost the command %r: could not append it to %s", line, path)
-        return False
-    return True
+    return _THE_SENDER.append(path, line, attempts=attempts, delay_s=delay_s)
+
+
+def _append_to(path: Path, line: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _append_line(path, line)
+
+
+def _log_the_loss(path: Path, line: str) -> None:
+    _log.exception("Lost the command %r: could not append it to %s", line, path)
 
 
 def _append_line(path: Path, line: str) -> None:

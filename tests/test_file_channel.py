@@ -10,6 +10,7 @@ import pytest
 
 from app_support import file_channel
 from app_support.file_channel import (
+    VerbSender,
     append_command,
     consume_command_file,
     publish_whole,
@@ -70,15 +71,104 @@ def test_a_verb_the_drain_outlasts_is_given_up_with_false_never_a_raise_into_the
     assert consume_command_file(path) == []
 
 
-def test_a_verb_waits_out_a_hold_that_outlasts_many_quick_tries(tmp_path: Path, held_open):
+class _WriterRunByHand:
+    def __init__(self) -> None:
+        self.started: list = []
+
+    def __call__(self, write_in_order) -> None:
+        self.started.append(write_in_order)
+
+    def run(self) -> None:
+        while self.started:
+            self.started.pop(0)()
+
+
+def _sender_run_by_hand() -> tuple[VerbSender, _WriterRunByHand]:
+    writer = _WriterRunByHand()
+    return VerbSender(sleep=lambda _s: None, start_writer=writer), writer
+
+
+def test_a_verb_for_a_held_file_is_handed_to_the_writer_instead_of_holding_up_the_caller(
+        tmp_path: Path, held_open):
     path = tmp_path / "cmd.txt"
+    sender, writer = _sender_run_by_hand()
 
     with held_open(path, access=_GENERIC_READ, share=_SHARED_WITH_NOBODY,
                    disposition=_CREATE_IF_MISSING) as let_go:
-        threading.Timer(0.2, let_go).start()
-        assert append_command(path, "LANDSCAPE_OPEN_SLIDESHOW")
+        assert sender.append(path, "LANDSCAPE_OPEN_SLIDESHOW")
+        let_go()
+        writer.run()
 
     assert consume_command_file(path) == ["LANDSCAPE_OPEN_SLIDESHOW"]
+
+
+def test_verbs_sent_while_a_file_is_held_arrive_once_each_in_the_order_sent(tmp_path: Path, held_open):
+    path = tmp_path / "cmd.txt"
+    sender, writer = _sender_run_by_hand()
+
+    with held_open(path, access=_GENERIC_READ, share=_SHARED_WITH_NOBODY,
+                   disposition=_CREATE_IF_MISSING) as let_go:
+        for verb in ("PAUSE", "SEEK 10", "RESUME"):
+            sender.append(path, verb)
+        let_go()
+        writer.run()
+
+    assert consume_command_file(path) == ["PAUSE", "SEEK 10", "RESUME"]
+    assert len(writer.started) == 0
+
+
+def test_a_verb_to_a_free_file_waits_behind_one_still_waiting_for_a_held_file(tmp_path: Path, held_open):
+    held, free = tmp_path / "held.txt", tmp_path / "free.txt"
+    sender, writer = _sender_run_by_hand()
+    written = []
+    append_line = file_channel._append_line
+
+    def noting_each_write(path: Path, line: str) -> None:
+        append_line(path, line)
+        written.append(line)
+
+    with patch("app_support.file_channel._append_line", side_effect=noting_each_write), \
+            held_open(held, access=_GENERIC_READ, share=_SHARED_WITH_NOBODY,
+                      disposition=_CREATE_IF_MISSING) as let_go:
+        sender.append(held, "SET_TCODE_ENABLED 0")
+        sender.append(free, "SET_TCODE_ENABLED 1")
+        assert not free.exists()
+        let_go()
+        writer.run()
+
+    assert written == ["SET_TCODE_ENABLED 0", "SET_TCODE_ENABLED 1"]
+
+
+def test_a_verb_the_writer_gives_up_on_is_logged_and_the_verbs_behind_it_still_go(
+        tmp_path: Path, held_open, caplog):
+    held, free = tmp_path / "held.txt", tmp_path / "free.txt"
+    sender, writer = _sender_run_by_hand()
+
+    with held_open(held, access=_GENERIC_READ, share=_SHARED_WITH_NOBODY,
+                   disposition=_CREATE_IF_MISSING):
+        assert sender.append(held, "NEXT", attempts=9)
+        sender.append(free, "PREV")
+        writer.run()
+
+    assert "NEXT" in caplog.text
+    assert consume_command_file(free) == ["PREV"]
+    assert consume_command_file(held) == []
+
+
+def test_a_held_verb_is_written_by_a_thread_that_keeps_the_program_open_until_it_is_sent(
+        tmp_path: Path, held_open):
+    path = tmp_path / "cmd.txt"
+    sender = VerbSender()
+
+    with held_open(path, access=_GENERIC_READ, share=_SHARED_WITH_NOBODY,
+                   disposition=_CREATE_IF_MISSING) as let_go:
+        sender.append(path, "QUIT")
+        writer = next(thread for thread in threading.enumerate() if thread.name == "verbs in order")
+        let_go()
+        writer.join()
+
+    assert not writer.daemon
+    assert consume_command_file(path) == ["QUIT"]
 
 
 def test_a_verb_given_up_on_is_logged_by_name(tmp_path: Path, held_open, caplog):
