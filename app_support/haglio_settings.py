@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from app_support import siblings
+from app_support.written_file import ReadWhenChanged
 
 SETTINGS_ENV = "HAGLIO_SETTINGS"
 THE_EXAMPLE = "example"
@@ -37,21 +38,23 @@ def settings_file() -> Path:
     return Path(named) if named else outside_the_library_whose_place_it_names
 
 
-_read_at: dict[Path, tuple[tuple[int, int], dict[str, Any]]] = {}
+_readers: dict[Path, ReadWhenChanged[dict[str, Any]]] = {}
 
 
 def _as_read(path: Path) -> dict[str, Any]:
     if os.environ.get(SETTINGS_ENV) == THE_EXAMPLE:
         return EXAMPLE
+    reader = _readers.get(path) or _readers.setdefault(path, ReadWhenChanged(path, _read_or_the_example))
+    read = reader.latest()
+    return EXAMPLE if read is None else read
+
+
+def _read_or_the_example(path: Path) -> dict[str, Any]:
     try:
-        stamp = path.stat()
-    except OSError:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
         return EXAMPLE
-    dated = (stamp.st_mtime_ns, stamp.st_size)
-    kept = _read_at.get(path)
-    if kept is None or kept[0] != dated:
-        kept = _read_at[path] = (dated, json.loads(path.read_text(encoding="utf-8")))
-    return kept[1]
+    return json.loads(text)
 
 
 def load() -> dict[str, Any]:

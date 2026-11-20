@@ -111,7 +111,8 @@ def test_settings_naming_no_checkout_folders_mean_the_librarys_projects_folder_t
 def test_many_readers_read_the_file_once_until_its_date_changes(tmp_path, monkeypatch):
     settings = _settings(tmp_path / "settings.json", {"library_root": "D:/one"})
     monkeypatch.setenv(haglio_settings.SETTINGS_ENV, str(settings))
-    dated = settings.stat().st_mtime_ns
+    dated = settings.stat().st_mtime_ns - 10_000_000_000
+    os.utime(settings, ns=(dated, dated))
     parsed = []
     real_loads = haglio_settings.json.loads
     monkeypatch.setattr(haglio_settings.json, "loads", lambda text: parsed.append(text) or real_loads(text))
