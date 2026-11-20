@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import os
 import time
+from collections import OrderedDict
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 _Written = tuple[int, int, int]
@@ -49,9 +51,22 @@ class WrittenFile:
         return self._found is not None and self._found[1] > 0
 
     def was_read(self) -> None:
-        lately = self._found is not None and stamped_too_lately_to_tell(
-            self._found[2], self._now_ns())
-        self._read_as = _NEVER_READ if lately else self._found
+        self.was_read_as(self._found)
+
+    @property
+    def found(self) -> _Written | None:
+        return self._found
+
+    def was_read_as(self, found: _Written | None) -> None:
+        lately = found is not None and stamped_too_lately_to_tell(found[2], self._now_ns())
+        self._read_as = _NEVER_READ if lately else found
+
+
+@dataclass(frozen=True)
+class Look[T]:
+    fresh: bool
+    value: T | None
+    keep: Callable[[T], T]
 
 
 class ReadWhenChanged[T]:
@@ -61,13 +76,55 @@ class ReadWhenChanged[T]:
         self._read = read
         self._value: T | None = None
 
+    def look(self) -> Look[T]:
+        fresh = not self._file.may_have_been_written()
+        found = self._file.found
+
+        def keep(value: T) -> T:
+            self._file.was_read_as(found)
+            self._value = value
+            return value
+        return Look(fresh, self._value, keep)
+
     def latest(self) -> T | None:
-        if not self._file.may_have_been_written():
-            return self._value
+        looked = self.look()
+        if looked.fresh:
+            return looked.value
         try:
             value = self._read(self._file.path)
         except OSError:
-            return self._value
-        self._file.was_read()
-        self._value = value
-        return value
+            return looked.value
+        return looked.keep(value)
+
+
+class ReadEachWhenChanged[K, T]:
+    def __init__(self, read: Callable[[K], T], *, most: int,
+                 path_of: Callable[[K], Path] = Path,
+                 now_ns: Callable[[], int] = time.time_ns, stat: Dating = os.stat) -> None:
+        self._read = read
+        self._most = most
+        self._path_of = path_of
+        self._now_ns = now_ns
+        self._stat = stat
+        self._readers: OrderedDict[K, ReadWhenChanged[T]] = OrderedDict()
+
+    def __len__(self) -> int:
+        return len(self._readers)
+
+    def _reader(self, key: K) -> ReadWhenChanged[T]:
+        reader = self._readers.get(key)
+        if reader is not None:
+            self._readers.move_to_end(key)
+            return reader
+        reader = self._readers[key] = ReadWhenChanged(
+            self._path_of(key), lambda _path: self._read(key),
+            now_ns=self._now_ns, stat=self._stat)
+        if len(self._readers) > self._most:
+            self._readers.popitem(last=False)
+        return reader
+
+    def look(self, key: K) -> Look[T]:
+        return self._reader(key).look()
+
+    def latest(self, key: K) -> T | None:
+        return self._reader(key).latest()
