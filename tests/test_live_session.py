@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import types
 import uuid
+from pathlib import Path
 
 import pytest
 
@@ -33,8 +35,8 @@ class _Mutexes:
         self.released.append(handle)
 
 
-def _holding(mutexes: _Mutexes, desktop: str):
-    return holding_a_live_session(desktop=lambda: desktop, share=mutexes.share,
+def _holding(mutexes: _Mutexes, desktop: str, checkout: Path | None = None):
+    return holding_a_live_session(desktop=lambda: desktop, checkout=lambda: checkout, share=mutexes.share,
                                   release=mutexes.release)
 
 
@@ -77,6 +79,30 @@ def test_a_session_on_a_hidden_desktop_is_no_session_of_his():
     assert (mutexes.shared, mutexes.released) == ([], [])
 
 
+def _a_checkout(folder: Path, *, worktree: bool) -> Path:
+    folder.mkdir()
+    (folder / ".git").write_text("gitdir: elsewhere") if worktree else (folder / ".git").mkdir()
+    return folder
+
+
+def test_a_funestra_of_a_preview_holds_nothing_since_only_a_production_one_is_his_session(tmp_path):
+    mutexes = _Mutexes()
+
+    with _holding(mutexes, HIS_DESKTOP, _a_checkout(tmp_path / "preview", worktree=True)):
+        pass
+
+    assert mutexes.shared == []
+
+
+def test_a_funestra_of_a_production_checkout_holds_the_mark(tmp_path):
+    mutexes = _Mutexes()
+
+    with _holding(mutexes, HIS_DESKTOP, _a_checkout(tmp_path / "production", worktree=False)):
+        pass
+
+    assert mutexes.shared == [LIVE_SESSION]
+
+
 def test_a_mark_windows_would_not_make_is_never_let_go():
     mutexes = _Mutexes()
     mutexes.share = lambda name: None
@@ -90,7 +116,7 @@ def test_a_mark_windows_would_not_make_is_never_let_go():
 def test_on_windows_the_mark_reads_live_while_held_and_free_after(monkeypatch):
     monkeypatch.setattr(live_session, "LIVE_SESSION", f"Local\\app-support-test-{uuid.uuid4().hex}")
 
-    with holding_a_live_session(desktop=lambda: HIS_DESKTOP):
+    with holding_a_live_session(desktop=lambda: HIS_DESKTOP, checkout=lambda: None):
         while_held = is_live()
 
     assert (while_held, is_live()) == (True, False)
@@ -118,3 +144,11 @@ def test_a_test_can_have_no_session_live_whoever_holds_the_mark():
         win32.release_mutex(held)
 
     assert asked_inside is False
+
+
+def test_a_program_started_from_a_checkout_is_found_to_run_from_it(tmp_path, monkeypatch):
+    checkout = _a_checkout(tmp_path / "an-app", worktree=True)
+    (checkout / "the_app").mkdir()
+    monkeypatch.setitem(sys.modules, "__main__", types.SimpleNamespace(__file__=str(checkout / "the_app" / "app.py")))
+
+    assert live_session._checkout_of_this_program() == checkout.resolve()
