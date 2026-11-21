@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import os
+import threading
 import time
 from collections import OrderedDict
 from collections.abc import Callable
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -77,20 +79,24 @@ class Look[T]:
 class ReadWhenChanged[T]:
     def __init__(self, path: Path, read: Callable[[Path], T], *,
                  now_ns: Callable[[], int] = time.time_ns, stat: Dating = os.stat,
-                 too_lately_ns: int = STAMPED_TOO_LATELY_TO_TELL_NS) -> None:
+                 too_lately_ns: int = STAMPED_TOO_LATELY_TO_TELL_NS,
+                 guard: AbstractContextManager | None = None) -> None:
         self._file = WrittenFile(path, now_ns=now_ns, stat=stat, too_lately_ns=too_lately_ns)
         self._read = read
         self._value: T | None = None
+        self._guard = guard or nullcontext()
 
     def look(self) -> Look[T]:
-        fresh = not self._file.may_have_been_written()
-        found = self._file.found
+        with self._guard:
+            fresh = not self._file.may_have_been_written()
+            found, holds_something, kept = self._file.found, self._file.holds_something, self._value
 
         def keep(value: T) -> T:
-            self._file.was_read_as(found)
-            self._value = value
+            with self._guard:
+                self._file.was_read_as(found)
+                self._value = value
             return value
-        return Look(fresh, self._file.holds_something, self._value, keep)
+        return Look(fresh, holds_something, kept, keep)
 
     def latest(self) -> T | None:
         looked = self.look()
@@ -115,20 +121,24 @@ class ReadEachWhenChanged[K, T]:
         self._stat = stat
         self._too_lately_ns = too_lately_ns
         self._readers: OrderedDict[K, ReadWhenChanged[T]] = OrderedDict()
+        self._guard = threading.Lock()
 
     def __len__(self) -> int:
         return len(self._readers)
 
     def _reader(self, key: K) -> ReadWhenChanged[T]:
-        reader = self._readers.get(key)
-        if reader is not None:
+        with self._guard:
+            reader = self._readers.get(key)
+        if reader is None:
+            reader = ReadWhenChanged(
+                self._path_of(key), lambda _path: self._read(key),
+                now_ns=self._now_ns, stat=self._stat, too_lately_ns=self._too_lately_ns,
+                guard=self._guard)
+        with self._guard:
+            reader = self._readers.setdefault(key, reader)
             self._readers.move_to_end(key)
-            return reader
-        reader = self._readers[key] = ReadWhenChanged(
-            self._path_of(key), lambda _path: self._read(key),
-            now_ns=self._now_ns, stat=self._stat, too_lately_ns=self._too_lately_ns)
-        if len(self._readers) > self._most:
-            self._readers.popitem(last=False)
+            if len(self._readers) > self._most:
+                self._readers.popitem(last=False)
         return reader
 
     def look(self, key: K) -> Look[T]:
