@@ -93,5 +93,10 @@ def script_of(video: Path, *, library: Path, scripts_tree: Path) -> Path | None:
     return mirrored_path(video, roots=(library,), mirror_root=scripts_tree, suffix=EXTENSION)
 
 
+def script_under_its_whole_filename(video: Path, *, videos: Path, scripts: Path) -> Path | None:
+    filed = mirrored_path(video, roots=(videos,), mirror_root=scripts, suffix=Path(video).suffix)
+    return None if filed is None else filed.with_name(f"{Path(video).name}{EXTENSION}")
+
+
 def generated_mark_of(script: Path, *, scripts_tree: Path, marks_tree: Path) -> Path | None:
     return mirrored_path(script, roots=(scripts_tree,), mirror_root=marks_tree, suffix=_GENERATED_MARK_EXTENSION)

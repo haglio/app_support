@@ -11,6 +11,7 @@ from app_support.funscript import (
     read,
     read_actions,
     script_of,
+    script_under_its_whole_filename,
     scripts_tree_in,
     write,
 )
@@ -139,6 +140,20 @@ def test_a_video_outside_the_library_has_no_script_in_its_scripts_tree(tmp_path:
 
     assert script_of(tmp_path / "elsewhere" / "clip.mp4", library=trees / "videos",
                      scripts_tree=scripts_tree_in(trees)) is None
+
+
+def test_a_script_kept_under_its_videos_whole_filename_sits_where_the_video_sits_among_its_videos(tmp_path: Path):
+    videos, scripts = tmp_path / "made videos", tmp_path / "made scripts"
+
+    mp4 = script_under_its_whole_filename(videos / "video" / "video one.mp4", videos=videos, scripts=scripts)
+    webm = script_under_its_whole_filename(videos / "video" / "video one.webm", videos=videos, scripts=scripts)
+
+    assert (mp4, webm) == (scripts / "video" / "video one.mp4.funscript", scripts / "video" / "video one.webm.funscript")
+
+
+def test_a_video_outside_those_videos_has_no_script_kept_under_its_whole_filename(tmp_path: Path):
+    assert script_under_its_whole_filename(tmp_path / "elsewhere" / "video one.mp4", videos=tmp_path / "videos",
+                                         scripts=tmp_path / "scripts") is None
 
 
 def test_the_mark_saying_no_person_wrote_a_script_sits_where_the_script_sits_in_the_marks_tree(tmp_path: Path):
