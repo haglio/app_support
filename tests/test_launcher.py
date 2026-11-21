@@ -210,6 +210,19 @@ class TestTheFilesOnDisk:
         (problem,) = launcher.differences(checkout)
         assert "launch_example.vbs" in problem
 
+    def test_a_launcher_rendered_before_it_shed_pythonpath_passes_until_its_app_renders_again(
+            self, tmp_path: Path):
+        checkout = _checkout(tmp_path, MINIMAL)
+        launcher.write(checkout)
+        rendered = checkout / "launch_example.vbs"
+        shedding = ('  On Error Resume Next\n  shell.Environment("Process").Remove "PYTHONPATH"\n'
+                    "  On Error GoTo 0\n")
+        said = rendered.read_text(encoding="ascii")
+        assert shedding in said
+        rendered.write_text(said.replace(shedding, ""), encoding="ascii")
+
+        assert launcher.differences(checkout) == []
+
     def test_a_hand_edited_launcher_is_named(self, tmp_path: Path):
         checkout = _checkout(tmp_path, MINIMAL)
         launcher.write(checkout)

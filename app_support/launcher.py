@@ -212,14 +212,14 @@ def _variables(launcher: Launcher) -> dict[str, str]:
 
 
 
-def render(launcher: Launcher) -> str:
+def render(launcher: Launcher, *, sheds_pythonpath: bool = True) -> str:
     sections = [
         _header(launcher),
         ["Option Explicit", "", _declarations(launcher), ""],
         _TOP.splitlines(),
         _decide(launcher),
         _report(launcher),
-        _launch(launcher),
+        _launch(launcher, sheds_pythonpath=sheds_pythonpath),
         _command(launcher),
         _QUOTE.splitlines(),
         _tell(launcher).splitlines(),
@@ -443,7 +443,7 @@ def _report(launcher: Launcher) -> list[str]:
     return lines
 
 
-def _launch(launcher: Launcher) -> list[str]:
+def _launch(launcher: Launcher, *, sheds_pythonpath: bool) -> list[str]:
     if launcher.venv == "primary":
         missing = '"The primary checkout\'s virtual environment is missing:"'
     else:
@@ -453,19 +453,19 @@ def _launch(launcher: Launcher) -> list[str]:
         "  If Not fso.FileExists(interpreter) Then",
         f"    Refuse {missing} & vbCrLf & interpreter, vbCritical",
         "  End If",
-        *_before_the_app_runs(launcher),
+        *_before_the_app_runs(launcher, sheds_pythonpath=sheds_pythonpath),
         "  shell.Run Command(), 0, False",
         *_once_the_app_runs(launcher),
         "End Sub",
     ]
 
 
-def _before_the_app_runs(launcher: Launcher) -> list[str]:
+def _before_the_app_runs(launcher: Launcher, *, sheds_pythonpath: bool) -> list[str]:
     lines = ["  ShowLoadingScreen"] if launcher.loading_screen else []
     if launcher.waits_for_updates:
         lines += ["  CatchUp", "  HoldGates"]
     lines += [f"  CopyFromPrimary {_text(name)}" for name in launcher.copy_from_primary]
-    if _runs_production(launcher):
+    if sheds_pythonpath and _runs_production(launcher):
         lines += ["  On Error Resume Next",
                   '  shell.Environment("Process").Remove "PYTHONPATH"',
                   "  On Error GoTo 0"]
@@ -843,7 +843,8 @@ def differences(checkout: Path) -> list[str]:
         path = checkout / file
         if not path.is_file():
             problems.append(f"{file}: declared in pyproject.toml and never rendered")
-        elif path.read_text(encoding="utf-8", errors="replace") != render(launcher):
+        elif path.read_text(encoding="utf-8", errors="replace") not in (
+                render(launcher), render(launcher, sheds_pythonpath=False)):
             problems.append(f"{file}: differs from its spec in pyproject.toml")
     problems += [f"{path.name}: a launcher with no spec in pyproject.toml, a fork from the rendered ones"
                  for path in sorted(checkout.glob("*.vbs")) if path.name not in specs]
