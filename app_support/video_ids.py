@@ -57,7 +57,7 @@ def _videos_carrying_ids(
     trees = _library_trees() if trees is None else trees
     video_suffixes = tuple(video_suffixes)
     for record_root, video_roots in trees:
-        for record_path in sorted(Path(record_root).rglob("*.json")):
+        for record_path in mirrored_tree.records_under(record_root):
             given = recorded_id(read_json_or_empty(record_path))
             if given is not None:
                 yield given, functools.partial(mirrored_tree.mirrored_source, record_path, roots=video_roots,

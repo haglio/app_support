@@ -7,6 +7,7 @@ from pathlib import Path
 from app_support.json_store import read_json
 
 LIBRARY_DIR_NAME = "videos"
+PCLOUDS_MARK_ON_A_CONFLICTED_COPY = "[conflicted"
 
 
 def library_roots_beside(mirror_root: Path) -> tuple[Path, Path]:
@@ -46,6 +47,11 @@ def mirrored_source(
             if is_file(source):
                 return source
     return None
+
+
+def records_under(mirror_root: Path) -> list[Path]:
+    return sorted(record for record in Path(mirror_root).rglob("*.json")
+                  if PCLOUDS_MARK_ON_A_CONFLICTED_COPY not in record.name)
 
 
 class ListedFolders:
