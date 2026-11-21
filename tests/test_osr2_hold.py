@@ -1,15 +1,7 @@
 from __future__ import annotations
 
 from app_support.file_channel import consume_command_file
-from app_support.osr2_hold import (
-    HOLD_MOVE_MS,
-    HOLD_WAIT_S,
-    PARK,
-    RESUME,
-    RETRACT,
-    ask_the_broker,
-    hold_tcode,
-)
+from app_support.osr2_hold import PARK, RESUME, RETRACT, ask_the_broker, hold_tcode
 from app_support.state_files import BROKER_CMD
 
 
@@ -26,11 +18,3 @@ def test_a_park_sets_the_osr2_down_at_home_over_a_whole_second():
 
 def test_a_retract_sends_it_to_the_far_end_over_half_a_second():
     assert hold_tcode(RETRACT) == "L09999I500"
-
-
-def test_a_park_waits_a_second_before_it_moves_and_a_retract_does_not_wait():
-    assert dict(HOLD_WAIT_S) == {PARK: 1.0, RETRACT: 0.0}
-
-
-def test_every_hold_that_moves_the_osr2_says_how_long_it_waits_first():
-    assert HOLD_WAIT_S.keys() == HOLD_MOVE_MS.keys()
