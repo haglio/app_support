@@ -66,6 +66,38 @@ def test_a_file_stamped_too_lately_to_tell_two_writes_apart_goes_on_reading_as_p
     assert file.may_have_been_written()
 
 
+_A_TICK_NS = 32_000_000
+
+
+class ATenthOfASecondAfterTheFileWasStamped(LongAfterTheFileWasStamped):
+    def __call__(self) -> int:
+        return self._path.stat().st_mtime_ns + 100_000_000
+
+
+def test_a_reader_told_a_shorter_while_reads_a_file_stamped_since_only_inside_that_while(tmp_path):
+    path = tmp_path / "status.txt"
+    publish_whole(path, "one")
+    file = WrittenFile(path, now_ns=ATenthOfASecondAfterTheFileWasStamped(path),
+                       too_lately_ns=_A_TICK_NS)
+
+    file.may_have_been_written()
+    file.was_read()
+
+    assert not file.may_have_been_written()
+
+
+def test_each_of_many_files_read_with_a_shorter_while_is_read_once_until_written_again(tmp_path):
+    path = tmp_path / "status.txt"
+    publish_whole(path, "one")
+    reads: list[Path] = []
+    each = ReadEachWhenChanged(_counting_reader(reads), most=8, too_lately_ns=_A_TICK_NS,
+                               now_ns=ATenthOfASecondAfterTheFileWasStamped(path))
+
+    asked = [each.latest(path) for _ask in range(4)]
+
+    assert (asked, reads) == (["one"] * 4, [path])
+
+
 def test_a_file_taken_away_reads_as_perhaps_written_once_and_holds_nothing(tmp_path):
     file = _a_file_long_written(tmp_path)
     publish_whole(file.path, "one")

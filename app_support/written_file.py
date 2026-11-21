@@ -17,8 +17,9 @@ _NEVER_READ = (-1, -1, -1)
 STAMPED_TOO_LATELY_TO_TELL_NS = 200_000_000
 
 
-def stamped_too_lately_to_tell(mtime_ns: int, now_ns: int) -> bool:
-    return abs(now_ns - mtime_ns) <= STAMPED_TOO_LATELY_TO_TELL_NS
+def stamped_too_lately_to_tell(mtime_ns: int, now_ns: int,
+                               too_lately_ns: int = STAMPED_TOO_LATELY_TO_TELL_NS) -> bool:
+    return abs(now_ns - mtime_ns) <= too_lately_ns
 
 
 class WrittenFile:
@@ -26,10 +27,12 @@ class WrittenFile:
     # its own, which tells two writes apart though Windows stamped both with one time.
 
     def __init__(self, path: Path, *, now_ns: Callable[[], int] = time.time_ns,
-                 stat: Dating = os.stat) -> None:
+                 stat: Dating = os.stat,
+                 too_lately_ns: int = STAMPED_TOO_LATELY_TO_TELL_NS) -> None:
         self._path = Path(path)
         self._now_ns = now_ns
         self._stat = stat
+        self._too_lately_ns = too_lately_ns
         self._read_as: _Written | None = _NEVER_READ
         self._found: _Written | None = None
 
@@ -58,7 +61,8 @@ class WrittenFile:
         return self._found
 
     def was_read_as(self, found: _Written | None) -> None:
-        lately = found is not None and stamped_too_lately_to_tell(found[2], self._now_ns())
+        lately = found is not None and stamped_too_lately_to_tell(
+            found[2], self._now_ns(), self._too_lately_ns)
         self._read_as = _NEVER_READ if lately else found
 
 
@@ -72,8 +76,9 @@ class Look[T]:
 
 class ReadWhenChanged[T]:
     def __init__(self, path: Path, read: Callable[[Path], T], *,
-                 now_ns: Callable[[], int] = time.time_ns, stat: Dating = os.stat) -> None:
-        self._file = WrittenFile(path, now_ns=now_ns, stat=stat)
+                 now_ns: Callable[[], int] = time.time_ns, stat: Dating = os.stat,
+                 too_lately_ns: int = STAMPED_TOO_LATELY_TO_TELL_NS) -> None:
+        self._file = WrittenFile(path, now_ns=now_ns, stat=stat, too_lately_ns=too_lately_ns)
         self._read = read
         self._value: T | None = None
 
@@ -101,12 +106,14 @@ class ReadWhenChanged[T]:
 class ReadEachWhenChanged[K, T]:
     def __init__(self, read: Callable[[K], T] | None = None, *, most: int,
                  path_of: Callable[[K], Path] = Path,
-                 now_ns: Callable[[], int] = time.time_ns, stat: Dating = os.stat) -> None:
+                 now_ns: Callable[[], int] = time.time_ns, stat: Dating = os.stat,
+                 too_lately_ns: int = STAMPED_TOO_LATELY_TO_TELL_NS) -> None:
         self._read = read
         self._most = most
         self._path_of = path_of
         self._now_ns = now_ns
         self._stat = stat
+        self._too_lately_ns = too_lately_ns
         self._readers: OrderedDict[K, ReadWhenChanged[T]] = OrderedDict()
 
     def __len__(self) -> int:
@@ -119,7 +126,7 @@ class ReadEachWhenChanged[K, T]:
             return reader
         reader = self._readers[key] = ReadWhenChanged(
             self._path_of(key), lambda _path: self._read(key),
-            now_ns=self._now_ns, stat=self._stat)
+            now_ns=self._now_ns, stat=self._stat, too_lately_ns=self._too_lately_ns)
         if len(self._readers) > self._most:
             self._readers.popitem(last=False)
         return reader
