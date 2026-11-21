@@ -44,6 +44,7 @@ from app_support.win32 import (
     set_shortcut_app_user_model_id,
     share_mutex,
     show_error_popup,
+    stack_just_above,
     stamp_pinned_shortcuts,
     take_the_overlay_icon_off,
     taskbar_pins,
@@ -1361,3 +1362,72 @@ class TestSecondsSinceInput:
 @pytest.mark.skipif(not hasattr(ctypes, "windll"), reason="the input clock: only Windows can say")
 def test_the_session_s_own_last_input_is_never_in_the_future():
     assert seconds_since_input() >= 0
+
+
+class _Stacking:
+    def __init__(self) -> None:
+        self.user32 = ctypes.WinDLL("user32")
+        self.user32.GetWindow.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+        self.user32.GetWindow.restype = ctypes.c_void_p
+        self.user32.SetWindowPos.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int,
+                                             ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint]
+        self.user32.GetWindowLongPtrW.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        self.user32.GetWindowLongPtrW.restype = ctypes.c_ssize_t
+
+    def directly_under(self, hwnd) -> int:
+        return self.user32.GetWindow(hwnd, 3) or 0
+
+    def on_top(self, hwnd, topmost: bool) -> None:
+        self.user32.SetWindowPos(hwnd, -1 if topmost else -2, 0, 0, 0, 0, 0x0013)
+
+    def topmost(self, hwnd) -> bool:
+        return bool(self.user32.GetWindowLongPtrW(hwnd, -20) & 0x8)
+
+
+@pytest.fixture
+def three_windows():
+    made = [_a_window_never_shown() for _ in range(3)]
+    yield [hwnd for hwnd, _ in made]
+    for _, destroy in made:
+        destroy()
+
+
+class TestStackJustAbove:
+    def test_a_window_lower_down_comes_up_to_sit_directly_on_the_one_beneath(self, three_windows):
+        lowest, middle, _top = three_windows
+
+        assert stack_just_above(lowest, middle) is True
+
+        assert _Stacking().directly_under(middle) == lowest
+
+    def test_a_window_comes_up_onto_the_top_window_without_rising_past_it(self, three_windows):
+        lowest, _middle, top = three_windows
+
+        assert stack_just_above(lowest, top) is True
+
+        assert _Stacking().directly_under(top) == lowest
+
+    def test_over_a_window_kept_on_top_it_is_kept_on_top_too_and_sits_directly_on_it(
+            self, three_windows):
+        stacking = _Stacking()
+        lowest, middle, _top = three_windows
+        stacking.on_top(middle, True)
+
+        assert stack_just_above(lowest, middle) is True
+
+        assert (stacking.topmost(lowest), stacking.directly_under(middle)) == (True, lowest)
+
+    def test_over_a_window_no_longer_on_top_it_comes_off_the_top_too(self, three_windows):
+        stacking = _Stacking()
+        lowest, middle, _top = three_windows
+        stacking.on_top(lowest, True)
+
+        assert stack_just_above(lowest, middle) is True
+
+        assert (stacking.topmost(lowest), stacking.directly_under(middle)) == (False, lowest)
+
+    def test_a_window_of_another_program_is_never_moved(self, three_windows):
+        assert stack_just_above(ctypes.windll.user32.GetDesktopWindow(), three_windows[0]) is False
+
+    def test_nothing_is_moved_onto_a_window_that_is_gone(self, three_windows):
+        assert stack_just_above(three_windows[0], 0x7FFFFFF0) is False

@@ -795,3 +795,42 @@ def _input_queue_shared(user, other_thread: int, this_thread: int):
     finally:
         if attached:
             attach(other_thread, this_thread, False)
+
+
+_GW_HWNDNEXT, _GW_HWNDPREV = 2, 3
+_GWL_EXSTYLE, _WS_EX_TOPMOST = -20, 0x0008
+_HWND_TOP, _HWND_TOPMOST, _HWND_NOTOPMOST = 0, -1, -2
+_SWP_NOSIZE, _SWP_NOMOVE, _SWP_NOACTIVATE, _SWP_NOOWNERZORDER = 0x0001, 0x0002, 0x0010, 0x0200
+
+
+def _of_this_program(user, hwnd: int) -> bool:
+    pid = wintypes.DWORD()
+    owner = _declare(user, "GetWindowThreadProcessId", wintypes.DWORD, wintypes.HWND, wintypes.LPDWORD)
+    return bool(owner(hwnd, ctypes.byref(pid))) and pid.value == os.getpid()
+
+
+def _kept_on_top(user, hwnd: int) -> bool:
+    style = _declare(user, "GetWindowLongPtrW", ctypes.c_ssize_t, wintypes.HWND, ctypes.c_int)
+    return bool(style(hwnd, _GWL_EXSTYLE) & _WS_EX_TOPMOST)
+
+
+def stack_just_above(own: int, beneath: int, *, user32=_user32) -> bool:
+    """Put this program's window *own* directly on *beneath* in Windows' stacking, kept on top exactly when *beneath* is, so a window that covers *beneath* covers *own* too."""
+    user = user32()
+    if not (_of_this_program(user, own) and window_exists(beneath, user32=user32)):
+        return False
+    window_at = _declare(user, "GetWindow", wintypes.HWND, wintypes.HWND, wintypes.UINT)
+    place = _declare(user, "SetWindowPos", wintypes.BOOL, wintypes.HWND, wintypes.HWND,
+                     ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, wintypes.UINT)
+    flags = _SWP_NOMOVE | _SWP_NOSIZE | _SWP_NOACTIVATE | _SWP_NOOWNERZORDER
+    on_top = _kept_on_top(user, beneath)
+    if _kept_on_top(user, own) != on_top:
+        place(own, _HWND_TOPMOST if on_top else _HWND_NOTOPMOST, 0, 0, 0, 0, flags)
+    elif (window_at(own, _GW_HWNDNEXT) or 0) == beneath:
+        return True
+    above = window_at(beneath, _GW_HWNDPREV) or 0
+    if above == own:
+        return True
+    if not above or _kept_on_top(user, above) != on_top:
+        above = _HWND_TOPMOST if on_top else _HWND_TOP
+    return bool(place(own, above, 0, 0, 0, 0, flags))
