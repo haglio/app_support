@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import threading
 from pathlib import Path
 
 from app_support.file_channel import publish_whole
@@ -286,3 +287,31 @@ def test_files_read_off_the_calling_thread_are_held_through_looks_alone(tmp_path
 
     assert ((unchanged.fresh, unchanged.value), each.look(path).fresh) == (
         (True, "one, made on another thread"), False)
+
+
+def test_two_threads_first_looking_at_one_file_at_once_share_what_either_keeps(tmp_path):
+    path = tmp_path / "script.txt"
+    publish_whole(path, "one")
+    first_asked, let_the_first_go = threading.Event(), threading.Event()
+
+    def path_of(key: Path) -> Path:
+        if threading.current_thread().name == "first":
+            first_asked.set()
+            let_the_first_go.wait()
+        return key
+
+    each: ReadEachWhenChanged[Path, str] = ReadEachWhenChanged(
+        most=8, path_of=path_of, now_ns=LongAfterAnyStamp())
+    looks: dict[str, object] = {}
+    first = threading.Thread(name="first", target=lambda: looks.update(first=each.look(path)))
+    second = threading.Thread(name="second", target=lambda: looks.update(second=each.look(path)))
+    first.start()
+    first_asked.wait()
+    second.start()
+    second.join()
+    let_the_first_go.set()
+    first.join()
+
+    looks["second"].keep("kept from the second look")
+
+    assert (each.look(path).fresh, each.look(path).value) == (True, "kept from the second look")
