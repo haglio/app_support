@@ -465,6 +465,10 @@ def _before_the_app_runs(launcher: Launcher) -> list[str]:
     if launcher.waits_for_updates:
         lines += ["  CatchUp", "  HoldGates"]
     lines += [f"  CopyFromPrimary {_text(name)}" for name in launcher.copy_from_primary]
+    if _runs_production(launcher):
+        lines += ["  On Error Resume Next",
+                  '  shell.Environment("Process").Remove "PYTHONPATH"',
+                  "  On Error GoTo 0"]
     lines += [f'  shell.Environment("Process").Item({_text(name)}) = {_text(value)}'
               for name, value in launcher.environment]
     if launcher.log:
@@ -480,6 +484,10 @@ def _before_the_app_runs(launcher: Launcher) -> list[str]:
     if launcher.loading_screen:
         lines.append("  StopIfCanceled")
     return lines
+
+
+def _runs_production(launcher: Launcher) -> bool:
+    return launcher.venv == "own" and not launcher.preview and launcher.checkout_argument is None
 
 
 def _once_the_app_runs(launcher: Launcher) -> list[str]:

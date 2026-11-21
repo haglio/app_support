@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -290,7 +291,7 @@ class TestTheRendering:
 
         # CPython imports a repo folder on PYTHONPATH as a namespace package that shadows the venv's editable installs,
         # and a python found on PATH has none of the venv's siblings, so it dies importing before it can log a word.
-        assert "PYTHONPATH" not in text
+        assert not re.search(r'PYTHONPATH"?\)?\s*=', text)
         assert "where " not in text
         assert "py -3" not in text
 
@@ -572,6 +573,10 @@ Class RehearsalShell
     WScript.Echo "rehearsal: environment " & name & "=" & value
   End Property
 
+  Public Sub Remove(name)
+    WScript.Echo "rehearsal: environment without " & name
+  End Sub
+
   Public Property Let CurrentDirectory(value)
     WScript.Echo "rehearsal: directory " & value
   End Property
@@ -742,6 +747,24 @@ class TestALaunch:
         assert f"rehearsal: directory {checkout}" in run.output
         assert f'rehearsal: run "{interpreter}" -m example (style 0, wait False)' in run.output
         assert _line_index(run, "rehearsal: directory") < _line_index(run, "rehearsal: run")
+
+    def test_a_production_app_runs_on_its_own_venv_whatever_pythonpath_started_the_launcher(
+            self, tmp_path: Path):
+        checkout = _checkout(tmp_path, WINDOWED)
+        _venv(checkout, "pythonw.exe")
+
+        run = _rehearsed_to_the_end(_rehearse(_rendered(checkout)))
+
+        assert _line_index(run, "rehearsal: environment without PYTHONPATH") < _line_index(
+            run, "rehearsal: run")
+
+    def test_a_preview_keeps_the_pythonpath_that_names_its_branchs_shared_code(self, tmp_path: Path):
+        primary, worktree = _worktree(tmp_path, WORKTREE)
+        _venv(primary, "python.exe")
+
+        run = _rehearsed_to_the_end(_rehearse(_rendered(worktree)))
+
+        assert "rehearsal: environment without PYTHONPATH" not in run.output
 
     def test_the_environment_is_in_place_before_the_app_runs(self, tmp_path: Path):
         primary, worktree = _worktree(tmp_path, WORKTREE)
