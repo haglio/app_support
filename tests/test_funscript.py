@@ -8,6 +8,7 @@ from app_support.funscript import (
     document,
     generated_mark_of,
     generated_marks_tree_in,
+    places_a_script_may_be_kept,
     read,
     read_actions,
     script_of,
@@ -149,6 +150,16 @@ def test_a_script_kept_under_its_videos_whole_filename_sits_where_the_video_sits
     webm = script_under_its_whole_filename(videos / "video" / "video one.webm", videos=videos, scripts=scripts)
 
     assert (mp4, webm) == (scripts / "video" / "video one.mp4.funscript", scripts / "video" / "video one.webm.funscript")
+
+
+def test_the_places_a_videos_script_may_be_kept_go_under_its_whole_filename_then_its_name_then_beside_it(
+        tmp_path: Path):
+    videos, scripts = tmp_path / "made videos", tmp_path / "made scripts"
+    video = videos / "video" / "video one.mp4"
+
+    assert places_a_script_may_be_kept(video, videos=videos, scripts=scripts) == [
+        scripts / "video" / "video one.mp4.funscript", scripts / "video one.funscript",
+        videos / "video" / "video one.funscript"]
 
 
 def test_a_video_outside_those_videos_has_no_script_kept_under_its_whole_filename(tmp_path: Path):
