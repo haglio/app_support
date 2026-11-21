@@ -98,5 +98,12 @@ def script_under_its_whole_filename(video: Path, *, videos: Path, scripts: Path)
     return None if filed is None else filed.with_name(f"{Path(video).name}{EXTENSION}")
 
 
+def places_a_script_may_be_kept(video: Path, *, videos: Path, scripts: Path) -> list[Path]:
+    video = Path(video)
+    filed = script_under_its_whole_filename(video, videos=videos, scripts=scripts)
+    older = [Path(scripts) / f"{video.stem}{EXTENSION}", video.with_suffix(EXTENSION)]
+    return [filed, *older] if filed is not None else older
+
+
 def generated_mark_of(script: Path, *, scripts_tree: Path, marks_tree: Path) -> Path | None:
     return mirrored_path(script, roots=(scripts_tree,), mirror_root=marks_tree, suffix=_GENERATED_MARK_EXTENSION)
