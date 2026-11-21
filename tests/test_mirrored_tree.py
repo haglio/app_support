@@ -9,6 +9,7 @@ from app_support.mirrored_tree import (
     mirrored_path,
     mirrored_source,
     record_path,
+    records_under,
 )
 
 
@@ -158,3 +159,16 @@ def test_a_video_with_no_record_or_a_broken_one_or_outside_the_library_has_an_em
     assert filed_record(videos / "portrait" / "scene two.mp4", records) == {}
     assert filed_record(tmp_path / "elsewhere" / "scene one.mp4", records) == {}
     assert filed_record(videos / "portrait" / "scene one.mp4", None) == {}
+
+
+def test_the_records_under_a_tree_are_listed_in_order_without_the_copies_a_syncing_drive_made_of_a_conflict(
+    tmp_path: Path,
+):
+    records = tmp_path / "videos" / "metadata"
+    listed = [records / "2D" / "scene one.json", records / "scene two.json"]
+    for record in (*listed, records / "2D" / "scene one [conflicted].json",
+                   records / "scene two [conflicted 2].json", records / "2D" / "scene one.funscript"):
+        record.parent.mkdir(parents=True, exist_ok=True)
+        record.write_text("{}", encoding="utf-8")
+
+    assert records_under(records) == listed
