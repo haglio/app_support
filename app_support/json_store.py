@@ -65,6 +65,15 @@ def _abandoned(lock: Path, stale_s: float) -> bool:
         return False
 
 
+def _as_its_folder_names_it(path: Path) -> Path:
+    with os.scandir(path.parent) as entries:
+        names = [entry.name for entry in entries]
+    if path.name in names:
+        return path
+    folded = path.name.lower()
+    return next((path.with_name(name) for name in names if name.lower() == folded), path)
+
+
 def locked_update(
     path: Path,
     mutate: Callable[[dict], dict | None],
@@ -72,8 +81,9 @@ def locked_update(
     wait_s: float = WAIT_S,
     stale_s: float = STALE_S,
 ) -> dict | None:
-    lock = path.with_name(path.name + LOCK_SUFFIX)
     path.parent.mkdir(parents=True, exist_ok=True)
+    path = _as_its_folder_names_it(path)
+    lock = path.with_name(path.name + LOCK_SUFFIX)
     handle = _claim(lock, wait_s=wait_s, stale_s=stale_s)
     try:
         payload = mutate(read_json(path))

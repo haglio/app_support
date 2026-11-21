@@ -211,3 +211,13 @@ def test_a_document_read_or_empty_that_cannot_be_read_as_one_is_empty(tmp_path, 
         path.write_text(written, encoding="utf-8")
 
     assert read_json_or_empty(path) == {}
+
+
+def test_an_update_spelled_in_other_capitals_keeps_the_name_the_folder_has_for_the_document(tmp_path):
+    kept = tmp_path / "Scene One.json"
+    _write(kept, {"alpha": 1})
+
+    locked_update(tmp_path / "scene one.json", lambda payload: {**payload, "beta": 2})
+
+    assert [entry.name for entry in tmp_path.iterdir()] == ["Scene One.json"]
+    assert read_json(kept) == {"alpha": 1, "beta": 2}
