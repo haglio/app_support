@@ -45,10 +45,12 @@ HOTFIX_OF = "Hotfix-of"
 ONE_PASS = "production_update.pass"
 LOG_NAME = "production_update.log"
 STATUS_NAME = "production_update.json"
+A_RECORD_WAITS_OUT_AN_ABANDONED_LOCK_S = json_store.STALE_S + json_store.WAIT_S
 UPKEEP_MARK = "HAGLIO_UPKEEP"
 SCHEDULED_WAIT_S = 30.0
 LAUNCH_WAIT_S = 15 * 60.0
 RETRY_FAILED_AFTER_S = 30 * 60.0
+A_FAILURE_IS_WARNED_ABOUT_AT_TRY = 2
 HOTFIX_SHIPS_WITHIN_S = 24 * 60 * 60.0
 FETCH_UNASKED_AFTER_S = 30 * 60.0
 FETCH_OVERDUE_AFTER_S = 24 * 60 * 60.0
@@ -115,6 +117,7 @@ class Outcome:
     at: float
     failed: bool = False
     target: str | None = None
+    failures_in_a_row: int = 0
 
 
 InUse = Callable[[list[Path]], list[processes.Process]]
@@ -707,14 +710,27 @@ def _status(state: Path) -> dict:
 def _previous(status: Mapping) -> dict[str, Outcome]:
     recorded = status.get("checkouts", {})
     return {name: Outcome(**entry) for name, entry in recorded.items()
-            if isinstance(entry, dict) and set(entry) == {field.name for field in dataclasses.fields(Outcome)}}
+            if isinstance(entry, dict) and {"said", "at"} <= set(entry) <= _OUTCOME_FIELDS}
+
+
+_OUTCOME_FIELDS = {field.name for field in dataclasses.fields(Outcome)}
+
+
+def _counting_failures(outcome: Outcome, previous: Outcome | None) -> Outcome:
+    if not outcome.failed or outcome == previous:
+        return outcome
+    so_far = previous.failures_in_a_row if previous is not None and previous.failed else 0
+    return dataclasses.replace(outcome, failures_in_a_row=so_far + 1)
 
 
 def _record(state: Path, outcomes: Mapping[str, Outcome], previous: Mapping[str, Outcome], *,
             finished: float | None = None, github: str | None = None) -> None:
+    outcomes = {name: _counting_failures(outcome, previous.get(name)) for name, outcome in outcomes.items()}
     for name, outcome in outcomes.items():
-        if outcome.said != getattr(previous.get(name), "said", None):
-            (_log.warning if outcome.failed else _log.info)("%s: %s", name, outcome.said)
+        worth_a_warning = outcome.failures_in_a_row >= A_FAILURE_IS_WARNED_ABOUT_AT_TRY
+        if (outcome.said != getattr(previous.get(name), "said", None)
+                or outcome.failures_in_a_row == A_FAILURE_IS_WARNED_ABOUT_AT_TRY):
+            (_log.warning if worth_a_warning else _log.info)("%s: %s", name, outcome.said)
 
     def update(document: dict) -> dict:
         document.setdefault("checkouts", {}).update(
@@ -725,7 +741,7 @@ def _record(state: Path, outcomes: Mapping[str, Outcome], previous: Mapping[str,
             document["github"] = github
         return document
 
-    json_store.locked_update(state / STATUS_NAME, update)
+    json_store.locked_update(state / STATUS_NAME, update, wait_s=A_RECORD_WAITS_OUT_AN_ABANDONED_LOCK_S)
 
 
 def _on_github(checkout: Path, *, run: Run) -> tuple[str, str] | None:

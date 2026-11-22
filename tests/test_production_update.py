@@ -14,7 +14,7 @@ from eventually import eventually
 from process_trees import PROMPTLY_S, TO_START_S, ALauncherAndItsChild, within
 from production_machine import Machine, a_process, before_launch, bring_up, git, keep_up, pins, spec
 
-from app_support import launcher, processes, production_update, windows_settings
+from app_support import json_store, launcher, processes, production_update, windows_settings
 from app_support.production_update import Outcome
 
 windows_only = pytest.mark.skipif(sys.platform != "win32", reason="Win32's file sharing and processes")
@@ -1009,6 +1009,36 @@ class TestKeepingTheWorkspaceUp:
         assert [record.levelname for record in caplog.records if record.levelno >= logging.WARNING] == []
         assert any("app: could not fetch" in record.getMessage() for record in caplog.records)
 
+    @staticmethod
+    def _passes_with_pip(machine, caplog, pip_fails: list[bool]) -> list[logging.LogRecord]:
+        app = machine.checkout("app", files={"pyproject.toml": pins(app_support="0.1.375")})
+        machine.install(app, "app_support", "0.1.375")
+        machine.ship(app, {"pyproject.toml": pins(app_support="0.1.376")})
+        clock = [1000.0]
+
+        def pip_as_told(arguments, **kwargs):
+            if "pip" in arguments and pip_fails[0]:
+                raise production_update.StepFailed("pip install said: fatal: Could not resolve host: github.com")
+            return machine.run(arguments, **kwargs)
+
+        with caplog.at_level("INFO", logger="production_update"):
+            while pip_fails:
+                keep_up(machine.workspace, machine.base / "state", run=pip_as_told, in_use=lambda venvs: [],
+                        now=lambda: clock[0])
+                pip_fails.pop(0)
+                clock[0] += production_update.RETRY_FAILED_AFTER_S + 1
+        return [record for record in caplog.records if record.getMessage().startswith("app: failed")]
+
+    def test_an_install_that_goes_through_when_it_is_tried_again_is_no_warning(self, machine, caplog):
+        failures = self._passes_with_pip(machine, caplog, [True, False])
+
+        assert [record.levelname for record in failures] == ["INFO"]
+
+    def test_an_install_that_fails_again_when_it_is_tried_again_is_warned_about_once(self, machine, caplog):
+        failures = self._passes_with_pip(machine, caplog, [True, True, True])
+
+        assert [record.levelname for record in failures] == ["INFO", "WARNING"]
+
     def test_a_checkout_that_could_not_fetch_for_a_day_is_warned_about(self, machine, caplog):
         app = machine.checkout("app")
         git("fetch", "-q", "origin", cwd=app)
@@ -1102,6 +1132,23 @@ class TestKeepingTheWorkspaceUp:
         assert machine.head(host) == machine.origin_head(host)
         assert machine.head(hosted) == machine.origin_head(hosted)
         assert not [step for step in machine.ran if step[0] in ("fetch", "github")]
+
+    def test_a_launch_still_writes_down_its_update_while_another_holds_the_record_past_the_ordinary_wait(
+            self, machine):
+        checkout = machine.checkout("app")
+        state = machine.base / "state"
+        state.mkdir()
+        lock = state / (production_update.STATUS_NAME + json_store.LOCK_SUFFIX)
+        lock.touch()
+        releasing = threading.Timer(json_store.WAIT_S + 0.5, lock.unlink)
+        releasing.start()
+
+        try:
+            before_launch(checkout, machine.workspace, state, run=machine.run, in_use=lambda venvs: [])
+        finally:
+            releasing.join()
+
+        assert "app" in json.loads((state / production_update.STATUS_NAME).read_text(encoding="utf-8"))["checkouts"]
 
 
 class TestFindingWhatRunsFromAVenv:
