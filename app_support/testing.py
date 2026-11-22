@@ -45,6 +45,10 @@ def app_id_claimed(**how: Any):
     return patch("app_support.win32.set_app_user_model_id", **how)
 
 
+def app_id_already_claimed(app_id: str | None):
+    return patch("app_support.win32.claimed_app_user_model_id", return_value=app_id)
+
+
 def pinned_shortcuts_stamped(**how: Any):
     return patch("app_support.win32.stamp_pinned_shortcuts", **how)
 
