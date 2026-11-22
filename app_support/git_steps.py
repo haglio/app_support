@@ -9,6 +9,7 @@ from typing import NamedTuple
 from app_support.subprocess_utils import hidden_subprocess_kwargs, run_process_tree
 
 GIT_TIMEOUT_S = 120.0
+_PIPS_NOTICE = "[notice]"
 
 Run = Callable[..., str]
 
@@ -28,9 +29,14 @@ def run(arguments: Sequence[str], *, cwd: Path | None = None, timeout: float = G
     except OSError as cannot:
         raise StepFailed(f"{_step(arguments)} could not start: {cannot}") from None
     if finished.returncode != 0:
-        said = " / ".join(_why_it_failed((finished.stderr or finished.stdout).strip().splitlines()))
+        said = " / ".join(_why_it_failed(_what_it_printed(finished)))
         raise StepFailed(f"{_step(arguments)} said: {said or f'exit status {finished.returncode}'}")
     return finished.stdout
+
+
+def _what_it_printed(finished: subprocess.CompletedProcess) -> list[str]:
+    said = [line for line in (finished.stderr or "").splitlines() if line.strip() and not line.startswith(_PIPS_NOTICE)]
+    return said or (finished.stdout or "").strip().splitlines()
 
 
 def _why_it_failed(printed: list[str]) -> list[str]:

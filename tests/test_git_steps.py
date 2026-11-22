@@ -48,6 +48,17 @@ def test_a_failed_step_with_nothing_to_say_names_its_exit_status():
         git_steps.run([sys.executable, "-c", "import sys; sys.exit(3)"])
 
 
+def test_a_failed_step_quotes_its_cause_rather_than_pips_notice_of_a_newer_pip():
+    printing = ("import sys; print('ERROR: the cause'); "
+                "print('\\n[notice] A new release of pip is available: 1.0 -> 2.0', file=sys.stderr); sys.exit(1)")
+
+    with pytest.raises(StepFailed) as failed:
+        git_steps.run([sys.executable, "-c", printing])
+
+    assert "ERROR: the cause" in str(failed.value)
+    assert "[notice]" not in str(failed.value)
+
+
 def test_a_pip_step_is_named_for_what_pip_was_asked():
     with pytest.raises(StepFailed, match=r"^pip install said"):
         git_steps.run([sys.executable, "-c", "import sys; sys.exit(1)", "pip", "install"])
