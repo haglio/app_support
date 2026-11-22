@@ -80,7 +80,8 @@ def test_no_popup_reaches_the_screen():
 
 def test_the_taskbar_calls_reach_no_window():
     with testing.app_id_claimed() as claimed, testing.pinned_shortcuts_stamped(return_value={}) as stamped, \
-            testing.window_dressed() as dressed, testing.no_taskbar_description():
+            testing.window_dressed() as dressed, testing.no_taskbar_description(),             testing.app_id_already_claimed("Example.App"):
+        assert win32.claimed_app_user_model_id() == "Example.App"
         win32.set_app_user_model_id("Example")
         assert win32.stamp_pinned_shortcuts("Example", ["Example"]) == {}
         win32.dress_window(1, "Example", None)
