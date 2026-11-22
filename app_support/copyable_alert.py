@@ -25,17 +25,26 @@ def taskbar_identity(app: str) -> str:
     return f"Haglio.Alert.{hashlib.sha256(app.encode('utf-8')).hexdigest()[:16]}"
 
 
-SCRIPT = f"""\
-$ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName System.Windows.Forms, System.Drawing
-[System.Windows.Forms.Application]::EnableVisualStyles()
+_CLAIMS_A_TASKBAR_IDENTITY = f"""\
 $appIcon = $env:{APP_ICON}
 $wearsTheAppsIcon = $appIcon -and (Test-Path -LiteralPath $appIcon -PathType Leaf)
 if ($wearsTheAppsIcon) {{
   Add-Type -Namespace Haglio -Name Taskbar -MemberDefinition '[DllImport("shell32.dll", CharSet = CharSet.Unicode)] public static extern int SetCurrentProcessExplicitAppUserModelID(string id);'
   if ([Haglio.Taskbar]::SetCurrentProcessExplicitAppUserModelID($env:{APP_ID}) -lt 0) {{ $wearsTheAppsIcon = $false }}
 }}
-$title = $env:{TITLE}
+"""
+_WEARS_THE_APPS_ICON = """\
+$form.ShowIcon = $wearsTheAppsIcon
+if ($wearsTheAppsIcon) { $form.Icon = New-Object System.Drawing.Icon $appIcon }
+"""
+_WEARS_NO_ICON = "$form.ShowIcon = $false\n"
+_THE_APPS_ICON, _THE_WINDOWS_ICON = "#the-apps-icon\n", "#the-windows-icon\n"
+
+_SCRIPT = f"""\
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+[System.Windows.Forms.Application]::EnableVisualStyles()
+{_THE_APPS_ICON}$title = $env:{TITLE}
 $message = $env:{MESSAGE}
 $icon = switch ($env:{ICON}) {{
   '{WARNING}' {{ [System.Drawing.SystemIcons]::Warning }}
@@ -47,9 +56,7 @@ $form.Text = $title
 $form.FormBorderStyle = 'FixedDialog'
 $form.MaximizeBox = $false
 $form.MinimizeBox = $false
-$form.ShowIcon = $wearsTheAppsIcon
-if ($wearsTheAppsIcon) {{ $form.Icon = New-Object System.Drawing.Icon $appIcon }}
-$form.StartPosition = 'CenterScreen'
+{_THE_WINDOWS_ICON}$form.StartPosition = 'CenterScreen'
 $form.TopMost = $true
 $form.AutoSize = $true
 $form.AutoSizeMode = 'GrowAndShrink'
@@ -107,9 +114,17 @@ $form.Opacity = 1
 [void]$form.ShowDialog()
 """
 
-ENCODED = base64.b64encode(SCRIPT.encode("utf-16-le")).decode("ascii")
-COMMAND = ("powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-           "-EncodedCommand", ENCODED)
+SCRIPT = _SCRIPT.replace(_THE_APPS_ICON, _CLAIMS_A_TASKBAR_IDENTITY).replace(_THE_WINDOWS_ICON, _WEARS_THE_APPS_ICON)
+SCRIPT_BEFORE_THE_APPS_ICON = _SCRIPT.replace(_THE_APPS_ICON, "").replace(_THE_WINDOWS_ICON, _WEARS_NO_ICON)
+
+
+def _command(script: str) -> tuple[str, ...]:
+    return ("powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+            "-EncodedCommand", base64.b64encode(script.encode("utf-16-le")).decode("ascii"))
+
+
+COMMAND = _command(SCRIPT)
+COMMAND_BEFORE_THE_APPS_ICON = _command(SCRIPT_BEFORE_THE_APPS_ICON)
 
 
 def environment(title: str, message: str, icon: int, *, app_icon: Path | None = None,

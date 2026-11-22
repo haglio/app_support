@@ -223,6 +223,24 @@ class TestTheFilesOnDisk:
 
         assert launcher.differences(checkout) == []
 
+    def test_a_launcher_rendered_before_its_error_window_wore_the_apps_icon_passes_until_its_app_renders_again(
+            self, tmp_path: Path):
+        checkout = _checkout(tmp_path, MINIMAL + A_SHORTCUT_TO_IT)
+        launcher.write(checkout)
+        rendered = checkout / "launch_example.vbs"
+        said = rendered.read_text(encoding="ascii")
+        its_icon = [line for line in said.splitlines(keepends=True)
+                    if copyable_alert.APP_ICON in line or copyable_alert.APP_ID in line]
+        assert len(its_icon) == 2
+        for line in its_icon:
+            said = said.replace(line, "")
+        new, old = (subprocess.list2cmdline(command).replace('"', '""')
+                    for command in (copyable_alert.COMMAND, copyable_alert.COMMAND_BEFORE_THE_APPS_ICON))
+        assert new in said
+        rendered.write_text(said.replace(new, old), encoding="ascii")
+
+        assert launcher.differences(checkout) == []
+
     def test_a_hand_edited_launcher_is_named(self, tmp_path: Path):
         checkout = _checkout(tmp_path, MINIMAL)
         launcher.write(checkout)
