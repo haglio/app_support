@@ -210,8 +210,7 @@ class TestTheFilesOnDisk:
         (problem,) = launcher.differences(checkout)
         assert "launch_example.vbs" in problem
 
-    def test_a_launcher_rendered_before_it_shed_pythonpath_passes_until_its_app_renders_again(
-            self, tmp_path: Path):
+    def test_a_launcher_that_keeps_the_pythonpath_it_was_started_with_is_named(self, tmp_path: Path):
         checkout = _checkout(tmp_path, MINIMAL)
         launcher.write(checkout)
         rendered = checkout / "launch_example.vbs"
@@ -221,7 +220,8 @@ class TestTheFilesOnDisk:
         assert shedding in said
         rendered.write_text(said.replace(shedding, ""), encoding="ascii")
 
-        assert launcher.differences(checkout) == []
+        (problem,) = launcher.differences(checkout)
+        assert "launch_example.vbs" in problem
 
     def test_a_launcher_rendered_before_its_error_window_wore_the_apps_icon_passes_until_its_app_renders_again(
             self, tmp_path: Path):
