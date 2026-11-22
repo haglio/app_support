@@ -65,6 +65,7 @@ class Launcher:
     preview: bool = False
     waits_for_updates: bool = False
     also_runs: tuple[str, ...] = ()
+    icon: str | None = None
 
     @property
     def waits_out_a_rebase(self) -> bool:
@@ -81,7 +82,9 @@ def launchers(checkout: Path) -> list[Launcher]:
     specs = document.get("tool", {}).get("haglio", {}).get("launchers", {})
     production = production_update.declared(checkout)
     also_runs = production.also_runs if production else ()
-    found = [replace(_launcher(file, spec), waits_for_updates=production is not None, also_runs=also_runs)
+    icons = _icons_its_shortcuts_wear(document)
+    found = [replace(_launcher(file, spec), waits_for_updates=production is not None, also_runs=also_runs,
+                     icon=icons.get(file, next(iter(icons.values()), None)))
              for file, spec in specs.items()]
     for each in found:
         if each.loading_screen and len(each.loading_screen) != each.waits_on:
@@ -89,6 +92,12 @@ def launchers(checkout: Path) -> list[Launcher]:
                 f"{each.file}: loading-screen says {len(each.loading_screen)} lines for the "
                 f"{each.waits_on} checkouts a launch waits on, its own first and then each it also runs")
     return found
+
+
+def _icons_its_shortcuts_wear(document: dict) -> dict[str, str]:
+    shortcuts = document.get("tool", {}).get("haglio", {}).get("shortcuts", {})
+    return {spec["launcher"]: spec["icon"] for spec in shortcuts.values()
+            if isinstance(spec.get("launcher"), str) and isinstance(spec.get("icon"), str)}
 
 
 def _launcher(file: str, spec: dict) -> Launcher:
@@ -721,6 +730,13 @@ End Function
 """
 
 
+def _the_apps_icon(launcher: Launcher) -> str:
+    if launcher.icon is None:
+        return ""
+    return (f'  told("{copyable_alert.APP_ICON}") = fso.BuildPath(root, {_text(launcher.icon)})\n'
+            f'  told("{copyable_alert.APP_ID}") = {_text(copyable_alert.taskbar_identity(launcher.app))}\n')
+
+
 def _tell(launcher: Launcher) -> str:
     take_down = "  TakeDownLoadingScreen\n" if launcher.loading_screen else ""
     return f"""\
@@ -738,7 +754,7 @@ Function ShownWithCopy(message, icon)
   told("{copyable_alert.TITLE}") = app
   told("{copyable_alert.MESSAGE}") = message
   told("{copyable_alert.ICON}") = icon
-  On Error Resume Next
+{_the_apps_icon(launcher)}  On Error Resume Next
   ShownWithCopy = shell.Run({_text(subprocess.list2cmdline(copyable_alert.COMMAND))}, 0, True) = 0
   If Err.Number <> 0 Then ShownWithCopy = False
   On Error GoTo 0

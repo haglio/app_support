@@ -71,6 +71,18 @@ def set_app_user_model_id(app_id: str, *, shell32=_shell32) -> None:
         raise _hresult_refusal_for_the_caller_to_weigh("SetCurrentProcessExplicitAppUserModelID", hr)
 
 
+def claimed_app_user_model_id(*, shell32=_shell32, ole32=_ole32) -> str | None:
+    get_id = _declare(shell32(), "GetCurrentProcessExplicitAppUserModelID",
+                      ctypes.c_long, ctypes.POINTER(ctypes.c_void_p))
+    claimed = ctypes.c_void_p()
+    if get_id(ctypes.byref(claimed)) < 0 or not claimed.value:
+        return None
+    try:
+        return ctypes.wstring_at(claimed.value)
+    finally:
+        _declare(ole32(), "CoTaskMemFree", None, ctypes.c_void_p)(claimed.value)
+
+
 # The vtable indices are each interface's methods in header order; Windows reports no error for a wrong one.
 
 _COINIT_APARTMENTTHREADED = 0x2
@@ -720,10 +732,10 @@ _MB_SETFOREGROUND = 0x00010000
 _MB_TOPMOST = 0x00040000
 
 
-def show_error_popup(title: str, message: str, *, user32=_user32,
-                     copyable: Callable[[str, str], bool] = copyable_alert.show) -> None:  # the one name a suite patches: ctypes.windll exists only on Windows
+def show_error_popup(title: str, message: str, *, app_icon: Path | None = None, user32=_user32,
+                     copyable: Callable[..., bool] = copyable_alert.show) -> None:  # the one name a suite patches: ctypes.windll exists only on Windows
     """Put *message* on the screen under *title*, in front of everything. A hidden Windows process has no claim on the foreground, so a plain message dialog opens underneath; ``MB_SETFOREGROUND`` and ``MB_TOPMOST`` prevent that. Raises nothing, being the last thing a dying process does."""
-    if copyable(title, message):
+    if copyable(title, message, app_icon=app_icon):
         return
     show = _declare(user32(), "MessageBoxW", ctypes.c_int,
                     wintypes.HWND, wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.UINT)

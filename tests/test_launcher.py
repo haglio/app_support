@@ -903,6 +903,67 @@ class TestALaunch:
         assert "dialog: Example failed to start on my-branch." in run.output
 
 
+A_SHORTCUT_TO_IT = """
+[tool.haglio.shortcuts."Example"]
+launcher = "launch_example.vbs"
+icon = "example.ico"
+app-id = "Example"
+places = ["checkout"]
+"""
+ANOTHER_LAUNCHER = """
+[tool.haglio.launchers."launch_example_quietly.vbs"]
+app = "Example (quietly)"
+run = "-m example"
+"""
+
+
+def _told_to_its_error_window(script: Path) -> dict[str, str]:
+    text = script.read_text(encoding="utf-8")
+    first_statement = 'Set fso = CreateObject("Scripting.FileSystemObject")\n'
+    shell_class = _REHEARSAL[_REHEARSAL.index("Class RehearsalShell"):].replace("{child}", "").replace(
+        "{screen}", "")
+    script.write_text(text.replace(first_statement, f"""\
+Set fso = CreateObject("Scripting.FileSystemObject")
+Set shell = New RehearsalShell
+root = fso.GetParentFolderName(WScript.ScriptFullName)
+app = "Example"
+ShownWithCopy "The scene file could not be read.", 16
+WScript.Quit 0
+
+{shell_class}"""), encoding="utf-8")
+    run = run_under_script_host(script, dry_run=False)
+    assert run.returncode == 0, run.output
+    told = [line.removeprefix("rehearsal: environment ") for line in run.output.splitlines()
+            if line.startswith("rehearsal: environment ")]
+    return dict(line.split("=", 1) for line in told)
+
+
+@windows_only
+class TestTheErrorWindowsIcon:
+    def test_a_launcher_a_shortcut_starts_gives_its_error_window_the_shortcuts_icon(self, tmp_path: Path):
+        checkout = _checkout(tmp_path, MINIMAL + A_SHORTCUT_TO_IT)
+
+        told = _told_to_its_error_window(_rendered(checkout))
+
+        assert told[copyable_alert.APP_ICON] == str(checkout / "example.ico")
+        assert told[copyable_alert.APP_ID] == copyable_alert.taskbar_identity("Example")
+
+    def test_a_launcher_no_shortcut_starts_gives_its_error_window_its_apps_icon(self, tmp_path: Path):
+        checkout = _checkout(tmp_path, MINIMAL + ANOTHER_LAUNCHER + A_SHORTCUT_TO_IT)
+        launcher.write(checkout)
+
+        told = _told_to_its_error_window(checkout / "launch_example_quietly.vbs")
+
+        assert told[copyable_alert.APP_ICON] == str(checkout / "example.ico")
+        assert told[copyable_alert.APP_ID] == copyable_alert.taskbar_identity("Example (quietly)")
+
+    def test_a_checkout_with_no_shortcut_gives_its_error_window_no_icon(self, tmp_path: Path):
+        told = _told_to_its_error_window(_rendered(_checkout(tmp_path, MINIMAL)))
+
+        assert copyable_alert.APP_ICON not in told
+        assert told[copyable_alert.TITLE] == "Example"
+
+
 @windows_only
 class TestTheChecksBite:
     def test_a_misspelled_variable_in_the_launch_does_not_rehearse_cleanly(self, tmp_path: Path):

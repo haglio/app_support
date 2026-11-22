@@ -15,6 +15,7 @@ class DesktopOfItsOwn:
     _EXTENDED_STYLE, _TOPMOST = -20, 0x8
     _TERMINATE, _SYNCHRONIZE = 0x0001, 0x00100000
     _USE_SHOW_WINDOW, _HIDE, _CLICK = 0x1, 0x0, 0x00F5
+    _GET_ICON, _BIG_ICON = 0x007F, 1
 
     def __init__(self):
         class StartupInfo(ctypes.Structure):
@@ -126,6 +127,14 @@ class DesktopOfItsOwn:
         wait_until(lambda: shown.extend(each for each in self._visible_windows() if self._text(each) == title)
                    or shown, interval=0.1)
         return [said for child in self._children(shown[0]) if (said := self._text(child))]
+
+    def wears_an_icon(self, title: str) -> bool:
+        self._user32.SendMessageTimeoutW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM,
+                                                     wintypes.UINT, wintypes.UINT, ctypes.POINTER(ctypes.c_size_t)]
+        window, = [each for each in self._visible_windows() if self._text(each) == title]
+        icon = ctypes.c_size_t()
+        self._user32.SendMessageTimeoutW(window, self._GET_ICON, self._BIG_ICON, 0, 0, 5000, ctypes.byref(icon))
+        return bool(icon.value)
 
     def press(self, title: str, button: str) -> None:
         self._user32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
