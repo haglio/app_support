@@ -28,6 +28,7 @@ from app_support.win32 import (
     _vtbl_call,
     a_job_ending_with_this_process,
     busy_seconds_of_the_job_this_process_runs_in,
+    claimed_app_user_model_id,
     describe_taskbar_app,
     described_taskbar_app,
     dress_window,
@@ -112,6 +113,36 @@ class TestPutThisProcessAt:
         finally:
             put_this_process_at(found)
         assert now_at == subprocess.BELOW_NORMAL_PRIORITY_CLASS
+
+
+_SAYS_WHAT_IT_CLAIMED = """
+import sys
+from app_support.win32 import claimed_app_user_model_id, set_app_user_model_id
+print(claimed_app_user_model_id())
+if len(sys.argv) > 1:
+    set_app_user_model_id(sys.argv[1])
+    print(claimed_app_user_model_id())
+"""
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="a taskbar identity: only Windows can say")
+class TestTheClaimedAppUserModelId:
+    def _said(self, *claimed: str) -> list[str]:
+        ran = subprocess.run([sys.executable, "-c", _SAYS_WHAT_IT_CLAIMED, *claimed], capture_output=True,
+                             text=True, check=True, env={**os.environ, "PYTHONPATH": str(pathlib.Path(__file__).parents[1])})
+        return ran.stdout.splitlines()
+
+    def test_a_process_that_claimed_none_has_none(self):
+        assert self._said() == ["None"]
+
+    def test_a_process_reads_back_the_identity_it_claimed(self):
+        assert self._said("Example.App") == ["None", "Example.App"]
+
+
+def test_a_refusal_to_say_the_claimed_identity_reads_as_none_claimed():
+    shell32 = _FakeDll(GetCurrentProcessExplicitAppUserModelID=_FakeFunction(E_INVALIDARG))
+
+    assert claimed_app_user_model_id(shell32=lambda: shell32) is None
 
 
 class TestSetAppUserModelId:
@@ -1094,7 +1125,7 @@ class TestAJobObjectOnWindows:
             assert job.busy_seconds() >= 0.25
 
 
-def _did_not_come_up(_title: str, _message: str) -> bool:
+def _did_not_come_up(_title: str, _message: str, *, app_icon=None) -> bool:
     return False
 
 
@@ -1104,10 +1135,19 @@ class TestShowErrorPopup:
         shown = []
 
         show_error_popup("Example App", "The scene file could not be read.", user32=lambda: user32,
-                         copyable=lambda title, message: shown.append((title, message)) or True)
+                         copyable=lambda title, message, app_icon: shown.append((title, message)) or True)
 
         assert shown == [("Example App", "The scene file could not be read.")]
         assert user32.MessageBoxW.calls == []
+
+    def test_the_window_with_a_copy_button_wears_the_apps_icon(self):
+        user32 = _FakeDll(MessageBoxW=_FakeFunction(1))
+        worn = []
+
+        show_error_popup("Example App", "The scene file could not be read.", app_icon=pathlib.Path("C:/example/app.ico"),
+                         user32=lambda: user32, copyable=lambda _title, _message, app_icon: worn.append(app_icon) or True)
+
+        assert worn == [pathlib.Path("C:/example/app.ico")]
 
     def test_the_dialog_comes_up_in_front_of_whatever_is_there(self):
         user32 = _FakeDll(MessageBoxW=_FakeFunction(1))
