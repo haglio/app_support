@@ -223,8 +223,7 @@ class TestTheFilesOnDisk:
         (problem,) = launcher.differences(checkout)
         assert "launch_example.vbs" in problem
 
-    def test_a_launcher_rendered_before_its_error_window_wore_the_apps_icon_passes_until_its_app_renders_again(
-            self, tmp_path: Path):
+    def test_a_launcher_whose_error_window_does_not_wear_the_apps_icon_is_named(self, tmp_path: Path):
         checkout = _checkout(tmp_path, MINIMAL + A_SHORTCUT_TO_IT)
         launcher.write(checkout)
         rendered = checkout / "launch_example.vbs"
@@ -234,12 +233,10 @@ class TestTheFilesOnDisk:
         assert len(its_icon) == 2
         for line in its_icon:
             said = said.replace(line, "")
-        new, old = (subprocess.list2cmdline(command).replace('"', '""')
-                    for command in (copyable_alert.COMMAND, copyable_alert.COMMAND_BEFORE_THE_APPS_ICON))
-        assert new in said
-        rendered.write_text(said.replace(new, old), encoding="ascii")
+        rendered.write_text(said, encoding="ascii")
 
-        assert launcher.differences(checkout) == []
+        (problem,) = launcher.differences(checkout)
+        assert "launch_example.vbs" in problem
 
     def test_a_hand_edited_launcher_is_named(self, tmp_path: Path):
         checkout = _checkout(tmp_path, MINIMAL)
