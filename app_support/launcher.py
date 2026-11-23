@@ -221,17 +221,17 @@ def _variables(launcher: Launcher) -> dict[str, str]:
 
 
 
-def render(launcher: Launcher, *, before_kinds: bool = False) -> str:
+def render(launcher: Launcher) -> str:
     sections = [
         _header(launcher),
         ["Option Explicit", "", _declarations(launcher), ""],
         _TOP.splitlines(),
-        _decide(launcher, before_kinds=before_kinds),
+        _decide(launcher),
         _report(launcher),
-        _launch(launcher, before_kinds=before_kinds),
+        _launch(launcher),
         _command(launcher),
         _QUOTE.splitlines(),
-        _tell(launcher, before_kinds=before_kinds).splitlines(),
+        _tell(launcher).splitlines(),
     ]
     if launcher.waits_for_updates:
         sections.append(_gates(launcher).splitlines())
@@ -343,7 +343,7 @@ def _folder_it_runs(launcher: Launcher) -> str:
     return "checkout" if launcher.checkout_argument else "root"
 
 
-def _decide(launcher: Launcher, *, before_kinds: bool) -> list[str]:
+def _decide(launcher: Launcher) -> list[str]:
     base = _folder_it_runs(launcher)
     venv = _venv_checkout(launcher)
     lines = ["Sub Decide()"]
@@ -353,7 +353,7 @@ def _decide(launcher: Launcher, *, before_kinds: bool) -> list[str]:
     if launcher.checkout_argument:
         lines += [
             "  If WScript.Arguments.Count = 0 Then",
-            _warned(f"    {{}} {_text(launcher.checkout_argument.missing)}", "vbInformation", before_kinds),
+            f"    Warn {_text(launcher.checkout_argument.missing)}",
             "  End If",
             "  checkout = WScript.Arguments(0)",
             "  label = checkout",
@@ -365,7 +365,7 @@ def _decide(launcher: Launcher, *, before_kinds: bool) -> list[str]:
         lines += _log_paths(base, launcher, launcher.log, "  ")
     lines.append(f"  arguments = {_text(launcher.run, _variables(launcher))}")
     if launcher.checkout_argument:
-        lines += _arguments_after_the_checkout(launcher, base, before_kinds=before_kinds)
+        lines += _arguments_after_the_checkout(launcher, base)
     interpreter = _path(venv, ".venv\\Scripts\\" + launcher.interpreter)
     lines.append(f"  interpreter = {interpreter}")
     if launcher.named_interpreter:
@@ -392,7 +392,7 @@ def _gates_decided(launcher: Launcher) -> list[str]:
     return lines
 
 
-def _arguments_after_the_checkout(launcher: Launcher, base: str, *, before_kinds: bool) -> list[str]:
+def _arguments_after_the_checkout(launcher: Launcher, base: str) -> list[str]:
     lines = [
         "  For index = 1 To WScript.Arguments.Count - 1",
         "    Select Case LCase(WScript.Arguments(index))",
@@ -410,7 +410,7 @@ def _arguments_after_the_checkout(launcher: Launcher, base: str, *, before_kinds
         "    End Select",
         "  Next",
         "  If Not fso.FolderExists(checkout) Then",
-        _warned(f"    {{}} {_text(launcher.checkout_argument.gone, _variables(launcher))}", "vbCritical", before_kinds),
+        f"    Warn {_text(launcher.checkout_argument.gone, _variables(launcher))}",
         "  End If",
     ]
     return lines
@@ -452,7 +452,7 @@ def _report(launcher: Launcher) -> list[str]:
     return lines
 
 
-def _launch(launcher: Launcher, *, before_kinds: bool) -> list[str]:
+def _launch(launcher: Launcher) -> list[str]:
     if launcher.venv == "primary":
         missing = '"The primary checkout\'s virtual environment is missing:"'
     else:
@@ -460,11 +460,11 @@ def _launch(launcher: Launcher, *, before_kinds: bool) -> list[str]:
     return [
         "Sub Launch()",
         "  If Not fso.FileExists(interpreter) Then",
-        f"    Refuse {missing} & vbCrLf & interpreter" + _icon_before_kinds("vbCritical", before_kinds),
+        f"    Refuse {missing} & vbCrLf & interpreter",
         "  End If",
         *_before_the_app_runs(launcher),
         "  shell.Run Command(), 0, False",
-        *_once_the_app_runs(launcher, before_kinds=before_kinds),
+        *_once_the_app_runs(launcher),
         "End Sub",
     ]
 
@@ -499,38 +499,28 @@ def _runs_production(launcher: Launcher) -> bool:
     return launcher.venv == "own" and not launcher.preview and launcher.checkout_argument is None
 
 
-def _once_the_app_runs(launcher: Launcher, *, before_kinds: bool) -> list[str]:
+def _once_the_app_runs(launcher: Launcher) -> list[str]:
     lines = [f"  Say {_text(loading_screen.STARTED)}"] if launcher.loading_screen else []
     if launcher.waits_for_updates:
         lines.append("  ReleaseGates")
     if launcher.watch:
-        lines += ["  If Not Started() Then", *_refusal_of_a_launch_that_never_came_up(launcher, before_kinds=before_kinds), "  End If"]
+        lines += ["  If Not Started() Then", *_refusal_of_a_launch_that_never_came_up(launcher), "  End If"]
         if launcher.loading_screen:
             lines.append(f"  Say {_text(loading_screen.ENDED)}")
     return lines
 
 
-def _refusal_of_a_launch_that_never_came_up(launcher: Launcher, *, before_kinds: bool) -> list[str]:
-    failed_start = "Refuse FailedStart()" + _icon_before_kinds("vbCritical", before_kinds)
+def _refusal_of_a_launch_that_never_came_up(launcher: Launcher) -> list[str]:
     if not launcher.note:
-        return [f"    {failed_start}"]
+        return ["    Refuse FailedStart()"]
     return [
         "    noteText = LastLinesOf(notePath, 20)",
         "    If Len(noteText) > 0 Then",
-        '      Refuse noteText & vbCrLf & "The full log is at:" & vbCrLf & logPath'
-        + _icon_before_kinds("vbExclamation", before_kinds),
+        '      Refuse noteText & vbCrLf & "The full log is at:" & vbCrLf & logPath',
         "    Else",
-        f"      {failed_start}",
+        "      Refuse FailedStart()",
         "    End If",
     ]
-
-
-def _icon_before_kinds(icon: str, before_kinds: bool) -> str:
-    return f", {icon}" if before_kinds else ""
-
-
-def _warned(line: str, icon_before_kinds: str, before_kinds: bool) -> str:
-    return line.format("Refuse") + _icon_before_kinds(icon_before_kinds, True) if before_kinds else line.format("Warn")
 
 
 def _command(launcher: Launcher) -> list[str]:
@@ -747,9 +737,7 @@ def _the_apps_icon(launcher: Launcher) -> str:
             f'  told("{copyable_alert.APP_ID}") = {_text(copyable_alert.taskbar_identity(launcher.app))}\n')
 
 
-def _tell(launcher: Launcher, *, before_kinds: bool) -> str:
-    if before_kinds:
-        return _tell_before_kinds(launcher)
+def _tell(launcher: Launcher) -> str:
     take_down = "  TakeDownLoadingScreen\n" if launcher.loading_screen else ""
     return f"""\
 Sub Tell(message)
@@ -786,36 +774,6 @@ Sub Warn(message)
   Else
     MsgBox message, vbExclamation, app
   End If
-  WScript.Quit 1
-End Sub
-"""
-
-
-def _tell_before_kinds(launcher: Launcher) -> str:
-    take_down = "  TakeDownLoadingScreen\n" if launcher.loading_screen else ""
-    return f"""\
-Sub Tell(message, icon)
-{take_down}  If LCase(fso.GetFileName(WScript.FullName)) = "cscript.exe" Then
-    WScript.Echo "dialog: " & message
-  ElseIf Not ShownWithCopy(message, icon) Then
-    MsgBox message, icon, app
-  End If
-End Sub
-
-Function ShownWithCopy(message, icon)
-  Dim told
-  Set told = shell.Environment("Process")
-  told("{copyable_alert.TITLE}") = app
-  told("{copyable_alert.MESSAGE}") = message
-  told("{copyable_alert.ICON}") = icon
-{_the_apps_icon(launcher)}  On Error Resume Next
-  ShownWithCopy = shell.Run({_text(subprocess.list2cmdline(copyable_alert.COMMAND_BEFORE_KINDS))}, 0, True) = 0
-  If Err.Number <> 0 Then ShownWithCopy = False
-  On Error GoTo 0
-End Function
-
-Sub Refuse(message, icon)
-  Tell message, icon
   WScript.Quit 1
 End Sub
 """
@@ -913,8 +871,7 @@ def differences(checkout: Path) -> list[str]:
         path = checkout / file
         if not path.is_file():
             problems.append(f"{file}: declared in pyproject.toml and never rendered")
-        elif path.read_text(encoding="utf-8", errors="replace") not in (
-                render(launcher), render(launcher, before_kinds=True)):
+        elif path.read_text(encoding="utf-8", errors="replace") != render(launcher):
             problems.append(f"{file}: differs from its spec in pyproject.toml")
     problems += [f"{path.name}: a launcher with no spec in pyproject.toml, a fork from the rendered ones"
                  for path in sorted(checkout.glob("*.vbs")) if path.name not in specs]
