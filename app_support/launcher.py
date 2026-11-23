@@ -221,7 +221,7 @@ def _variables(launcher: Launcher) -> dict[str, str]:
 
 
 
-def render(launcher: Launcher, *, wears_the_apps_icon: bool = True) -> str:
+def render(launcher: Launcher) -> str:
     sections = [
         _header(launcher),
         ["Option Explicit", "", _declarations(launcher), ""],
@@ -231,7 +231,7 @@ def render(launcher: Launcher, *, wears_the_apps_icon: bool = True) -> str:
         _launch(launcher),
         _command(launcher),
         _QUOTE.splitlines(),
-        _tell(launcher, wears_the_apps_icon=wears_the_apps_icon).splitlines(),
+        _tell(launcher).splitlines(),
     ]
     if launcher.waits_for_updates:
         sections.append(_gates(launcher).splitlines())
@@ -737,8 +737,7 @@ def _the_apps_icon(launcher: Launcher) -> str:
             f'  told("{copyable_alert.APP_ID}") = {_text(copyable_alert.taskbar_identity(launcher.app))}\n')
 
 
-def _tell(launcher: Launcher, *, wears_the_apps_icon: bool) -> str:
-    command = copyable_alert.COMMAND if wears_the_apps_icon else copyable_alert.COMMAND_BEFORE_THE_APPS_ICON
+def _tell(launcher: Launcher) -> str:
     take_down = "  TakeDownLoadingScreen\n" if launcher.loading_screen else ""
     return f"""\
 Sub Tell(message, icon)
@@ -755,8 +754,8 @@ Function ShownWithCopy(message, icon)
   told("{copyable_alert.TITLE}") = app
   told("{copyable_alert.MESSAGE}") = message
   told("{copyable_alert.ICON}") = icon
-{_the_apps_icon(launcher) if wears_the_apps_icon else ""}  On Error Resume Next
-  ShownWithCopy = shell.Run({_text(subprocess.list2cmdline(command))}, 0, True) = 0
+{_the_apps_icon(launcher)}  On Error Resume Next
+  ShownWithCopy = shell.Run({_text(subprocess.list2cmdline(copyable_alert.COMMAND))}, 0, True) = 0
   If Err.Number <> 0 Then ShownWithCopy = False
   On Error GoTo 0
 End Function
@@ -860,8 +859,7 @@ def differences(checkout: Path) -> list[str]:
         path = checkout / file
         if not path.is_file():
             problems.append(f"{file}: declared in pyproject.toml and never rendered")
-        elif path.read_text(encoding="utf-8", errors="replace") not in (
-                render(launcher, wears_the_apps_icon=wears) for wears in (True, False)):
+        elif path.read_text(encoding="utf-8", errors="replace") != render(launcher):
             problems.append(f"{file}: differs from its spec in pyproject.toml")
     problems += [f"{path.name}: a launcher with no spec in pyproject.toml, a fork from the rendered ones"
                  for path in sorted(checkout.glob("*.vbs")) if path.name not in specs]
