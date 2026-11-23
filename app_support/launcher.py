@@ -353,7 +353,7 @@ def _decide(launcher: Launcher) -> list[str]:
     if launcher.checkout_argument:
         lines += [
             "  If WScript.Arguments.Count = 0 Then",
-            f"    Refuse {_text(launcher.checkout_argument.missing)}, vbInformation",
+            f"    Warn {_text(launcher.checkout_argument.missing)}",
             "  End If",
             "  checkout = WScript.Arguments(0)",
             "  label = checkout",
@@ -410,7 +410,7 @@ def _arguments_after_the_checkout(launcher: Launcher, base: str) -> list[str]:
         "    End Select",
         "  Next",
         "  If Not fso.FolderExists(checkout) Then",
-        f"    Refuse {_text(launcher.checkout_argument.gone, _variables(launcher))}, vbCritical",
+        f"    Warn {_text(launcher.checkout_argument.gone, _variables(launcher))}",
         "  End If",
     ]
     return lines
@@ -460,7 +460,7 @@ def _launch(launcher: Launcher) -> list[str]:
     return [
         "Sub Launch()",
         "  If Not fso.FileExists(interpreter) Then",
-        f"    Refuse {missing} & vbCrLf & interpreter, vbCritical",
+        f"    Refuse {missing} & vbCrLf & interpreter",
         "  End If",
         *_before_the_app_runs(launcher),
         "  shell.Run Command(), 0, False",
@@ -512,13 +512,13 @@ def _once_the_app_runs(launcher: Launcher) -> list[str]:
 
 def _refusal_of_a_launch_that_never_came_up(launcher: Launcher) -> list[str]:
     if not launcher.note:
-        return ["    Refuse FailedStart(), vbCritical"]
+        return ["    Refuse FailedStart()"]
     return [
         "    noteText = LastLinesOf(notePath, 20)",
         "    If Len(noteText) > 0 Then",
-        '      Refuse noteText & vbCrLf & "The full log is at:" & vbCrLf & logPath, vbExclamation',
+        '      Refuse noteText & vbCrLf & "The full log is at:" & vbCrLf & logPath',
         "    Else",
-        "      Refuse FailedStart(), vbCritical",
+        "      Refuse FailedStart()",
         "    End If",
     ]
 
@@ -740,28 +740,40 @@ def _the_apps_icon(launcher: Launcher) -> str:
 def _tell(launcher: Launcher) -> str:
     take_down = "  TakeDownLoadingScreen\n" if launcher.loading_screen else ""
     return f"""\
-Sub Tell(message, icon)
-{take_down}  If LCase(fso.GetFileName(WScript.FullName)) = "cscript.exe" Then
+Sub Tell(message)
+{take_down}  If OnTheCommandLine() Then
     WScript.Echo "dialog: " & message
-  ElseIf Not ShownWithCopy(message, icon) Then
-    MsgBox message, icon, app
+  ElseIf Not ShownWithCopy(message) Then
+    MsgBox message, vbCritical, app
   End If
 End Sub
 
-Function ShownWithCopy(message, icon)
+Function ShownWithCopy(message)
   Dim told
   Set told = shell.Environment("Process")
   told("{copyable_alert.TITLE}") = app
   told("{copyable_alert.MESSAGE}") = message
-  told("{copyable_alert.ICON}") = icon
 {_the_apps_icon(launcher)}  On Error Resume Next
   ShownWithCopy = shell.Run({_text(subprocess.list2cmdline(copyable_alert.COMMAND))}, 0, True) = 0
   If Err.Number <> 0 Then ShownWithCopy = False
   On Error GoTo 0
 End Function
 
-Sub Refuse(message, icon)
-  Tell message, icon
+Function OnTheCommandLine()
+  OnTheCommandLine = LCase(fso.GetFileName(WScript.FullName)) = "cscript.exe"
+End Function
+
+Sub Refuse(message)
+  Tell message
+  WScript.Quit 1
+End Sub
+
+Sub Warn(message)
+{take_down}  If OnTheCommandLine() Then
+    WScript.Echo "warning: " & message
+  Else
+    MsgBox message, vbExclamation, app
+  End If
   WScript.Quit 1
 End Sub
 """

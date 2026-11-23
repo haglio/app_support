@@ -201,9 +201,9 @@ class TestTheFilesOnDisk:
         launcher.write(checkout)
         rendered = checkout / "launch_example.vbs"
         said = rendered.read_text(encoding="ascii")
-        copy_starts = said.index("  ElseIf Not ShownWithCopy(message, icon) Then\n")
+        copy_starts = said.index("  ElseIf Not ShownWithCopy(message) Then\n")
         copy_ends = said.index("End Function\n", copy_starts) + len("End Function\n")
-        windows_own_box = "  Else\n    MsgBox message, icon, app\n  End If\nEnd Sub\n"
+        windows_own_box = "  Else\n    MsgBox message, vbCritical, app\n  End If\nEnd Sub\n"
         rendered.write_text(said[:copy_starts] + windows_own_box + said[copy_ends:], encoding="ascii")
         assert "ShownWithCopy" not in rendered.read_text(encoding="ascii")
 
@@ -485,20 +485,20 @@ class TestADryRun:
 
 @windows_only
 class TestACheckoutArgument:
-    def test_with_no_checkout_it_says_there_is_nothing_to_run_here(self, tmp_path: Path):
+    def test_with_no_checkout_it_warns_there_is_nothing_to_run_here(self, tmp_path: Path):
         run = run_under_script_host(_rendered(_checkout(tmp_path, BRANCH, name="primary")))
 
         assert run.returncode == 1
-        assert "dialog: There is nothing to run here on its own." in run.output
+        assert "warning: There is nothing to run here on its own." in run.output
         assert run.values("command") == []
 
-    def test_a_checkout_that_is_gone_is_named_in_the_refusal(self, tmp_path: Path):
+    def test_a_checkout_that_is_gone_is_named_in_a_warning(self, tmp_path: Path):
         gone = tmp_path / "gone"
 
         run = run_under_script_host(_rendered(_checkout(tmp_path, BRANCH, name="primary")), str(gone))
 
         assert run.returncode == 1
-        assert f"dialog: That checkout is gone:\n{gone}" in run.output
+        assert f"warning: That checkout is gone:\n{gone}" in run.output
 
     def test_a_checkout_on_its_own_is_its_own_label(self, tmp_path: Path):
         # VBScript's And evaluates both sides, so a launcher that guards reading a
@@ -942,7 +942,7 @@ Set fso = CreateObject("Scripting.FileSystemObject")
 Set shell = New RehearsalShell
 root = fso.GetParentFolderName(WScript.ScriptFullName)
 app = "Example"
-ShownWithCopy "The scene file could not be read.", 16
+ShownWithCopy "The scene file could not be read."
 WScript.Quit 0
 
 {shell_class}"""), encoding="utf-8")
