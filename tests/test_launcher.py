@@ -196,6 +196,19 @@ class TestTheFilesOnDisk:
         assert launcher.differences(checkout) == []
         launcher.assert_launchers_match_their_specs(checkout)
 
+    def test_a_launcher_rendered_before_its_windows_took_their_icon_from_their_kind_passes_until_its_app_renders_again(
+            self, tmp_path: Path):
+        checkout = _checkout(tmp_path, BRANCH, name="primary")
+        launcher.write(checkout)
+        (spec,) = launcher.launchers(checkout)
+        rendered = checkout / spec.file
+        rendered.write_text(launcher.render(spec, before_kinds=True), encoding="utf-8")
+        said = rendered.read_text(encoding="utf-8")
+        assert "vbInformation" in said
+        assert "Sub Warn(" not in said
+
+        assert launcher.differences(checkout) == []
+
     def test_a_launcher_whose_error_box_has_no_copy_is_named(self, tmp_path: Path):
         checkout = _checkout(tmp_path, MINIMAL)
         launcher.write(checkout)

@@ -7,7 +7,7 @@ import subprocess
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
-TITLE, MESSAGE = "HAGLIO_ALERT_TITLE", "HAGLIO_ALERT_MESSAGE"
+TITLE, MESSAGE, ICON = "HAGLIO_ALERT_TITLE", "HAGLIO_ALERT_MESSAGE", "HAGLIO_ALERT_ICON"
 APP_ICON, APP_ID = "HAGLIO_ALERT_APP_ICON", "HAGLIO_ALERT_APP_ID"
 COPY = "Copy error message"
 COPIED = "Copied"
@@ -102,9 +102,22 @@ $form.Opacity = 1
 [void]$form.ShowDialog()
 """
 
-ENCODED = base64.b64encode(SCRIPT.encode("utf-16-le")).decode("ascii")
-COMMAND = ("powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-           "-EncodedCommand", ENCODED)
+_SCRIPT_BEFORE_KINDS = SCRIPT.replace("$icon = [System.Drawing.SystemIcons]::Error\n", f"""\
+$icon = switch ($env:{ICON}) {{
+  '48' {{ [System.Drawing.SystemIcons]::Warning }}
+  '64' {{ [System.Drawing.SystemIcons]::Information }}
+  default {{ [System.Drawing.SystemIcons]::Error }}
+}}
+""")
+
+
+def _command(script: str) -> tuple[str, ...]:
+    return ("powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+            "-EncodedCommand", base64.b64encode(script.encode("utf-16-le")).decode("ascii"))
+
+
+COMMAND = _command(SCRIPT)
+COMMAND_BEFORE_KINDS = _command(_SCRIPT_BEFORE_KINDS)
 
 
 def environment(title: str, message: str, *, app_icon: Path | None = None,
