@@ -6,6 +6,7 @@ from app_support.video_names import (
     clip_title,
     full_video_id_of,
     generation_stem,
+    is_named_by_its_id,
     normalize_title,
     origin_stem,
     stable_title,
@@ -32,6 +33,18 @@ class TestNormalizeTitle:
 
     def test_strips_a_trailing_hash_a_quality_tag_left_last(self):
         assert normalize_title("example_video-7c4d9e21_topaz") == "example video"
+
+    def test_keeps_a_hash_that_is_all_a_one_word_name_has_after_its_word(self):
+        assert normalize_title("video-3f9a1c7e") == "video 3f9a1c7e"
+        assert normalize_title("video-3f9a1c7e_topaz") == "video 3f9a1c7e"
+
+    def test_a_title_of_a_word_and_an_id_is_named_by_its_id(self):
+        assert is_named_by_its_id(normalize_title("video-3f9a1c7e_topaz"))
+        assert is_named_by_its_id(normalize_title("video-30917452_topaz"))
+        assert not is_named_by_its_id(normalize_title("video_topaz"))
+        assert not is_named_by_its_id(normalize_title("Example-Studio"))
+        assert not is_named_by_its_id(normalize_title("Jane-Doe-ab12cd34"))
+        assert not is_named_by_its_id(normalize_title("Jane-Doe"))
 
     def test_keeps_a_trailing_word_or_number_that_is_no_hash(self):
         assert normalize_title("Jane-Doe-compilation") == "jane doe compilation"
@@ -72,6 +85,10 @@ class TestStableTitle:
 
     def test_two_scenes_of_one_performer_keep_different_titles(self):
         assert stable_title("Jane-Doe_540-xq3k9v2w") != stable_title("Jane Doe Beta Cut 4k 60fps")
+
+    def test_two_videos_a_site_named_by_id_alone_keep_different_titles(self):
+        assert stable_title("video-3f9a1c7e_topaz") == stable_title("video-3f9a1c7e")
+        assert stable_title("video-3f9a1c7e") != stable_title("video-8b2d4e60")
 
     def test_a_name_of_nothing_but_tags_reduces_to_nothing(self):
         assert stable_title("1080p_60fps_topaz") == ""
