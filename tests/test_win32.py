@@ -990,6 +990,14 @@ class TestAJobObject:
         assert kernel32.AssignProcessToJobObject.calls == []
         assert kernel32.CloseHandle.calls == [(WIDE_HANDLE,)]
 
+    def test_a_job_windows_will_not_let_go_of_its_processes_says_so(self):
+        kernel32 = _a_job_kernel32()
+        job = _a_job(kernel32, A_PROCESS, processes_end_with_it=True)
+        kernel32.SetInformationJobObject.result = 0
+
+        with pytest.raises(OSError, match="SetInformationJobObject"):
+            job.let_its_processes_outlive_it()
+
 
 def _this_process_s_kernel32(*, job_spent: tuple[int, int] | None, own_kernel: int = 0,
                              own_user: int = 0) -> _FakeDll:
@@ -1046,6 +1054,7 @@ def _go_on(child: subprocess.Popen) -> None:
 
 
 _WAITS_TO_BE_TOLD = "import sys; sys.stdin.readline()"
+_SAYS_IT_IS_STILL_THERE_WHEN_TOLD = "import sys; sys.stdin.readline(); print('still here', flush=True)"
 
 _STARTS_ONE_THAT_BREAKS_AWAY = """
 import subprocess, sys
@@ -1093,6 +1102,14 @@ class TestAJobObjectOnWindows:
                 pass
 
             assert eventually(lambda: child.poll() is not None, within_s=10)
+
+    def test_a_job_told_to_let_its_processes_outlive_it_leaves_them_running_when_let_go(self):
+        with _running(_SAYS_IT_IS_STILL_THERE_WHEN_TOLD) as child:
+            with JobObject(int(child._handle), processes_end_with_it=True) as job:
+                job.let_its_processes_outlive_it()
+
+            _go_on(child)
+            assert child.stdout.readline() == "still here\n"
 
     def test_a_process_that_breaks_away_from_a_job_that_lets_it_outlives_the_job(self):
         with _running(_STARTS_ONE_THAT_BREAKS_AWAY) as child:
