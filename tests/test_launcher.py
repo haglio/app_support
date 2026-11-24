@@ -1128,7 +1128,7 @@ def _screened(tmp_path: Path, *, snapshots: bool = True) -> Path:
     _updater_beside(checkout)
     if snapshots:
         loading_screen.MeetingPlace(_screen_of(checkout), ()).leave_snapshots(
-            opening=b"", full=b"", updating=[], bar=(0, 0, 1, 1), covers_every_monitor=False)
+            opening=b"", full=b"", updating=[], bar=(0, 0, 1, 1))
     return checkout
 
 
@@ -1186,7 +1186,7 @@ class TestTheLoadingScreenAtTheClick:
         _updater_beside(primary)
         kept = _snapshots_of_every_preview(primary)
         loading_screen.MeetingPlace(kept, ()).leave_snapshots(
-            opening=b"", full=b"", updating=[], bar=(0, 0, 1, 1), covers_every_monitor=False)
+            opening=b"", full=b"", updating=[], bar=(0, 0, 1, 1))
 
         run = _rehearsed_to_the_end(_rehearse(_rendered(worktree)))
 
@@ -1358,7 +1358,7 @@ class TestARebaseOfTheFolderItRuns:
         primary, worktree = _partway_through_a_rebase(tmp_path)
         _updater_beside(primary)
         loading_screen.MeetingPlace(_snapshots_of_every_preview(primary), ()).leave_snapshots(
-            opening=b"", full=b"", updating=[], bar=(0, 0, 1, 1), covers_every_monitor=False)
+            opening=b"", full=b"", updating=[], bar=(0, 0, 1, 1))
 
         with _rehearsing(_rehearsal_of(_rendered(worktree))) as rehearsal:
             eventually((_screen_of(worktree) / loading_screen.UPDATED).exists, within_s=30)
