@@ -82,9 +82,12 @@ def generation_stem(stem: str) -> str:
         stem = made
 
 
+def _is_an_id(token: str) -> bool:
+    return bool(_HASH_TOKEN.fullmatch(token)) and any(c.isdigit() for c in token)
+
+
 def _is_hash_token(token: str) -> bool:
-    return bool(_HASH_TOKEN.fullmatch(token)) and any(c.isalpha() for c in token) and any(
-        c.isdigit() for c in token)
+    return _is_an_id(token) and any(c.isalpha() for c in token)
 
 
 def normalize_title(stem: str) -> str:
@@ -107,10 +110,6 @@ def _is_a_word_and_the_id_a_site_named_it_by(every_token: list[str], tokens: lis
 def is_named_by_its_id(title: str) -> bool:
     words = title.split()
     return len(words) == 2 and _is_an_id(words[1])
-
-
-def _is_an_id(token: str) -> bool:
-    return bool(_HASH_TOKEN.fullmatch(token)) and any(c.isdigit() for c in token)
 
 
 def stable_title(stem: str) -> str:
