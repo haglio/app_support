@@ -8,9 +8,11 @@ the named parent ends that unnamed worker with it.
 """
 from __future__ import annotations
 
+import contextlib
 import ctypes
 import hashlib
 import logging
+import os
 import re
 import shutil
 import struct
@@ -34,6 +36,7 @@ _VOS_NT_WINDOWS32 = 0x00040004
 _VFT_APP = 0x00000001
 
 STAMP_FIELD = "AppSupportSource"
+_RETIRED_SUFFIX = ".retired"
 
 _ROLE_RE = re.compile(r"^[A-Za-z]+$")
 
@@ -222,13 +225,15 @@ class ProcessNamer:
             logger.warning("Not naming the %s process", role, exc_info=True)
             return str(python_exe)
 
+        self._sweep_retired_copies(target)
         if self._is_current(target, stamp):
             return str(target)
 
+        made = target.with_name(f"{target.stem}.next{target.suffix}")
         try:
             # CPython's shutil.copy2 treats a directory destination as "copy into"; copyfile refuses it.
-            shutil.copyfile(source, target)
-            self._stamp(target, icon=icon, fields={
+            shutil.copyfile(source, made)
+            self._stamp(made, icon=icon, fields={
                 "CompanyName": self.app_name,
                 "FileDescription": description,
                 "InternalName": target.stem,
@@ -236,7 +241,9 @@ class ProcessNamer:
                 "ProductName": self.app_name,
                 STAMP_FIELD: stamp,
             })
+            self._put_in_place(made, target)
         except Exception:
+            self._discard(made)
             if self._is_ours(target):
                 logger.info("Kept the existing %s launcher; could not refresh it", target.name)
                 return str(target)
@@ -278,6 +285,23 @@ class ProcessNamer:
             return self._read_field(exe, STAMP_FIELD) is not None
         except OSError:
             return False
+
+    @staticmethod
+    def _put_in_place(made: Path, target: Path) -> None:
+        try:
+            made.replace(target)
+        except PermissionError:
+            if not target.is_file():
+                raise
+            # Windows will not overwrite or delete the image of a running process, but it will rename one.
+            target.replace(target.with_name(f"{target.stem}.{os.getpid()}{_RETIRED_SUFFIX}"))
+            made.replace(target)
+
+    @staticmethod
+    def _sweep_retired_copies(target: Path) -> None:
+        for retired in target.parent.glob(f"{target.stem}.*{_RETIRED_SUFFIX}"):
+            with contextlib.suppress(OSError):
+                retired.unlink()
 
     @staticmethod
     def _discard(target: Path) -> None:

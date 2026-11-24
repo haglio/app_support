@@ -30,7 +30,7 @@ REAL_INTERPRETER = Path(sys.executable)
 
 class _FakeResources:
     def __init__(self, *, fails: bool = False, raising: Exception | None = None) -> None:
-        self.stamped: dict[Path, dict[str, str]] = {}
+        self._stamps: list[dict[str, str]] = []
         self.stamp_calls = 0
         self.fails = fails
         self.raising = raising
@@ -41,10 +41,19 @@ class _FakeResources:
             raise self.raising
         if self.fails:
             raise OSError("this file cannot carry a version resource")
-        self.stamped[Path(exe)] = dict(fields)
+        self._stamps.append(dict(fields))
+        with Path(exe).open("ab") as copy:
+            copy.write(b"<stamp %d>" % (len(self._stamps) - 1))
+
+    def fields_of(self, exe: Path) -> dict[str, str] | None:
+        try:
+            marks = re.findall(rb"<stamp (\d+)>", Path(exe).read_bytes())
+        except OSError:
+            return None
+        return self._stamps[int(marks[-1])] if marks else None
 
     def read_field(self, exe: Path, field: str) -> str | None:
-        fields = self.stamped.get(Path(exe))
+        fields = self.fields_of(exe)
         return None if fields is None else fields.get(field)
 
 
@@ -53,6 +62,30 @@ def _stub_interpreter(tmp_path: Path, name: str = "pythonw.exe") -> Path:
     exe.parent.mkdir(parents=True, exist_ok=True)
     exe.write_bytes(b"MZ stub interpreter")
     return exe
+
+
+_GENERIC_READ = 0x80000000
+_FILE_SHARE_READ = 0x1
+_FILE_SHARE_DELETE = 0x4
+_OPEN_EXISTING = 3
+
+
+class _held_as_a_running_image_is:
+    def __init__(self, exe: Path) -> None:
+        self._exe = exe
+
+    def __enter__(self) -> None:
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.CreateFileW.restype = wintypes.HANDLE
+        kernel32.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID,
+                                         wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        self._kernel32 = kernel32
+        self._handle = kernel32.CreateFileW(str(self._exe), _GENERIC_READ, _FILE_SHARE_READ | _FILE_SHARE_DELETE,
+                                            None, _OPEN_EXISTING, 0, None)
+
+    def __exit__(self, *raised: object) -> None:
+        self._kernel32.CloseHandle(self._handle)
 
 
 def _interpreter(tmp_path: Path, name: str = "pythonw.exe") -> Path:
@@ -157,7 +190,7 @@ class TestNamedExe:
                       .named_exe(source, "Portrait"))
 
         assert result == source.with_name("FunTime-Portrait.exe")
-        assert result.read_bytes() == source.read_bytes()
+        assert result.read_bytes().startswith(source.read_bytes())
 
     def test_the_copy_describes_itself(self, tmp_path: Path):
         source = _interpreter(tmp_path)
@@ -182,6 +215,26 @@ class TestNamedExe:
         result = Path(namer.named_exe(source, "Scripture"))
 
         assert _has_resource(result, kind=14, name=1), "no icon directory in the copy"
+
+    def test_refreshes_a_copy_that_is_running_as_windows_lets_a_running_image_be_renamed(self, tmp_path: Path):
+        source = _interpreter(tmp_path)
+        running = Path(ProcessNamer("Scripture").named_exe(source, "Scripture"))
+
+        with _held_as_a_running_image_is(running):
+            refreshed = Path(ProcessNamer("Scripture", icon=_icon(tmp_path)).named_exe(source, "Scripture"))
+
+        assert refreshed == running
+        assert not read_version_field(refreshed, STAMP_FIELD).endswith(":none"), "the running copy kept its old icon"
+
+    def test_the_copy_a_refresh_moved_aside_is_gone_once_nothing_runs_it(self, tmp_path: Path):
+        source = _interpreter(tmp_path)
+        running = Path(ProcessNamer("Scripture").named_exe(source, "Scripture"))
+        with _held_as_a_running_image_is(running):
+            ProcessNamer("Scripture", icon=_icon(tmp_path)).named_exe(source, "Scripture")
+
+        ProcessNamer("Scripture", icon=_icon(tmp_path)).named_exe(source, "Scripture")
+
+        assert [path.name for path in running.parent.iterdir() if path.name.startswith("Scripture")]             == [running.name]
 
     def test_a_stamp_that_fails_part_way_leaves_the_copy_as_it_was(self, tmp_path: Path):
         copy = _interpreter(tmp_path)
@@ -231,8 +284,8 @@ class TestNamedExe:
 
         namer.named_exe(source, "Landscape")
 
-        assert stale.read_bytes() == source.read_bytes()
-        assert resources.stamped[stale]["FileDescription"] == "Genau \u2013 Landscape"
+        assert stale.read_bytes().startswith(source.read_bytes())
+        assert resources.fields_of(stale)["FileDescription"] == "Genau \u2013 Landscape"
 
     def test_refreshes_a_copy_made_before_the_app_had_its_icon(self, tmp_path: Path):
         source = _stub_interpreter(tmp_path)
@@ -255,7 +308,7 @@ class TestNamedExe:
                                    read_field=resources.read_field)
                       .named_exe(source, "Dashboard"))
 
-        assert resources.stamped[result]["FileDescription"] == "OldName \u2013 Dashboard"
+        assert resources.fields_of(result)["FileDescription"] == "OldName \u2013 Dashboard"
 
     def test_falls_back_to_the_interpreter_when_the_copy_cannot_be_made(self, tmp_path: Path):
         source = _stub_interpreter(tmp_path)
@@ -303,7 +356,7 @@ class TestNamedExe:
         assert ProcessNamer("Clipper", stamp=resources.stamp,
                             read_field=resources.read_field) \
             .named_exe(source, "Clipper") == str(existing)
-        assert resources.stamped[existing]["FileDescription"] == "Clipper"
+        assert resources.fields_of(existing)["FileDescription"] == "Clipper"
 
     def test_knows_its_own_copy_by_the_stamp_after_the_label_it_writes_changed(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
@@ -361,7 +414,7 @@ class TestNameThisProcess:
         ProcessNamer("Highdeas", stamp=resources.stamp,
                      read_field=resources.read_field).name_this_process("Highdeas")
 
-        assert console.with_name("Highdeas-Highdeas.exe").read_bytes() == windowed.read_bytes()
+        assert console.with_name("Highdeas-Highdeas.exe").read_bytes().startswith(windowed.read_bytes())
 
     def test_copies_the_console_launcher_when_that_is_what_starts_the_app(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
@@ -373,7 +426,7 @@ class TestNameThisProcess:
         ProcessNamer("Highdeas", stamp=resources.stamp, read_field=resources.read_field) \
             .name_this_process("Highdeas", interpreter="python.exe")
 
-        assert console.with_name("Highdeas-Highdeas.exe").read_bytes() == console.read_bytes()
+        assert console.with_name("Highdeas-Highdeas.exe").read_bytes().startswith(console.read_bytes())
 
     def test_never_raises_when_python_cannot_say_what_it_is_running_under(
         self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
