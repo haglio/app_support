@@ -55,7 +55,6 @@ class Snapshots:
     opening: Path
     full: Path
     bar: Box
-    covers_every_monitor: bool
     shown_for: Mapping[str, Path]
 
     def updating(self, line: str) -> Path | None:
@@ -79,7 +78,7 @@ class MeetingPlace:
         object.__setattr__(self, "_app_window", ReadWhenChanged(self.folder / APP_WINDOW, _app_window_in))
 
     def leave_snapshots(self, *, opening: bytes, full: bytes, updating: Sequence[bytes], bar: Box,
-                        covers_every_monitor: bool) -> None:
+                        covers_every_monitor: bool = False) -> None:  # noqa: ARG002
         kept = self._snapshots_kept_in
         kept.mkdir(parents=True, exist_ok=True)
         _replace_whole(kept / OPENING, opening)
@@ -87,8 +86,7 @@ class MeetingPlace:
         for index, snapshot in enumerate(updating):
             _replace_whole(kept / _updating(index), snapshot)
         _replace_whole(kept / SNAPSHOTS, json.dumps(
-            {"bar": list(bar), "covers_every_monitor": covers_every_monitor,
-             "lines": list(self.lines[:len(updating)])}).encode("utf-8"))
+            {"bar": list(bar), "lines": list(self.lines[:len(updating)])}).encode("utf-8"))
 
     def snapshots(self) -> Snapshots | None:
         kept = self._snapshots_kept_in
@@ -96,10 +94,9 @@ class MeetingPlace:
             document = json.loads((kept / SNAPSHOTS).read_text(encoding="utf-8"))
             bar = tuple(int(edge) for edge in document["bar"])
             lines = [str(line) for line in document["lines"]]
-            covers_every_monitor = bool(document["covers_every_monitor"])
         except (OSError, ValueError, KeyError, TypeError):
             return None
-        return Snapshots(kept / OPENING, kept / FULL, bar, covers_every_monitor,
+        return Snapshots(kept / OPENING, kept / FULL, bar,
                          {line: kept / _updating(index) for index, line in enumerate(lines)})
 
     @property
@@ -267,12 +264,6 @@ class Placement:
         return self.window[0] + self.panel[0], self.window[1] + self.panel[1]
 
 
-def over_every_monitor(size: tuple[int, int], screens: Screens) -> Placement:
-    x, y, _width, _height = screens.virtual
-    return Placement(screens.virtual, (screens.primary[0] // 2 - size[0] // 2 - x,
-                                       screens.primary[1] // 2 - size[1] // 2 - y))
-
-
 def on_the_apps_monitor(size: tuple[int, int], screens: Screens, app: AppWindow | None) -> Placement:
     kept = _monitor_the_app_keeps_its_window_on(screens, app)
     x, y, width, height = kept.work_area if kept else _work_area_qt_opens_it_in(screens, app)
@@ -395,8 +386,7 @@ class _Window:  # pragma: no cover -- a window, run on a desktop of its own
         size = (opening.width(), opening.height())
         self._shown = tkinter.PhotoImage(master=self._root, width=size[0], height=size[1])
         ground = "#{:02x}{:02x}{:02x}".format(*opening.get(0, 0))
-        placement = (over_every_monitor(size, screens) if snapshots.covers_every_monitor
-                     else on_the_apps_monitor(size, screens, place.where_the_app_comes_up()))
+        placement = on_the_apps_monitor(size, screens, place.where_the_app_comes_up())
         self._panel_on_screen = placement.panel_on_screen
         x, y, width, height = placement.window
         self._root.geometry(f"{width}x{height}+{x}+{y}")
