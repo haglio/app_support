@@ -620,8 +620,8 @@ class JobObject:
                  kernel32=_kernel32) -> None:
         dll = kernel32()
         create = _declare(dll, "CreateJobObjectW", ctypes.c_void_p, ctypes.c_void_p, wintypes.LPCWSTR)
-        limit = _declare(dll, "SetInformationJobObject", wintypes.BOOL, ctypes.c_void_p, ctypes.c_int,
-                         ctypes.c_void_p, wintypes.DWORD)
+        self._limit = limit = _declare(dll, "SetInformationJobObject", wintypes.BOOL, ctypes.c_void_p,
+                                       ctypes.c_int, ctypes.c_void_p, wintypes.DWORD)
         self._assign = _declare(dll, "AssignProcessToJobObject", wintypes.BOOL, ctypes.c_void_p, ctypes.c_void_p)
         self._terminate = _declare(dll, "TerminateJobObject", wintypes.BOOL, ctypes.c_void_p, wintypes.UINT)
         self._query = _declare(dll, "QueryInformationJobObject", wintypes.BOOL, ctypes.c_void_p, ctypes.c_int,
@@ -635,7 +635,7 @@ class JobObject:
         self._handle = create(None, None)
         if not self._handle:
             raise self._refused("CreateJobObjectW")
-        limits = _limits(processes_end_with_it, processes_may_break_away, priority_class)
+        self._limits = limits = _limits(processes_end_with_it, processes_may_break_away, priority_class)
         try:
             if limits.basic.flags and not limit(self._handle, _EXTENDED_LIMITS, ctypes.byref(limits),
                                                 ctypes.sizeof(limits)):
@@ -649,6 +649,11 @@ class JobObject:
     def hold(self, process: int) -> None:
         if not self._assign(self._handle, process):
             raise self._refused("AssignProcessToJobObject")
+
+    def let_its_processes_outlive_it(self) -> None:
+        self._limits.basic.flags &= ~_KILL_ON_JOB_CLOSE
+        if not self._limit(self._handle, _EXTENDED_LIMITS, ctypes.byref(self._limits), ctypes.sizeof(self._limits)):
+            raise self._refused("SetInformationJobObject")
 
     def _refused(self, call: str) -> OSError:
         return OSError(f"{call} failed: Win32 error {_last_error()}")

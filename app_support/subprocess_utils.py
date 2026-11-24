@@ -37,11 +37,12 @@ def run_process_tree(arguments: Sequence[str], *, timeout: float | None,
     return subprocess.CompletedProcess(arguments, child.returncode, stdout, stderr)
 
 
-def tie_to_this_process(child: subprocess.Popen) -> None:
+def tie_to_this_process(child: subprocess.Popen) -> win32.JobObject | None:
     try:
-        win32.a_job_ending_with_this_process(int(child._handle))
+        return win32.a_job_ending_with_this_process(int(child._handle))
     except OSError as refused:
         logger.warning("pid %s is not tied to this process, so it can outlive it: %s", child.pid, refused)
+        return None
 
 
 @contextlib.contextmanager

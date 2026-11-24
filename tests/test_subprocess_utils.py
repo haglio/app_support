@@ -161,6 +161,13 @@ def test_a_child_tied_to_this_process_ends_with_what_it_started_the_moment_this_
     assert eventually(lambda: not tied(), within_s=PROMPTLY_S)
 
 
+def test_a_tied_child_comes_back_with_the_job_that_can_free_it_later(monkeypatch):
+    the_job = object()
+    monkeypatch.setattr(win32, "a_job_ending_with_this_process", lambda process: the_job)
+
+    assert tie_to_this_process(SimpleNamespace(_handle=0x1F4, pid=4321)) is the_job
+
+
 def test_a_child_windows_will_not_tie_is_said_to_be_free_to_outlive_this_process(monkeypatch, caplog):
     def refused(process: int) -> None:
         raise OSError("AssignProcessToJobObject failed")
@@ -168,8 +175,9 @@ def test_a_child_windows_will_not_tie_is_said_to_be_free_to_outlive_this_process
     monkeypatch.setattr(win32, "a_job_ending_with_this_process", refused)
 
     with caplog.at_level(logging.WARNING):
-        tie_to_this_process(SimpleNamespace(_handle=0x1F4, pid=4321))
+        tie = tie_to_this_process(SimpleNamespace(_handle=0x1F4, pid=4321))
 
+    assert tie is None
     assert "4321" in caplog.text
     assert "AssignProcessToJobObject failed" in caplog.text
 
