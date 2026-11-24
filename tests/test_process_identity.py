@@ -234,6 +234,18 @@ class TestNamedExe:
         assert stale.read_bytes() == source.read_bytes()
         assert resources.stamped[stale]["FileDescription"] == "Genau \u2013 Landscape"
 
+    def test_refreshes_a_copy_made_before_the_app_had_its_icon(self, tmp_path: Path):
+        source = _stub_interpreter(tmp_path)
+        resources = _FakeResources()
+        ProcessNamer("Genau", stamp=resources.stamp,
+                     read_field=resources.read_field).named_exe(source, "Landscape")
+        with_icon = ProcessNamer("Genau", icon=_icon(tmp_path), stamp=resources.stamp,
+                                 read_field=resources.read_field)
+
+        with_icon.named_exe(source, "Landscape")
+
+        assert resources.stamp_calls == 2
+
     def test_refreshes_a_copy_whose_label_this_version_no_longer_writes(self, tmp_path: Path):
         source = _stub_interpreter(tmp_path)
         resources = _FakeResources()
