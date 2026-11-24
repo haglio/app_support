@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import NamedTuple
 
 _PUBLISHED_BY_NAMEDTUPLE = frozenset({"_replace", "_asdict", "_fields", "_make", "_field_defaults"})
-_PUBLISHED_BY_MODULE = frozenset({("os", "_exit"), ("sys", "_getframe"), ("sys", "_MEIPASS")})
+_PUBLISHED_BY_MODULE = frozenset({("os", "_exit"), ("sys", "_getframe"), ("sys", "_current_frames"),
+                                  ("sys", "_MEIPASS")})
 _COMPARISONS = frozenset({"__eq__", "__ne__", "__lt__", "__le__", "__gt__", "__ge__"})
 _READS_BY_NAME = frozenset({"getattr", "setattr", "hasattr", "delattr"})
 _SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)

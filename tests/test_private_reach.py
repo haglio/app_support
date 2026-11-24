@@ -88,10 +88,12 @@ class TestWhatTheUnderscoreDoesNotMean:
         "def f(row):\n    return row._field_defaults\n",
         "import os\n\n\ndef f():\n    os._exit(0)\n",
         "import sys\n\n\ndef f():\n    return sys._getframe()\n",
+        "import sys\n\n\ndef f():\n    return sys._current_frames()\n",
         "import sys\n\n\ndef f():\n    return sys._MEIPASS\n",
         "def f(thing):\n    return thing.__dict__\n",
         "def f(thing):\n    return thing._fields_\n",
-    ], ids=["_replace", "_asdict", "_fields", "_make", "_field_defaults", "os._exit", "sys._getframe", "sys._MEIPASS",
+    ], ids=["_replace", "_asdict", "_fields", "_make", "_field_defaults", "os._exit", "sys._getframe",
+            "sys._current_frames", "sys._MEIPASS",
             "a dunder", "a ctypes declaration"])
     def test_a_name_the_standard_library_publishes_is_no_reach(self, source: str):
         assert _reaches(source) == [], source
