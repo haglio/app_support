@@ -9,6 +9,7 @@ the named parent ends that unnamed worker with it.
 from __future__ import annotations
 
 import ctypes
+import hashlib
 import logging
 import re
 import shutil
@@ -212,21 +213,17 @@ class ProcessNamer:
 
     def named_exe(self, python_exe: str | Path, role: str) -> str:
         source = Path(python_exe)
+        icon = self._icon_bytes()
         try:
             target = source.with_name(self.exe_name(source, role))
             description = self.description(role)
-            stamp = self._source_stamp(source, description)
+            stamp = self._source_stamp(source, description, icon)
         except Exception:
             logger.warning("Not naming the %s process", role, exc_info=True)
             return str(python_exe)
 
         if self._is_current(target, stamp):
             return str(target)
-
-        try:
-            icon = self.icon.read_bytes() if self.icon and self.icon.is_file() else None
-        except OSError:
-            icon = None
 
         try:
             # CPython's shutil.copy2 treats a directory destination as "copy into"; copyfile refuses it.
@@ -254,9 +251,17 @@ class ProcessNamer:
         except Exception:
             logger.warning("Not naming this process (%s); launching unnamed", role, exc_info=True)
 
-    def _source_stamp(self, source: Path, description: str) -> str:
+    def _icon_bytes(self) -> bytes | None:
+        try:
+            return self.icon.read_bytes() if self.icon and self.icon.is_file() else None
+        except OSError:
+            return None
+
+    @staticmethod
+    def _source_stamp(source: Path, description: str, icon: bytes | None) -> str:
         stat = source.stat()
-        return f"{stat.st_size}:{int(stat.st_mtime)}:{description}"
+        icon_digest = hashlib.sha256(icon).hexdigest()[:16] if icon is not None else "none"
+        return f"{stat.st_size}:{int(stat.st_mtime)}:{description}:{icon_digest}"
 
     def _is_current(self, copy: Path, stamp: str) -> bool:
         if not copy.is_file():
