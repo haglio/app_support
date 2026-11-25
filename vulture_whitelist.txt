@@ -31,3 +31,9 @@ pytest_plugins  # app_support/{sanitize,clocks}/pytest_plugin.py, read off the m
 no_cov_on_fail  # app_support/coverage_gate.py, set on pytest-cov's own namespace
 
 # --- fields of a format another repo reads (no reader in this package) ---
+
+# --- read only by the apps ---
+virtual  # app_support/loading_screen.py Screens, read by fun_time/overlay_window.py to tell when the monitors change
+
+# --- accepted only until every caller has stopped passing it ---
+covers_every_monitor  # app_support/loading_screen.py MeetingPlace.leave_snapshots, passed by shared_ui's TakingOver.done until it takes this release
