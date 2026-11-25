@@ -85,9 +85,12 @@ every-minutes = 2
 # reason beside it. An entry nothing is reported for any more fails the gate.
 [tool.haglio.dead-code]
 # Fields of records this package writes for the apps: Fun Time and Evolver read
-# a favorite's video and page, Fun Time and Line a run's length and exit.
+# a favorite's video and page, Fun Time and Line a run's length and exit, and
+# Fun Time's screens the monitors' whole box and main monitor.
 unread-dataclass-fields = ["Favorite.page",
-                           "RunRecord.exit_code"]
+                           "RunRecord.exit_code",
+                           "Screens.virtual",
+                           "Screens.primary"]
 
 # The loading screen's window, its Windows calls and its process are not
 # unit-tested, until the window is a module of its own that not-unit-tested names.
