@@ -77,8 +77,7 @@ class MeetingPlace:
     def __post_init__(self) -> None:
         object.__setattr__(self, "_app_window", ReadWhenChanged(self.folder / APP_WINDOW, _app_window_in))
 
-    def leave_snapshots(self, *, opening: bytes, full: bytes, updating: Sequence[bytes], bar: Box,
-                        covers_every_monitor: bool = False) -> None:  # noqa: ARG002
+    def leave_snapshots(self, *, opening: bytes, full: bytes, updating: Sequence[bytes], bar: Box) -> None:
         kept = self._snapshots_kept_in
         kept.mkdir(parents=True, exist_ok=True)
         _replace_whole(kept / OPENING, opening)
