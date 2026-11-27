@@ -127,7 +127,7 @@ class AClockThatRunsOnlyWhileAModuleHangs:
     def _a_module_hangs(self) -> bool:
         try:
             return processes.is_running(int(self.hanging.read_text()))
-        except FileNotFoundError:
+        except (FileNotFoundError, PermissionError):
             return False
 
 
