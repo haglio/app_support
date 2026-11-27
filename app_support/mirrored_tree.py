@@ -23,12 +23,19 @@ def mirrored_path(
     suffix: str,
 ) -> Path | None:
     for root in roots:
-        for spelling in _SPELLINGS_CHEAPEST_FIRST_THE_DISK_LAST:
-            try:
-                relative = spelling(source).relative_to(spelling(root))
-            except ValueError:
-                continue
+        relative = relative_under(source, root)
+        if relative is not None:
             return (Path(mirror_root) / relative).with_suffix(suffix)
+    return None
+
+
+def relative_under(path: Path, root: Path, *, ask_the_disk: bool = True) -> Path | None:
+    spellings = _SPELLINGS_CHEAPEST_FIRST_THE_DISK_LAST if ask_the_disk else _SPELLINGS_CHEAPEST_FIRST_THE_DISK_LAST[:-1]
+    for spelling in spellings:
+        try:
+            return spelling(path).relative_to(spelling(root))
+        except ValueError:
+            continue
     return None
 
 
