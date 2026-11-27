@@ -84,8 +84,10 @@ class PCloudLibrary:
             entry = self._entry_of(wish.path)
             if entry is None:
                 continue
+            last = (entry.size - 1) // self._chunk_bytes
             for start, stop in wish.spans(entry):
-                for index in range(start // self._chunk_bytes, (max(start + 1, stop) - 1) // self._chunk_bytes + 1):
+                for index in range(start // self._chunk_bytes,
+                                   min(last, (max(start + 1, stop) - 1) // self._chunk_bytes) + 1):
                     if (entry, index) not in wanted:
                         wanted.append((entry, index))
         return wanted

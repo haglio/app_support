@@ -133,3 +133,13 @@ def test_a_refusal_from_pcloud_while_planning_is_logged_rather_than_ending_the_p
                            cap_bytes=10 ** 9, leave_free_bytes=0, workers=1) as library:
             library.prefetch("main", [Wish(tmp_path / "library" / "video one.mp4", lambda _entry: [(0, 1)])])
             wait_until(lambda: "Could not plan what to fetch from pCloud next" in caplog.text)
+
+
+def test_a_wish_reaching_past_the_end_of_its_file_fetches_nothing_beyond_its_last_chunk(tmp_path: Path):
+    with FakePCloud({"/library/video one.mp4": _CONTENT}) as cloud, _library(cloud, tmp_path) as library:
+        library.prefetch("main", [Wish(tmp_path / "library" / "video one.mp4", lambda entry: [(16, entry.size * 3)])])
+        library.plan_wished()
+        while library.fetch_one():
+            pass
+
+        assert cloud.downloads == [("/library/video one.mp4", 16, 32), ("/library/video one.mp4", 32, 40)]
