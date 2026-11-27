@@ -269,6 +269,28 @@ class TestTheComputersTerms:
             the_computers_terms()
 
 
+class TestWhatTheHookSays:
+    @pytest.fixture(autouse=True)
+    def _inside_a_checkout(self, tmp_path: Path, monkeypatch):
+        checkout = tmp_path / "checkout"
+        checkout.mkdir()
+        git("init", "-b", "main", cwd=checkout)
+        monkeypatch.chdir(checkout)
+
+    def test_a_computer_with_no_haglio_settings_lets_the_commit_through_and_says_so(self, computer, capsys):
+        assert main(["--staged"]) == 0
+        assert "no blocklist on this computer" in capsys.readouterr().err
+
+    def test_a_computer_whose_list_cannot_be_read_refuses_the_commit_and_says_where_it_looked(
+            self, computer, capsys):
+        list_it_should_read = computer.name_its_library() / "app_data" / "sanitize" / "blocklist.txt"
+
+        assert main(["--staged"]) == 1
+        said = capsys.readouterr().err
+        assert str(list_it_should_read) in said
+        assert "pCloud" in said
+
+
 class TestTheHooksMakeGitRefuseTheCommit:
     TERM = "nonceterm"
 

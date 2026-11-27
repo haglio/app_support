@@ -16,6 +16,7 @@
 _the_process_is_given_back  # tests/conftest.py
 _the_updaters_log_reaches_caplog_again  # tests/conftest.py
 _on_a_computer_of_its_own  # tests/test_sanitize_guard.py, tests/test_sanitize_plugin.py
+_inside_a_checkout  # tests/test_sanitize_guard.py
 
 # --- pytest hooks (called by pytest, never by our code) ---
 pytest_collection_modifyitems  # app_support/coverage_gate.py, app_support/repo_checks.py
