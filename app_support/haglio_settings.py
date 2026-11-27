@@ -52,12 +52,17 @@ def _as_read(path: Path) -> dict[str, Any]:
     return EXAMPLE if read is None else read
 
 
-def _read_or_the_example(path: Path) -> dict[str, Any]:
+def _read_if_there(path: Path) -> dict[str, Any] | None:
     try:
         text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
-        return EXAMPLE
+        return None
     return json.loads(text)
+
+
+def _read_or_the_example(path: Path) -> dict[str, Any]:
+    read = _read_if_there(path)
+    return EXAMPLE if read is None else read
 
 
 def load() -> dict[str, Any]:
@@ -71,25 +76,23 @@ class MissingSetting(LookupError):
         super().__init__(f"the Haglio settings in {path} have no {' -> '.join(keys)}")
 
 
-def value(*keys: str) -> Any:
-    here: Any = _as_read(settings_file())
+def _looked_up(settings: Any, keys: tuple[str, ...], path: Path) -> Any:
+    here = settings
     for depth, key in enumerate(keys, start=1):
         if not isinstance(here, dict) or key not in here:
-            raise MissingSetting(keys[:depth], settings_file())
+            raise MissingSetting(keys[:depth], path)
         here = here[key]
     return copy.deepcopy(here)
 
 
+def value(*keys: str) -> Any:
+    return _looked_up(_as_read(settings_file()), keys, settings_file())
+
+
 def the_computers_library() -> Path | None:
     own = the_computers_own_file()
-    try:
-        text = own.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return None
-    settings = json.loads(text)
-    if not isinstance(settings, dict) or "library_root" not in settings:
-        raise MissingSetting(("library_root",), own)
-    return Path(settings["library_root"])
+    settings = _read_if_there(own)
+    return None if settings is None else Path(_looked_up(settings, ("library_root",), own))
 
 
 def project_roots() -> tuple[Path, ...]:
