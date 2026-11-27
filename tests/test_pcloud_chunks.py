@@ -104,3 +104,9 @@ def test_trimming_also_leaves_the_disk_the_free_space_asked_for_whatever_the_cap
     store.trim(cap_bytes=100, keeping=set(), leave_free_bytes=20)
 
     assert [store.has(key, 0) for key in ("1-1", "2-2", "3-3")] == [False, False, True]
+
+
+def test_trimming_a_store_that_has_held_nothing_yet_does_nothing(tmp_path: Path):
+    ChunkStore(tmp_path / "not made yet").trim(cap_bytes=0, keeping=set())
+
+    assert not (tmp_path / "not made yet").exists()

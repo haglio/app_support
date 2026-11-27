@@ -60,6 +60,8 @@ class ChunkStore:
 
     def trim(self, *, cap_bytes: int, keeping: set[str], leave_free_bytes: int = 0) -> None:
         held = [(path.stat(), path) for path in self._folder.glob("*/*") if path.suffix != ".partial"]
+        if not held:
+            return
         total = sum(stat.st_size for stat, _ in held)
         allowed = min(cap_bytes, total + self._free_bytes() - leave_free_bytes)
         for stat, path in sorted(held, key=lambda found: found[0].st_mtime):
