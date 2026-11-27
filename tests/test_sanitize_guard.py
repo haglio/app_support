@@ -7,9 +7,9 @@ import sys
 from pathlib import Path
 
 import pytest
-from armed_guard import arm_where_the_guard_looks
 from production_machine import git
 
+from app_support import haglio_settings
 from app_support.sanitize import (
     blocklist_path,
     find_violations,
@@ -206,61 +206,44 @@ class TestScanFiles:
         assert all("badterm" not in repr(v) for v in found)
 
 
-def _checkout(family: Path, name: str) -> Path:
-    repo = family / name
-    repo.mkdir(parents=True)
-    git("init", "-b", "main", cwd=repo)
-    git("config", "user.email", "guard@example.test", cwd=repo)
-    git("config", "user.name", "Guard Test", cwd=repo)
-    return repo
+class TestWhereTheOneListIs:
+    def test_it_is_in_the_library_the_computers_haglio_settings_name_so_every_computer_reads_one_copy(
+            self, computer):
+        library = computer.name_its_library()
 
+        assert blocklist_path() == library / "app_data" / "sanitize" / "blocklist.txt"
 
-class TestBlocklistPath:
-    def test_reads_the_one_list_beside_the_checkouts_in_no_repo_where_committing_it_would_publish_its_terms(
-            self, tmp_path: Path):
-        family = tmp_path / "family"
-        repo = _checkout(family, "repo")
-        shared = family / ".sanitize" / "blocklist.txt"
-        shared.parent.mkdir()
-        shared.write_text("alpha\n", encoding="utf-8")
-        assert blocklist_path(repo) == shared.resolve()
+    def test_a_computer_with_no_haglio_settings_like_a_public_clone_or_ci_has_none(self, computer):
+        assert blocklist_path() is None
 
-    def test_a_copy_inside_a_checkout_is_ignored_so_the_lists_cannot_drift_apart(self, tmp_path: Path):
-        family = tmp_path / "family"
-        repo = _checkout(family, "repo")
-        (repo / ".sanitize").mkdir()
-        (repo / ".sanitize" / "blocklist.txt").write_text("stale\n", encoding="utf-8")
-        assert blocklist_path(repo).parent.parent == family.resolve()
+    def test_a_suite_pointing_the_apps_at_made_up_settings_still_reads_the_computers_own_list(
+            self, computer, tmp_path, monkeypatch):
+        library = computer.name_its_library()
+        made_up = tmp_path / "made_up.json"
+        made_up.write_text('{"library_root": "D:/made-up"}', encoding="utf-8")
+        monkeypatch.setenv(haglio_settings.SETTINGS_ENV, str(made_up))
 
-    def test_finds_it_from_a_worktree_too(self, tmp_path: Path):
-        family = tmp_path / "family"
-        primary = _checkout(family, "repo")
-        shared = family / ".sanitize" / "blocklist.txt"
-        shared.parent.mkdir()
-        shared.write_text("alpha\n", encoding="utf-8")
-        (primary / "README.md").write_text("hi\n", encoding="utf-8")
-        git("add", "README.md", cwd=primary)
-        git("commit", "-m", "seed", cwd=primary)
+        assert blocklist_path() == library / "app_data" / "sanitize" / "blocklist.txt"
 
-        tree = primary / ".claude" / "worktrees" / "side"
-        git("worktree", "add", str(tree), "-b", "side", cwd=primary)
-        assert blocklist_path(tree) == shared.resolve()
+    def test_settings_that_name_no_library_are_refused_rather_than_read_as_no_list(self, computer):
+        computer.name_its_library({"microphone": "Example microphone"})
 
-    def test_a_machine_with_no_blocklist_still_names_where_one_would_go(self, tmp_path: Path):
-        clone = tmp_path / "clone"
-        clone.mkdir()
-        git("init", "-b", "main", cwd=clone)
-        assert not blocklist_path(clone).exists()
+        with pytest.raises(haglio_settings.MissingSetting):
+            blocklist_path()
 
 
 class TestTheHooksMakeGitRefuseTheCommit:
     TERM = "nonceterm"
 
+    @pytest.fixture(autouse=True)
+    def _on_a_computer_of_its_own(self, computer):
+        self.computer = computer
+
     def _repo(self, tmp_path: Path, terms: str | None) -> Path:
         repo = tmp_path / "family" / "repo"
         repo.mkdir(parents=True)
         if terms is not None:
-            arm_where_the_guard_looks(repo, terms)
+            self.computer.arm(terms)
         here = Path(__file__).resolve().parent.parent
         for rel in ("tools/githooks/pre-commit", "tools/githooks/commit-msg"):
             dest = repo / rel
@@ -344,6 +327,40 @@ class TestTheHooksMakeGitRefuseTheCommit:
         done = self._commit(repo)
         assert done.returncode == 0
         assert "no blocklist" in done.stderr
+
+    def test_a_computer_whose_one_list_cannot_be_read_refuses_the_commit_rather_than_let_any_word_through(
+            self, tmp_path: Path):
+        repo = self._repo(tmp_path, None)
+        list_it_should_read = self.computer.name_its_library() / "app_data" / "sanitize" / "blocklist.txt"
+        (repo / "notes.md").write_text("perfectly clean\n", encoding="utf-8")
+        git("add", ".", cwd=repo)
+
+        done = self._commit(repo)
+
+        assert done.returncode != 0
+        assert str(list_it_should_read) in done.stderr
+        assert "pCloud" in done.stderr
+
+    def test_an_empty_list_is_refused_since_a_half_synced_file_reads_as_one(self, tmp_path: Path):
+        repo = self._repo(tmp_path, "# nothing but a comment\n")
+        (repo / "notes.md").write_text("perfectly clean\n", encoding="utf-8")
+        git("add", ".", cwd=repo)
+
+        done = self._commit(repo)
+
+        assert done.returncode != 0
+        assert "holds no words" in done.stderr
+
+    def test_settings_that_name_no_library_refuse_the_commit(self, tmp_path: Path):
+        repo = self._repo(tmp_path, None)
+        self.computer.name_its_library({"microphone": "Example microphone"})
+        (repo / "notes.md").write_text("perfectly clean\n", encoding="utf-8")
+        git("add", ".", cwd=repo)
+
+        done = self._commit(repo)
+
+        assert done.returncode != 0
+        assert "library_root" in done.stderr
 
     def _shadow_app_support_so_the_import_fails_everywhere(self, tmp_path: Path) -> Path:
         shadow = tmp_path / "shadow"

@@ -32,10 +32,13 @@ EXAMPLE: dict[str, Any] = {
 }
 
 
+def the_computers_own_file() -> Path:
+    return Path.home() / ".haglio" / "settings.json"
+
+
 def settings_file() -> Path:
     named = os.environ.get(SETTINGS_ENV)
-    outside_the_library_whose_place_it_names = Path.home() / ".haglio" / "settings.json"
-    return Path(named) if named else outside_the_library_whose_place_it_names
+    return Path(named) if named else the_computers_own_file()
 
 
 _readers: dict[Path, ReadWhenChanged[dict[str, Any]]] = {}
@@ -75,6 +78,18 @@ def value(*keys: str) -> Any:
             raise MissingSetting(keys[:depth], settings_file())
         here = here[key]
     return copy.deepcopy(here)
+
+
+def the_computers_library() -> Path | None:
+    own = the_computers_own_file()
+    try:
+        text = own.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    settings = json.loads(text)
+    if not isinstance(settings, dict) or "library_root" not in settings:
+        raise MissingSetting(("library_root",), own)
+    return Path(settings["library_root"])
 
 
 def project_roots() -> tuple[Path, ...]:

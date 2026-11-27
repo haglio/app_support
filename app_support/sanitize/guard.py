@@ -10,12 +10,12 @@ from dataclasses import dataclass, field
 from functools import cache
 from pathlib import Path
 
-from app_support.siblings import NOT_A_CHECKOUT_PREFIX, primary_checkout_of
+from app_support import haglio_settings
 
 _MAX_EXCERPT = 160
 _MOST_LISTED = 20
 _LONGEST_WORD_KEPT_WHOLE = 3
-_ONE_LIST_FOR_THE_MACHINE = Path(NOT_A_CHECKOUT_PREFIX + "sanitize") / "blocklist.txt"
+_WHERE_IN_THE_LIBRARY = Path("app_data") / "sanitize" / "blocklist.txt"
 _SEPARATOR = r"[\s\-_.]*"
 _NAME_JOINERS = re.compile(r"[\s\-_.]+")
 _INFLECTION = r"(?:'?s|es|ed|ing)?"
@@ -125,9 +125,29 @@ def _violations_in(text: str, matchers: Sequence[_Matcher], path: str) -> list[V
     return out
 
 
-def blocklist_path(repo: Path) -> Path:
-    beside_the_checkouts_in_none_of_them = primary_checkout_of(repo).resolve().parent
-    return beside_the_checkouts_in_none_of_them / _ONE_LIST_FOR_THE_MACHINE
+def blocklist_path() -> Path | None:
+    library = haglio_settings.the_computers_library()
+    return None if library is None else library / _WHERE_IN_THE_LIBRARY
+
+
+class ListUnreadable(Exception):
+    pass
+
+
+def the_computers_terms() -> list[str] | None:
+    try:
+        path = blocklist_path()
+    except (haglio_settings.MissingSetting, ValueError) as unusable:
+        raise ListUnreadable(f"the Haglio settings do not say where the library is: {unusable}") from unusable
+    if path is None:
+        return None
+    try:
+        terms = load_blocklist(path)
+    except OSError as unreadable:
+        raise ListUnreadable(f"the blocklist at {path} cannot be read ({unreadable})") from unreadable
+    if not terms:
+        raise ListUnreadable(f"the blocklist at {path} holds no words")
+    return terms
 
 
 def load_blocklist(path: Path) -> list[str]:
@@ -212,6 +232,9 @@ def _staged_text(repo: Path, rel: str) -> str | None:
 
 
 THE_COMMAND_EVERY_REPOS_HOOKS_RUN = "app_support.sanitize"
+EVERY_COMPUTER_READS_ONE_LIST = (
+    "Every computer reads the one list in the library its Haglio settings name, so a word added on one\n"
+    "is refused on all of them. If pCloud is not running, start it and try again.")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -232,10 +255,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         repo = _repo_root()
     except (OSError, subprocess.SubprocessError):
         return 0
-    path = blocklist_path(repo)
-    terms = load_blocklist(path) if path.exists() else []
-    if not terms:
-        print(f"sanitize: no blocklist at {path}; nothing enforced", file=sys.stderr)
+    try:
+        terms = the_computers_terms()
+    except ListUnreadable as unreadable:
+        print(f"sanitize: commit refused: {unreadable}.\n{EVERY_COMPUTER_READS_ONE_LIST}", file=sys.stderr)
+        return 1
+    if terms is None:
+        print(f"sanitize: no blocklist on this computer, since it has no {haglio_settings.the_computers_own_file()};"
+              " nothing enforced", file=sys.stderr)
         return 0
 
     if args.message:
