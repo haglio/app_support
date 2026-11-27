@@ -11,10 +11,12 @@ from production_machine import git
 
 from app_support import haglio_settings
 from app_support.sanitize import (
+    ListUnreadable,
     blocklist_path,
     find_violations,
     load_blocklist,
     scan_files,
+    the_computers_terms,
 )
 from app_support.sanitize.guard import Violation, _fold, _matcher, build_parser, main
 
@@ -230,6 +232,41 @@ class TestWhereTheOneListIs:
 
         with pytest.raises(haglio_settings.MissingSetting):
             blocklist_path()
+
+
+class TestTheComputersTerms:
+    def test_a_computer_with_no_haglio_settings_keeps_no_list(self, computer):
+        assert the_computers_terms() is None
+
+    def test_the_terms_come_from_the_one_list_in_the_library(self, computer):
+        computer.arm("# a comment\nalpha\n\nbeta gamma\n")
+
+        assert the_computers_terms() == ["alpha", "beta gamma"]
+
+    def test_a_list_the_settings_point_at_but_that_is_not_there_is_refused(self, computer):
+        computer.name_its_library()
+
+        with pytest.raises(ListUnreadable, match="cannot be read"):
+            the_computers_terms()
+
+    def test_a_list_holding_no_words_is_refused(self, computer):
+        computer.arm("# only a comment\n")
+
+        with pytest.raises(ListUnreadable, match="holds no words"):
+            the_computers_terms()
+
+    def test_settings_that_name_no_library_are_refused(self, computer):
+        computer.name_its_library({"microphone": "Example microphone"})
+
+        with pytest.raises(ListUnreadable, match="library_root"):
+            the_computers_terms()
+
+    def test_settings_that_are_not_json_are_refused(self, computer):
+        (computer.home / ".haglio").mkdir()
+        (computer.home / ".haglio" / "settings.json").write_text("{not json", encoding="utf-8")
+
+        with pytest.raises(ListUnreadable, match="do not say where the library is"):
+            the_computers_terms()
 
 
 class TestTheHooksMakeGitRefuseTheCommit:
