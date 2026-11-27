@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from urllib.parse import parse_qsl
 
 import pytest
 
@@ -62,3 +63,38 @@ def test_a_videos_running_time_comes_with_its_listing_as_pcloud_reads_it_and_a_f
     listed = PCloud("api.example.test", auth="made-up-token", get=get).list_folder("/library")
 
     assert [listed["video one.mp4"].duration_s, listed["notes.json"].duration_s] == [5.03, None]
+
+
+def test_signing_in_posts_pclouds_form_for_a_two_year_login_and_hands_back_the_login():
+    posted: list[tuple[str, dict]] = []
+
+    def post(url: str, body: bytes) -> bytes:
+        posted.append((url, dict(parse_qsl(body.decode("utf-8")))))
+        return json.dumps({"result": 0, "auth": "made-up-login"}).encode("utf-8")
+
+    auth = PCloud("api.example.test", auth="", post=post).login("jane@example.test", "made up + secret", code="654321")
+
+    assert (auth, posted) == ("made-up-login", [("https://api.example.test/login", {
+        "getauth": "1", "username": "jane@example.test", "password": "made up + secret", "authexpire": "63072000",
+        "device": "Haglio", "deviceid": "haglio-pc", "os": "4", "emailtfacode": "654321", "code": "654321",
+        "trusted": "1", "trustdevice": "1", "timeformat": "timestamp"})])
+
+
+def test_a_refusal_that_opens_a_second_factor_challenge_carries_its_token_and_whether_other_devices_can_send_a_code():
+    get, _ = _answering({"result": 2297, "error": "Two factor required.", "token": "made-up-challenge", "hasdevices": True})
+
+    with pytest.raises(PCloudRefused) as refused:
+        PCloud("api.example.test", auth="", get=get).email_login_code("jane@example.test")
+
+    assert (refused.value.token, refused.value.has_devices) == ("made-up-challenge", True)
+
+
+def test_a_second_factors_code_is_sent_by_text_message_or_to_the_accounts_other_devices_as_asked():
+    get, asked = _answering({"result": 0})
+    pcloud = PCloud("api.example.test", auth="", get=get)
+
+    pcloud.send_second_factor_code("made-up-challenge", by_sms=True)
+    pcloud.send_second_factor_code("made-up-challenge", by_sms=False)
+
+    assert asked == ["https://api.example.test/tfa_sendcodeviasms?token=made-up-challenge&timeformat=timestamp",
+                     "https://api.example.test/tfa_sendcodeviasysnotification?token=made-up-challenge&timeformat=timestamp"]
