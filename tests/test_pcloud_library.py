@@ -143,3 +143,12 @@ def test_a_wish_reaching_past_the_end_of_its_file_fetches_nothing_beyond_its_las
             pass
 
         assert cloud.downloads == [("/library/video one.mp4", 16, 32), ("/library/video one.mp4", 32, 40)]
+
+
+def test_asked_for_on_a_computer_never_signed_in_it_opens_the_sign_in(tmp_path: Path):
+    opened: list[str] = []
+
+    from_settings(environ={PLAY_FROM_PCLOUD: "1"}, settings=_settings(tmp_path), login_file=tmp_path / "never written.json",
+                  when_not_signed_in=lambda: opened.append("the sign-in"))
+
+    assert opened == ["the sign-in"]

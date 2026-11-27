@@ -115,7 +115,8 @@ class PCloudLibrary:
 
 
 def from_settings(*, environ: Mapping[str, str] = os.environ, settings: dict | None = None,
-                  login_file: Path = LOGIN_FILE) -> PCloudLibrary | None:
+                  login_file: Path = LOGIN_FILE,
+                  when_not_signed_in: Callable[[], None] = lambda: None) -> PCloudLibrary | None:
     settings = haglio_settings.load() if settings is None else settings
     asked = settings.get("pcloud", {})
     if environ.get(PLAY_FROM_PCLOUD) != "1" and not asked.get("play_from_pcloud"):
@@ -124,6 +125,7 @@ def from_settings(*, environ: Mapping[str, str] = os.environ, settings: dict | N
         login = json.loads(login_file.read_text(encoding="utf-8"))
     except FileNotFoundError:
         logger.warning("Playing from pCloud was asked for, but this computer has not signed in to pCloud")
+        when_not_signed_in()
         return None
     store = ChunkStore(Path(asked.get("cache_folder") or Path.home() / ".haglio" / "pcloud_cache"))
     fetcher = Fetcher(PCloud(login["api_host"], auth=login["auth"]), store)
