@@ -1,0 +1,92 @@
+from __future__ import annotations
+
+import logging
+import threading
+from collections import OrderedDict
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import quote, unquote, urlparse
+
+from app_support.pcloud.api import PCloudRefused
+from app_support.pcloud.fetching import CHUNK_BYTES, Entry, Fetcher, NotInPCloud
+from app_support.pcloud.spans import asked_span
+from app_support.threading_utils import start_daemon_thread
+
+logger = logging.getLogger(__name__)
+
+READ_AHEAD_CHUNKS = 8
+FILES_READ_AHEAD_AT_ONCE = 8
+
+
+class LoopbackServer:
+    def __init__(self, fetcher: Fetcher, *, chunk_bytes: int = CHUNK_BYTES) -> None:
+        self._fetcher, self._chunk_bytes = fetcher, chunk_bytes
+        self._read_ahead: OrderedDict[str, None] = OrderedDict()
+        self._lock = threading.Lock()
+        self._server = ThreadingHTTPServer(("127.0.0.1", 0), _handler_for(self))
+        self._server.daemon_threads = True
+
+    def __enter__(self) -> LoopbackServer:
+        start_daemon_thread(target=self._server.serve_forever, kwargs={"poll_interval": 0.05}, name="pcloud-loopback")
+        return self
+
+    def __exit__(self, *_exc) -> None:
+        self._server.shutdown()
+        self._server.server_close()
+
+    def url_for(self, cloud_path: str) -> str:
+        return f"http://127.0.0.1:{self._server.server_port}/{quote(cloud_path.lstrip('/'))}"
+
+    def answer(self, handler: BaseHTTPRequestHandler, cloud_path: str) -> None:
+        try:
+            entry = self._fetcher.entry(cloud_path)
+        except NotInPCloud:
+            handler.send_error(404, "pCloud has no such file")
+            return
+        except PCloudRefused as refused:
+            handler.send_error(502, str(refused))
+            return
+        asked = handler.headers.get("Range")
+        start, stop = asked_span(asked, entry.size)
+        handler.send_response(206 if asked else 200)
+        handler.send_header("Accept-Ranges", "bytes")
+        handler.send_header("Content-Length", str(stop - start))
+        if asked:
+            handler.send_header("Content-Range", f"bytes {start}-{stop - 1}/{entry.size}")
+        handler.end_headers()
+        for index in range(start // self._chunk_bytes, (stop - 1) // self._chunk_bytes + 1):
+            begins = index * self._chunk_bytes
+            self._plan_what_follows(entry, index)
+            try:
+                data = self._fetcher.chunk(entry, index)
+            except OSError as failed:
+                logger.warning("Could not fetch %s for its player: %s", entry.path, failed)
+                return
+            try:
+                handler.wfile.write(data[max(start, begins) - begins:min(stop, begins + len(data)) - begins])
+            except OSError:
+                return
+
+
+    def _plan_what_follows(self, entry: Entry, index: int) -> None:
+        last = (entry.size - 1) // self._chunk_bytes
+        owner = f"reading {entry.key}"
+        self._fetcher.plan(owner, [(entry, following) for following in range(index + 1, min(last, index + READ_AHEAD_CHUNKS) + 1)],
+                           being_read=True)
+        with self._lock:
+            self._read_ahead[owner] = None
+            self._read_ahead.move_to_end(owner)
+            dropped = [self._read_ahead.popitem(last=False)[0]
+                       for _ in range(len(self._read_ahead) - FILES_READ_AHEAD_AT_ONCE)]
+        for stale in dropped:
+            self._fetcher.plan(stale, [])
+
+
+def _handler_for(server: LoopbackServer) -> type[BaseHTTPRequestHandler]:
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            server.answer(self, "/" + unquote(urlparse(self.path).path.lstrip("/")))
+
+        def log_message(self, *_args) -> None:
+            pass
+
+    return Handler

@@ -31,8 +31,9 @@ pytest_plugins  # app_support/{sanitize,clocks}/pytest_plugin.py, read off the m
 no_cov_on_fail  # app_support/coverage_gate.py, set on pytest-cov's own namespace
 
 # --- the standard library's http.server (it calls these by name, never our code) ---
-do_GET  # app_support/pcloud/testing.py, BaseHTTPRequestHandler calls it for each GET
-log_message  # app_support/pcloud/testing.py, BaseHTTPRequestHandler calls it to log each request
+do_GET  # app_support/pcloud/server.py and testing.py, BaseHTTPRequestHandler calls it for each GET
+log_message  # app_support/pcloud/server.py and testing.py, BaseHTTPRequestHandler calls it to log each request
+daemon_threads  # app_support/pcloud/server.py, ThreadingHTTPServer reads it as each request's thread starts
 
 # --- fields of a format another repo reads (no reader in this package) ---
 
