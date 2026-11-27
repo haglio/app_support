@@ -152,3 +152,16 @@ def test_asked_for_on_a_computer_never_signed_in_it_opens_the_sign_in(tmp_path: 
                   when_not_signed_in=lambda: opened.append("the sign-in"))
 
     assert opened == ["the sign-in"]
+
+
+def test_a_file_a_program_reads_whole_from_the_disk_is_copied_into_the_cache_once_and_read_there(tmp_path: Path):
+    with FakePCloud({"/library/video one.mp4": _CONTENT}) as cloud, _library(cloud, tmp_path) as library:
+        copies = [library.local_copy(tmp_path / "library" / "video one.mp4") for _ in range(2)]
+
+        assert ([copy.read_bytes() for copy in copies], copies[0] == copies[1], len(cloud.downloads)) == (
+            [_CONTENT, _CONTENT], True, 3)
+
+
+def test_a_file_kept_nowhere_in_pcloud_is_read_where_it_is(tmp_path: Path):
+    with FakePCloud({"/library/video one.mp4": _CONTENT}) as cloud, _library(cloud, tmp_path) as library:
+        assert library.local_copy(tmp_path / "elsewhere" / "video.mp4") == tmp_path / "elsewhere" / "video.mp4"

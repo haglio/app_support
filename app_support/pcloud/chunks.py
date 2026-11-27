@@ -37,6 +37,9 @@ class ChunkStore:
         self._folder, self._now, self._remove = folder, now, remove
         self._free_bytes = free_bytes or (lambda: shutil.disk_usage(folder).free)
 
+    def whole(self, key: str, suffix: str) -> Path:
+        return self._folder / key / f"whole{suffix}"
+
     def has(self, key: str, index: int) -> bool:
         return self._kept(key, index).is_file()
 

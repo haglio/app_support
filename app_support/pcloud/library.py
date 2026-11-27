@@ -62,6 +62,20 @@ class PCloudLibrary:
         cloud = self._places.cloud_path_of(path)
         return str(path) if cloud is None else self._server.url_for(cloud)
 
+    def local_copy(self, path: Path) -> Path:
+        cloud = self._places.cloud_path_of(path)
+        if cloud is None:
+            return path
+        entry = self._fetcher.entry(cloud)
+        whole = self._store.whole(entry.key, path.suffix)
+        if not whole.is_file():
+            last = (entry.size - 1) // self._chunk_bytes
+            partial = whole.with_name(f"{whole.name}.{os.getpid()}.partial")
+            partial.parent.mkdir(parents=True, exist_ok=True)
+            partial.write_bytes(b"".join(self._fetcher.chunk(entry, index) for index in range(last + 1)))
+            os.replace(partial, whole)
+        return whole
+
     def prefetch(self, owner: str, wishes: Sequence[Wish]) -> None:
         with self._lock:
             self._wished[owner] = list(wishes)
