@@ -146,3 +146,20 @@ def test_a_player_that_leaves_partway_through_this_computers_copy_ends_its_answe
         server.answer(player, "/library/video two.mp4")
 
         assert [len(piece) for piece in player.written] == [1024 * 1024]
+
+
+def test_each_answer_is_logged_with_how_much_came_from_the_cache_how_much_was_fetched_and_how_soon_its_first_byte_went(
+        tmp_path: Path, caplog: pytest.LogCaptureFixture):
+    caplog.set_level("INFO", logger="app_support.pcloud.server")
+    half = 512 * 1024
+    moments = iter([100.0, 100.25, 200.0, 200.01])
+    with FakePCloud({_VIDEO: bytes(2 * half)}) as cloud, LoopbackServer(
+            Fetcher(PCloud(cloud.origin, auth=cloud.auth), ChunkStore(tmp_path), chunk_bytes=half),
+            chunk_bytes=half, now=lambda: next(moments)) as server:
+        _get(server.url_for(_VIDEO), {"Range": f"bytes=0-{half - 1}"})
+        _get(server.url_for(_VIDEO), {"Range": f"bytes=0-{2 * half - 1}"})
+
+    assert [record.getMessage() for record in caplog.records] == [
+        "pCloud gave video one.mp4 bytes 0-524287: 0.0 MB from the cache, 0.5 MB fetched, the first byte after 250 ms",
+        "pCloud gave video one.mp4 bytes 0-1048575: 0.5 MB from the cache, 0.5 MB fetched, the first byte after 10 ms",
+    ]

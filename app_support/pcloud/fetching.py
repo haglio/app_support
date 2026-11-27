@@ -77,6 +77,9 @@ class Fetcher:
             self._listings[folder] = (listed, self._now())
         return listed
 
+    def holds(self, entry: Entry, index: int) -> bool:
+        return self._store.has(entry.key, index)
+
     def chunk(self, entry: Entry, index: int) -> bytes:
         while not self._store.has(entry.key, index) and not self._fetched_unless_another_writer_has_it(entry, index):
             self._sleep(ANOTHER_WRITERS_CHUNK_IS_LOOKED_FOR_EVERY_S)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from collections import OrderedDict
 from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -18,12 +19,14 @@ logger = logging.getLogger(__name__)
 READ_AHEAD_CHUNKS = 8
 FILES_READ_AHEAD_AT_ONCE = 8
 _A_LOCAL_COPY_IS_SENT_THIS_MUCH_AT_A_TIME = 1024 * 1024
+_MEGABYTE = 1024 * 1024
 
 
 class LoopbackServer:
     def __init__(self, fetcher: Fetcher, *, chunk_bytes: int = CHUNK_BYTES,
-                 local_copy_of: Callable[[str], Path | None] = lambda _cloud_path: None) -> None:
-        self._fetcher, self._chunk_bytes, self._local_copy_of = fetcher, chunk_bytes, local_copy_of
+                 local_copy_of: Callable[[str], Path | None] = lambda _cloud_path: None,
+                 now: Callable[[], float] = time.monotonic) -> None:
+        self._fetcher, self._chunk_bytes, self._local_copy_of, self._now = fetcher, chunk_bytes, local_copy_of, now
         self._read_ahead: OrderedDict[str, None] = OrderedDict()
         self._lock = threading.Lock()
         self._server = ThreadingHTTPServer(("127.0.0.1", 0), _handler_for(self))
@@ -41,6 +44,7 @@ class LoopbackServer:
         return f"http://127.0.0.1:{self._server.server_port}/{quote(cloud_path.lstrip('/'))}"
 
     def answer(self, handler: BaseHTTPRequestHandler, cloud_path: str) -> None:
+        began = self._now()
         try:
             entry = self._fetcher.entry(cloud_path)
         except NotInPCloud:
@@ -50,18 +54,28 @@ class LoopbackServer:
             handler.send_error(502, str(refused))
             return
         start, stop = _begun(handler, entry.size)
+        sent = {True: 0, False: 0}
+        first_byte_after_s = None
         for index in range(start // self._chunk_bytes, (stop - 1) // self._chunk_bytes + 1):
             begins = index * self._chunk_bytes
             self._plan_what_follows(entry, index)
+            held = self._fetcher.holds(entry, index)
             try:
                 data = self._fetcher.chunk(entry, index)
             except OSError as failed:
                 logger.warning("Could not fetch %s for its player: %s", entry.path, failed)
                 return
+            piece = data[max(start, begins) - begins:min(stop, begins + len(data)) - begins]
             try:
-                handler.wfile.write(data[max(start, begins) - begins:min(stop, begins + len(data)) - begins])
+                handler.wfile.write(piece)
             except OSError:
                 return
+            if first_byte_after_s is None:
+                first_byte_after_s = self._now() - began
+            sent[held] += len(piece)
+        logger.info("pCloud gave %s bytes %d-%d: %.1f MB from the cache, %.1f MB fetched, the first byte after %d ms",
+                    entry.path.rsplit("/", 1)[-1], start, stop - 1, sent[True] / _MEGABYTE, sent[False] / _MEGABYTE,
+                    round((first_byte_after_s or 0.0) * 1000))
 
     @staticmethod
     def _answer_from_this_computer(handler: BaseHTTPRequestHandler, local: Path | None) -> None:
