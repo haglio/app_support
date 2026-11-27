@@ -3,7 +3,9 @@ from __future__ import annotations
 import logging
 import threading
 from collections import OrderedDict
+from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import quote, unquote, urlparse
 
 from app_support.pcloud.api import PCloudRefused
@@ -15,11 +17,13 @@ logger = logging.getLogger(__name__)
 
 READ_AHEAD_CHUNKS = 8
 FILES_READ_AHEAD_AT_ONCE = 8
+_A_LOCAL_COPY_IS_SENT_THIS_MUCH_AT_A_TIME = 1024 * 1024
 
 
 class LoopbackServer:
-    def __init__(self, fetcher: Fetcher, *, chunk_bytes: int = CHUNK_BYTES) -> None:
-        self._fetcher, self._chunk_bytes = fetcher, chunk_bytes
+    def __init__(self, fetcher: Fetcher, *, chunk_bytes: int = CHUNK_BYTES,
+                 local_copy_of: Callable[[str], Path | None] = lambda _cloud_path: None) -> None:
+        self._fetcher, self._chunk_bytes, self._local_copy_of = fetcher, chunk_bytes, local_copy_of
         self._read_ahead: OrderedDict[str, None] = OrderedDict()
         self._lock = threading.Lock()
         self._server = ThreadingHTTPServer(("127.0.0.1", 0), _handler_for(self))
@@ -40,19 +44,12 @@ class LoopbackServer:
         try:
             entry = self._fetcher.entry(cloud_path)
         except NotInPCloud:
-            handler.send_error(404, "pCloud has no such file")
+            self._answer_from_this_computer(handler, self._local_copy_of(cloud_path))
             return
         except PCloudRefused as refused:
             handler.send_error(502, str(refused))
             return
-        asked = handler.headers.get("Range")
-        start, stop = asked_span(asked, entry.size)
-        handler.send_response(206 if asked else 200)
-        handler.send_header("Accept-Ranges", "bytes")
-        handler.send_header("Content-Length", str(stop - start))
-        if asked:
-            handler.send_header("Content-Range", f"bytes {start}-{stop - 1}/{entry.size}")
-        handler.end_headers()
+        start, stop = _begun(handler, entry.size)
         for index in range(start // self._chunk_bytes, (stop - 1) // self._chunk_bytes + 1):
             begins = index * self._chunk_bytes
             self._plan_what_follows(entry, index)
@@ -66,6 +63,21 @@ class LoopbackServer:
             except OSError:
                 return
 
+    @staticmethod
+    def _answer_from_this_computer(handler: BaseHTTPRequestHandler, local: Path | None) -> None:
+        if local is None or not local.is_file():
+            handler.send_error(404, "pCloud has no such file")
+            return
+        start, stop = _begun(handler, local.stat().st_size)
+        with local.open("rb") as file:
+            file.seek(start)
+            while start < stop:
+                piece = file.read(min(_A_LOCAL_COPY_IS_SENT_THIS_MUCH_AT_A_TIME, stop - start))
+                try:
+                    handler.wfile.write(piece)
+                except OSError:
+                    return
+                start += len(piece)
 
     def _plan_what_follows(self, entry: Entry, index: int) -> None:
         last = (entry.size - 1) // self._chunk_bytes
@@ -79,6 +91,18 @@ class LoopbackServer:
                        for _ in range(len(self._read_ahead) - FILES_READ_AHEAD_AT_ONCE)]
         for stale in dropped:
             self._fetcher.plan(stale, [])
+
+
+def _begun(handler: BaseHTTPRequestHandler, size: int) -> tuple[int, int]:
+    asked = handler.headers.get("Range")
+    start, stop = asked_span(asked, size)
+    handler.send_response(206 if asked else 200)
+    handler.send_header("Accept-Ranges", "bytes")
+    handler.send_header("Content-Length", str(stop - start))
+    if asked:
+        handler.send_header("Content-Range", f"bytes {start}-{stop - 1}/{size}")
+    handler.end_headers()
+    return start, stop
 
 
 def _handler_for(server: LoopbackServer) -> type[BaseHTTPRequestHandler]:

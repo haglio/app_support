@@ -10,6 +10,7 @@ import pytest
 from app_support.pcloud.api import PCloud, read_span
 from app_support.pcloud.chunks import ChunkStore
 from app_support.pcloud.fetching import Fetcher
+from app_support.pcloud.places import CloudPlaces
 from app_support.pcloud.server import FILES_READ_AHEAD_AT_ONCE, LoopbackServer
 from app_support.pcloud.testing import FakePCloud
 
@@ -119,3 +120,29 @@ def test_a_player_that_leaves_partway_ends_its_answer_without_a_word_in_the_log_
             server.answer(player, _VIDEO)
 
         assert (player.written, caplog.records, [stop for _, _, stop in cloud.downloads]) == ([_CONTENT[:16]], [], [16, 32])
+
+
+def test_a_file_pcloud_does_not_have_yet_is_served_from_this_computers_copy_while_there_is_one(tmp_path: Path):
+    made_just_now = tmp_path / "library" / "video two.mp4"
+    made_just_now.parent.mkdir()
+    made_just_now.write_bytes(b"made just now")
+    places = CloudPlaces({tmp_path / "library": "/library"})
+    with FakePCloud({_VIDEO: _CONTENT}) as cloud, LoopbackServer(
+            _fetcher(cloud, tmp_path / "cache"), chunk_bytes=_CHUNK, local_copy_of=places.local_path_of) as server:
+        status, headers, body = _get(server.url_for("/library/video two.mp4"), {"Range": "bytes=5-8"})
+
+        assert (status, headers["Content-Range"], body) == (206, "bytes 5-8/13", b"just")
+
+
+def test_a_player_that_leaves_partway_through_this_computers_copy_ends_its_answer_there(tmp_path: Path):
+    made_just_now = tmp_path / "library" / "video two.mp4"
+    made_just_now.parent.mkdir()
+    made_just_now.write_bytes(bytes(3 * 1024 * 1024))
+    places = CloudPlaces({tmp_path / "library": "/library"})
+    with FakePCloud({_VIDEO: _CONTENT}) as cloud, LoopbackServer(
+            _fetcher(cloud, tmp_path / "cache"), chunk_bytes=_CHUNK, local_copy_of=places.local_path_of) as server:
+        player = _APlayerThatLeft()
+        player.headers = {}
+        server.answer(player, "/library/video two.mp4")
+
+        assert [len(piece) for piece in player.written] == [1024 * 1024]
