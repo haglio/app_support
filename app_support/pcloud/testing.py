@@ -13,9 +13,11 @@ A_MADE_UP_LOGIN = "made-up-login"
 
 
 class FakePCloud:
-    def __init__(self, files: dict[str, bytes], *, auth: str = A_MADE_UP_LOGIN) -> None:
+    def __init__(self, files: dict[str, bytes], *, auth: str = A_MADE_UP_LOGIN,
+                 durations: dict[str, float] | None = None) -> None:
         self.auth = auth
         self._files = dict(files)
+        self._durations = dict(durations or {})
         self._paths_by_id = dict(enumerate(sorted(files), start=1))
         self._ids_by_path = {path: fileid for fileid, path in self._paths_by_id.items()}
         self.downloads: list[tuple[str, int, int]] = []
@@ -64,8 +66,11 @@ class FakePCloud:
 
     def _file_metadata(self, path: str) -> dict:
         content = self._files[path]
-        return {"fileid": self._ids_by_path[path], "size": len(content), "hash": zlib.crc32(content),
-                "name": PurePosixPath(path).name, "isfolder": False}
+        metadata = {"fileid": self._ids_by_path[path], "size": len(content), "hash": zlib.crc32(content),
+                    "name": PurePosixPath(path).name, "isfolder": False}
+        if path in self._durations:
+            metadata["duration"] = str(self._durations[path])
+        return metadata
 
 
 def _handler_for(cloud: FakePCloud) -> type[BaseHTTPRequestHandler]:

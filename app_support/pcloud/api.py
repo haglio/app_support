@@ -14,6 +14,7 @@ class CloudFile:
     fileid: int
     size: int
     hash: int
+    duration_s: float | None = None
 
 
 @dataclass(frozen=True)
@@ -34,7 +35,10 @@ class PCloudRefused(Exception):
 
 
 def _file_of(metadata: dict) -> CloudFile:
-    return CloudFile(fileid=metadata["fileid"], size=metadata["size"], hash=metadata["hash"])
+    # pCloud reads a video's running time itself and quotes it, as "5.03".
+    duration = metadata.get("duration")
+    return CloudFile(fileid=metadata["fileid"], size=metadata["size"], hash=metadata["hash"],
+                     duration_s=None if duration is None else float(duration))
 
 
 def _fetched(url: str | urllib.request.Request) -> bytes:

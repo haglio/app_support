@@ -51,3 +51,14 @@ def test_a_folders_listing_names_each_file_in_it_by_its_id_size_and_hash_and_lea
         {"video one.mp4": CloudFile(fileid=7, size=1234, hash=99), "video two.mp4": CloudFile(fileid=8, size=5678, hash=98)},
         ["https://api.example.test/listfolder?path=%2Flibrary&timeformat=timestamp&auth=made-up-token"],
     )
+
+
+def test_a_videos_running_time_comes_with_its_listing_as_pcloud_reads_it_and_a_file_without_one_has_none():
+    get, _ = _answering({"result": 0, "metadata": {"isfolder": True, "name": "library", "contents": [
+        {"isfolder": False, "name": "video one.mp4", "fileid": 7, "size": 1234, "hash": 99, "duration": "5.03"},
+        {"isfolder": False, "name": "notes.json", "fileid": 8, "size": 56, "hash": 98},
+    ]}})
+
+    listed = PCloud("api.example.test", auth="made-up-token", get=get).list_folder("/library")
+
+    assert [listed["video one.mp4"].duration_s, listed["notes.json"].duration_s] == [5.03, None]

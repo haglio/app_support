@@ -241,3 +241,8 @@ def test_a_file_that_arrived_after_its_folder_was_listed_is_found_by_listing_the
         moment[0] += 3
 
         assert (fetcher.entry(arrived).size, cloud.calls) == (20, ["listfolder", "listfolder"])
+
+
+def test_a_files_entry_carries_the_running_time_pcloud_read_for_it(tmp_path: Path):
+    with FakePCloud({_VIDEO: _CONTENT}, durations={_VIDEO: 12.5}) as cloud:
+        assert _fetcher(cloud, tmp_path).entry(_VIDEO).duration_s == 12.5

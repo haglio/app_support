@@ -35,6 +35,7 @@ class Entry:
     fileid: int
     size: int
     key: str
+    duration_s: float | None = None
 
 
 class Fetcher:
@@ -58,7 +59,8 @@ class Fetcher:
             or self._listing(folder or "/", A_LISTING_LACKING_A_FILE_IS_ASKED_AGAIN_AFTER_S).get(name)
         if found is None:
             raise NotInPCloud(path)
-        return Entry(path=path, fileid=found.fileid, size=found.size, key=f"{found.fileid}-{found.hash}")
+        return Entry(path=path, fileid=found.fileid, size=found.size, key=f"{found.fileid}-{found.hash}",
+                     duration_s=found.duration_s)
 
     def _listing(self, folder: str, kept_for_s: float) -> dict[str, CloudFile]:
         with self._lock:
