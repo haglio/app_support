@@ -70,7 +70,6 @@ def test_no_blocklisted_terms_in_the_tracked_tree(pytestconfig):
         pytest.fail(f"the tracked tree could not be scanned: {unreadable}.\n{EVERY_COMPUTER_READS_ONE_LIST}")
     if terms is None:
         _say_the_tree_was_not_scanned()
-        return
     # git ls-files -z: a tracked name with a space would otherwise split into two unreadable paths, skipped
     # silently, and git would quote an unusual name, which would miss it the same way.
     listed = subprocess.run(
