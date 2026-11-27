@@ -235,15 +235,19 @@ tests run, not a soft one. So the check worth making before a repo takes any of
 them is `<that interpreter> -c "import app_support.sanitize"` — a repo with no
 venv, or one whose CI never installs this package, needs that settled first.
 
-**Nothing this package reads is committed.** There is one blocklist for every
-checkout, at `.sanitize/blocklist.txt` in the directory the checkouts sit in —
-outside every repository, because the list describes the machine and a committed
-copy of it would be the catalogue the guard exists to keep out. The leading dot
-marks it as not one of the checkouts beside it. One term per line; blank lines
-and `#` comments are skipped.
+**Nothing this package reads is committed.** Every computer reads one
+blocklist, at `app_data/sanitize/blocklist.txt` in the library its Haglio
+settings (`~/.haglio/settings.json`) name as `library_root` -- outside every
+repository, because a committed copy of it would be the catalogue the guard
+exists to keep out, and in the library pCloud keeps the same on every computer,
+so a word added on one is refused on all of them. A suite that points the apps
+at made-up settings through `HAGLIO_SETTINGS` still reads the computer's own
+file. One term per line; blank lines and `#` comments are skipped.
 
-A checkout with no blocklist beside it enforces nothing and commits normally —
-that is what a public clone and a fresh CI checkout both look like.
+A computer with no Haglio settings enforces nothing and commits normally --
+that is what a public clone and a fresh CI checkout both look like. A computer
+whose settings name a library but whose list cannot be read, or holds no words,
+refuses every commit and fails the suite's check until it can be read.
 
 ## The numbers a repo keeps per file
 

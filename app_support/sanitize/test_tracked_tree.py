@@ -8,12 +8,14 @@ from pathlib import Path
 
 import pytest
 
+from app_support import haglio_settings
 from app_support.sanitize.guard import (
+    EVERY_COMPUTER_READS_ONE_LIST,
+    ListUnreadable,
     Violation,
-    blocklist_path,
     find_violations,
-    load_blocklist,
     scan_files,
+    the_computers_terms,
 )
 
 pytestmark = pytest.mark.repo_check
@@ -32,9 +34,10 @@ def _repo_under_test(rootpath: Path) -> Path:
     return Path(top) if top else Path(rootpath)
 
 
-def _say_the_tree_was_not_scanned(blocklist: Path) -> None:
+def _say_the_tree_was_not_scanned() -> None:
     unscanned = (
-        f"the tracked tree was NOT scanned: no blocklist terms resolved at {blocklist}"
+        "the tracked tree was NOT scanned: this computer keeps no blocklist, since it has no "
+        f"{haglio_settings.the_computers_own_file()}"
     )
     warnings.warn(f"SANITIZE GUARD UNARMED: {unscanned}", stacklevel=2)
     pytest.skip(unscanned)
@@ -61,10 +64,13 @@ def _one_scan_of_the_terms_and_the_control(tracked: Sequence[Path], terms: Seque
 
 def test_no_blocklisted_terms_in_the_tracked_tree(pytestconfig):
     repo = _repo_under_test(pytestconfig.rootpath)
-    blocklist = blocklist_path(repo)
-    terms = load_blocklist(blocklist) if blocklist.exists() else []
-    if not terms:
-        _say_the_tree_was_not_scanned(blocklist)
+    try:
+        terms = the_computers_terms()
+    except ListUnreadable as unreadable:
+        pytest.fail(f"the tracked tree could not be scanned: {unreadable}.\n{EVERY_COMPUTER_READS_ONE_LIST}")
+    if terms is None:
+        _say_the_tree_was_not_scanned()
+        return
     # git ls-files -z: a tracked name with a space would otherwise split into two unreadable paths, skipped
     # silently, and git would quote an unusual name, which would miss it the same way.
     listed = subprocess.run(

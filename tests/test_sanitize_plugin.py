@@ -6,7 +6,6 @@ import sys
 from pathlib import Path
 
 import pytest
-from armed_guard import arm_where_the_guard_looks
 from consumer_runs import run_pytest_in
 from production_machine import git
 
@@ -88,12 +87,16 @@ class TestTheControlWordTheCheckCarries:
 
 
 class TestTheGuardPlugin:
+    @pytest.fixture(autouse=True)
+    def _on_a_computer_of_its_own(self, computer):
+        self.computer = computer
+
     def _repo(self, tmp_path: Path, *, blocklist: str | None, tracked: str) -> Path:
         repo = tmp_path / "family" / "repo"
         repo.mkdir(parents=True)
         (repo / "pyproject.toml").write_text(PYPROJECT, encoding="utf-8")
         if blocklist is not None:
-            arm_where_the_guard_looks(repo, blocklist)
+            self.computer.arm(blocklist)
         (repo / "notes.md").write_text(tracked, encoding="utf-8")
         git("init", "-b", "main", cwd=repo)
         git("config", "user.email", "guard@example.test", cwd=repo)
@@ -149,6 +152,15 @@ class TestTheGuardPlugin:
         assert "1 skipped" in done.stdout
         assert "NOT scanned" in done.stdout
 
+    def test_a_computer_whose_one_list_cannot_be_read_fails_the_run_rather_than_skip_it(self, tmp_path: Path):
+        repo = self._repo(tmp_path, blocklist=None, tracked="perfectly clean\n")
+        self.computer.name_its_library()
+
+        done = run_pytest_in(repo)
+
+        assert done.returncode != 0, done.stdout
+        assert "could not be scanned" in done.stdout
+
     def test_a_source_tree_with_no_git_at_all_is_not_taken_down_either(self, tmp_path: Path):
         repo = tmp_path / "unpacked"
         (repo / "tests").mkdir(parents=True)
@@ -182,7 +194,7 @@ class TestTheGuardPlugin:
         repo = tmp_path / "family" / "empty"
         repo.mkdir(parents=True)
         (repo / "pyproject.toml").write_text(PYPROJECT, encoding="utf-8")
-        arm_where_the_guard_looks(repo, f"{TERM}\n")
+        self.computer.arm(f"{TERM}\n")
         (repo / "test_local.py").write_text(
             "def test_local():\n    assert True\n", encoding="utf-8")
         git("init", "-b", "main", cwd=repo)
@@ -210,7 +222,7 @@ class TestTheGuardPlugin:
     ):
         repo = tmp_path / "family" / "gone"
         repo.mkdir(parents=True)
-        arm_where_the_guard_looks(repo, f"{TERM}\n")
+        self.computer.arm(f"{TERM}\n")
         pytest_reads_this_but_the_walk_never_will = repo / "pyproject.toml"
         pytest_reads_this_but_the_walk_never_will.write_text(PYPROJECT, encoding="utf-8")
         (repo / "notes.md").write_text(

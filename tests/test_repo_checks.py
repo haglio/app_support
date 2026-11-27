@@ -5,8 +5,6 @@ from pathlib import Path
 
 from consumer_runs import run_pytest_in
 
-from app_support.sanitize import blocklist_path
-
 TERM = "plantedterm"
 
 PYPROJECT = """\
@@ -50,11 +48,9 @@ def _run_order(repo: Path) -> list[str]:
     return [line.rsplit("::", 1)[-1] for line in listed.splitlines() if "::" in line]
 
 
-def test_a_blocked_word_ends_a_fail_fast_run_before_any_other_test_runs(tmp_path: Path):
+def test_a_blocked_word_ends_a_fail_fast_run_before_any_other_test_runs(tmp_path: Path, computer):
     repo = _repo(tmp_path, {"notes.md": f"this has {TERM} in it\n", "tests/test_code.py": A_TEST})
-    blocklist = blocklist_path(repo)
-    blocklist.parent.mkdir(parents=True, exist_ok=True)
-    blocklist.write_text(f"{TERM}\n", encoding="utf-8")
+    computer.arm(f"{TERM}\n")
     for step in (["init", "-b", "main"], ["config", "user.email", "order@example.test"],
                  ["config", "user.name", "Order Test"], ["add", "."],
                  ["commit", "-m", "seed", "--no-verify"]):

@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from armed_guard import Computer
 from desktop_of_its_own import DesktopOfItsOwn
 from git_bash_programs import GitBashPrograms
 from production_machine import git
@@ -53,6 +54,11 @@ class Branch:
     def commit(self, files: dict[str, str], message: str = "a change") -> None:
         self.track(files)
         self.git("commit", "-q", "-m", message)
+
+
+@pytest.fixture
+def computer(tmp_path, monkeypatch) -> Computer:
+    return Computer(tmp_path, monkeypatch)
 
 
 @pytest.fixture
